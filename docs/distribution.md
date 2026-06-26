@@ -16,7 +16,7 @@ The bin target has a Bun shebang and the package has no `install`, `postinstall`
 
 - `bun run src/cli.ts --version`
 - `bunx --bun -p file:$PWD pasta --version`
-- `mise use -g github:thehumanworks/pasta`
+- `mise use -g github:thehumanworks/pasta@0.1.1`
 - `bun pm pack --dry-run`
 
 GitHub `bunx` proof is verified against the public repo:
@@ -24,7 +24,7 @@ GitHub `bunx` proof is verified against the public repo:
 ```bash
 bunx --bun -p github:thehumanworks/pasta pasta --version
 bunx --bun github:thehumanworks/pasta#v0.1.1 --version
-mise use -g github:thehumanworks/pasta
+mise use -g github:thehumanworks/pasta@0.1.1
 ```
 
 The public repo and tag should remain visible without SSH credentials:
@@ -73,6 +73,15 @@ MISE_CONFIG_DIR="$tmp/config" \
 MISE_CACHE_DIR="$tmp/cache" \
 MISE_STATE_DIR="$tmp/state" \
   mise exec github:thehumanworks/pasta -- pasta --version
+```
+
+For brand-new releases, mise can hide `latest` behind its release-age filter and
+return `no versions found ... matching date filter`. Pin the tag for immediate
+installs, or set `MISE_MINIMUM_RELEASE_AGE=0` for a one-off latest-resolution
+proof:
+
+```bash
+MISE_MINIMUM_RELEASE_AGE=0 mise use -g github:thehumanworks/pasta
 ```
 
 ## Shell Integration
