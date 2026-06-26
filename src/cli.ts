@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
+import { basename } from "node:path";
 import QRCode from "qrcode";
 import {
+  decryptClipMetadata,
   decryptBytesClip,
   decryptTextClip,
   encryptBytesClip,
@@ -18,6 +20,7 @@ import {
   PASTA_VERSION,
   PROTOCOL_ENDPOINTS,
   type BootstrapRequest,
+  type ClipMetadata,
   type EncryptedClip,
   type PairingConsumeRequest,
   type PairingOpenRequest,
@@ -310,12 +313,12 @@ async function publishPath(
   const isPng = isPngBytes(bytes);
   if (mode === "image") {
     if (!isPng) throw new Error("copy --image requires PNG image bytes");
-    return publishFilePayload(config, secrets, client, bytes, explicitMime ?? "image/png");
+    return publishFilePayload(config, secrets, client, bytes, explicitMime ?? "image/png", "file", metadataForPath(filePath));
   }
   if (mode === "auto" && isPng) {
-    return publishFilePayload(config, secrets, client, bytes, explicitMime ?? "image/png");
+    return publishFilePayload(config, secrets, client, bytes, explicitMime ?? "image/png", "file", metadataForPath(filePath));
   }
-  return publishFilePayload(config, secrets, client, bytes, mime);
+  return publishFilePayload(config, secrets, client, bytes, mime, "file", metadataForPath(filePath));
 }
 
 async function pasteCommand(
@@ -341,17 +344,13 @@ async function pasteCommand(
   const config = await readConfig(paths.configPath);
   const client = clientFor(config, secrets, deps);
   const seq = option(argv, "--seq");
-  if (mode === "file" && !out) {
-    io.stderr("file clip needs --out <path>\n");
-    return ExitCode.usage;
-  }
   if (mode === "file" && seq) {
     const payload = await fetchFilePayload(config, secrets, client, Number.parseInt(seq, 10));
     if (payload.clip.payloadKind !== "file") {
       io.stderr(`latest clip is ${payload.clip.payloadKind}, not file\n`);
       return ExitCode.unavailable;
     }
-    await Bun.write(out!, payload.bytes);
+    await Bun.write(out ?? await defaultOutputPath(config, secrets, payload.clip), payload.bytes);
     return ExitCode.ok;
   }
   const clip = await fetchClip(client, seq);
@@ -367,11 +366,6 @@ async function pasteCommand(
     io.stderr(`latest clip is ${clip.payloadKind}, not file\n`);
     return ExitCode.unavailable;
   }
-  if (clip.payloadKind === "file" && !out && !clipIsImageLike(clip)) {
-    io.stderr("file clip needs --out <path>\n");
-    return ExitCode.usage;
-  }
-
   if (clip.payloadKind === "text") {
     const plaintext = await decryptStored(config, secrets, clip);
     if (out) {
@@ -393,12 +387,12 @@ async function pasteCommand(
     await Bun.write(out, bytes);
     return ExitCode.ok;
   }
-  if (isClipboardPng(clip.mime)) {
+  if ((mode === "image" || (mode === "auto" && clip.payloadKind === "image")) && isClipboardPng(clip.mime)) {
     await clipboard.writeImage({ mime: "image/png", bytes });
     return ExitCode.ok;
   }
-  io.stderr(`${clip.payloadKind} clip needs --out <path>\n`);
-  return ExitCode.usage;
+  await Bun.write(await defaultOutputPath(config, secrets, clip), bytes);
+  return ExitCode.ok;
 }
 
 async function fetchClip(client: ApiClient, seq: string | undefined): Promise<StoredClip | null> {
@@ -505,10 +499,11 @@ async function publishFilePayload(
   client: ApiClient,
   bytes: Uint8Array,
   mime: string,
-  payloadKind: "file" | "image" = "file"
+  payloadKind: "file" | "image" = "file",
+  metadata?: ClipMetadata
 ): Promise<StoredClip> {
   const groupKey = await requireSecret(secrets, SecretName.groupKey);
-  const clip = encryptBytesClip({
+  const input = {
     accountId: config.accountId,
     routingId: config.routingId,
     originDeviceId: config.deviceId,
@@ -517,7 +512,8 @@ async function publishFilePayload(
     mime,
     groupKey,
     keyVersion: config.keyVersion
-  });
+  };
+  const clip = encryptBytesClip(metadata ? { ...input, metadata } : input);
   const response = await client.request<{ clip: StoredClip }>("POST", "/v1/files", clip);
   return response.clip;
 }
@@ -528,6 +524,10 @@ async function decryptStored(config: PastaConfig, secrets: SecretStore, clip: En
 
 async function decryptStoredBytes(config: PastaConfig, secrets: SecretStore, clip: EncryptedClip): Promise<Uint8Array> {
   return decryptBytesClip(await requireSecret(secrets, SecretName.groupKey), config.accountId, config.routingId, clip);
+}
+
+async function decryptStoredMetadata(config: PastaConfig, secrets: SecretStore, clip: EncryptedClip): Promise<ClipMetadata | null> {
+  return decryptClipMetadata(await requireSecret(secrets, SecretName.groupKey), config.accountId, config.routingId, clip);
 }
 
 async function historyCommand(
@@ -572,7 +572,7 @@ async function historyCommand(
   for (const clip of response.clips) {
     const rendered = showPlaintext && clip.payloadKind === "text"
       ? await decryptStored(config, secrets, clip)
-      : renderHistoryClip(clip);
+      : await renderHistoryClip(config, secrets, clip);
     io.stdout(`${clip.seq}\t${new Date(clip.createdAt).toISOString()}\t${rendered}\n`);
   }
   return ExitCode.ok;
@@ -794,8 +794,68 @@ function clipIsImageLike(clip: StoredClip): boolean {
   return clip.payloadKind === "image" || clip.mime.startsWith("image/");
 }
 
-function renderHistoryClip(clip: StoredClip): string {
-  return `${clip.payloadKind} ${clip.mime} ${clip.byteLen} bytes encrypted`;
+async function renderHistoryClip(config: PastaConfig, secrets: SecretStore, clip: StoredClip): Promise<string> {
+  const base = `${clip.payloadKind} ${clip.mime} ${clip.byteLen} bytes encrypted`;
+  if (clip.payloadKind === "text") {
+    return `${base} ${JSON.stringify(previewText(await decryptStored(config, secrets, clip)))}`;
+  }
+  if (clip.payloadKind === "file") {
+    return `${base} ${JSON.stringify(await displayFileName(config, secrets, clip))}`;
+  }
+  return base;
+}
+
+async function displayFileName(config: PastaConfig, secrets: SecretStore, clip: EncryptedClip): Promise<string> {
+  const metadata = await decryptStoredMetadata(config, secrets, clip);
+  return safeFileName(metadata?.name) ?? defaultOutputName(clip);
+}
+
+async function defaultOutputPath(config: PastaConfig, secrets: SecretStore, clip: EncryptedClip): Promise<string> {
+  return displayFileName(config, secrets, clip);
+}
+
+function metadataForPath(filePath: string): ClipMetadata | undefined {
+  const name = safeFileName(basename(trimPathTrailingSeparators(filePath)));
+  return name ? { name } : undefined;
+}
+
+function safeFileName(name: string | undefined): string | undefined {
+  if (!name) return undefined;
+  const withoutNulls = name.replace(/\0/gu, "");
+  const base = basename(trimPathTrailingSeparators(withoutNulls));
+  if (!base || base === "." || base === "..") return undefined;
+  return base;
+}
+
+function trimPathTrailingSeparators(value: string): string {
+  return value.replace(/[\\/]+$/u, "") || value;
+}
+
+function defaultOutputName(clip: EncryptedClip): string {
+  return `output.${extensionForMime(clip.mime)}`;
+}
+
+function extensionForMime(mime: string): string {
+  const normalized = mime.split(";")[0]?.trim().toLowerCase() ?? "";
+  const byMime: Record<string, string> = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "application/pdf": "pdf",
+    "application/zip": "zip",
+    "application/x-tar": "tar",
+    "application/gzip": "gz",
+    "text/plain": "txt",
+    "application/json": "json"
+  };
+  return byMime[normalized] ?? "bin";
+}
+
+function previewText(text: string): string {
+  const normalized = text.replace(/\s+/gu, " ").trim();
+  if (normalized.length <= 72) return normalized;
+  return `${normalized.slice(0, 48)}...${normalized.slice(-16)}`;
 }
 
 function parseSeq(value: string | undefined): number | null {
@@ -849,6 +909,7 @@ Examples:
     paste: `usage: pasta paste [--clipboard] [--seq <n>] [--out <path>] [--image|--file]
 
 Pulls the latest or selected encrypted clip, decrypts locally, and routes by payload kind.
+File clips save to the original basename, or output.<ext> when no basename exists; use --out to choose a path.
 
 Examples:
   pasta paste
@@ -860,7 +921,7 @@ Examples:
 `,
     history: `usage: pasta history [--show] | pasta history paste <seq> [--clipboard] | pasta history delete <seq>
 
-Lists encrypted history metadata, pastes a selected text entry, or deletes a selected history entry.
+Lists history with local text previews and file names, pastes a selected text entry, or deletes a selected history entry.
 
 Examples:
   pasta history

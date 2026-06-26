@@ -123,8 +123,8 @@ docs-site/           this documentation site
 
 ```
 bootstrap → pair(ticket|request|consume) + devices(approve)
-copy|copy-image|send-file → POST ciphertext
-paste|paste-image|paste-file|history → GET ciphertext → local decrypt
+copy → POST ciphertext
+paste|history → GET ciphertext → local decrypt
 daemon → poll local clipboard → copy on change
 reset --yes → new routing_id + group key
 ```

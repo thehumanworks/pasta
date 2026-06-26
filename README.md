@@ -193,7 +193,7 @@ Paste a specific sequence:
 pasta paste --seq 12
 ```
 
-List encrypted history metadata:
+List history with local text previews and file names:
 
 ```bash
 pasta history
@@ -284,7 +284,7 @@ If the latest clip is text or non-image file data, `pasta paste --image` fails c
 
 ## File Examples
 
-File payloads are encrypted locally, stored in R2 as encrypted bytes, and omit local paths and filenames from Worker/DO/R2 metadata.
+File payloads are encrypted locally and stored in R2 as encrypted bytes. Pasta stores only the original basename, encrypted for trusted devices, so history can show useful context without leaking local paths or plaintext filenames to Worker/DO/R2 metadata.
 The `--mime` flag is optional. Pasta infers a MIME type from the file and extension when it can, then falls back to `application/octet-stream`; use `--mime` only when you want to override that metadata.
 
 Send a small file:
@@ -299,15 +299,22 @@ Send a binary file:
 pasta copy --file ./archive.zip --mime application/zip
 ```
 
+Paste the latest file to its original basename in the current directory:
+
+```bash
+pasta paste
+```
+
 Paste the latest file to a new path:
 
 ```bash
 pasta paste --out ./received.bin
 ```
 
-Paste a specific file sequence:
+Paste a specific file sequence to its original basename or to a new path:
 
 ```bash
+pasta paste --file --seq 21
 pasta paste --file --seq 21 --out ./received.zip
 ```
 

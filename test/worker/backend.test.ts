@@ -4,6 +4,7 @@ import { env } from "cloudflare:workers";
 import { SELF, runDurableObjectAlarm } from "cloudflare:test";
 import { REGISTRY_SCHEMA_SQL } from "../../src/worker/registry-schema";
 import {
+  decryptClipMetadata,
   decryptBytesClip,
   decryptTextClip,
   encryptBytesClip,
@@ -99,7 +100,8 @@ describe("Worker backend", () => {
       payloadKind: "file",
       mime: "application/octet-stream",
       groupKey,
-      keyVersion: 1
+      keyVersion: 1,
+      metadata: { name: "report.pdf" }
     });
     const publish = await signedFetch(device, "POST", "/v1/files", clip);
     await expectStatus(publish, 201);
@@ -108,10 +110,12 @@ describe("Worker backend", () => {
     expect(stored.clip.r2Key).toContain(`/clips/${stored.clip.seq}/`);
     const dump = await env.CLIPBOARD.getByName(device.routingId).debugDump();
     expect(JSON.stringify(dump)).not.toContain(clip.ciphertext);
+    expect(JSON.stringify(dump)).not.toContain("report.pdf");
     const download = await signedFetch(device, "GET", `/v1/files/${stored.clip.seq}`);
     await expectStatus(download, 200);
     const body = await download.json() as { clip: StoredClip; ciphertext: string };
     expect(decryptBytesClip(groupKey, device.accountId, device.routingId, { ...body.clip, ciphertext: body.ciphertext })).toEqual(medium);
+    expect(decryptClipMetadata(groupKey, device.accountId, device.routingId, body.clip)).toEqual({ name: "report.pdf" });
 
     const imageBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, ...new Array(64 * 1024).fill(7)]);
     const imageClip = encryptBytesClip({

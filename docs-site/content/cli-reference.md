@@ -41,24 +41,24 @@ Pairing ticket contains **endpoint, account, routing** — not the group key.
 | --- | --- |
 | `copy` | Stdin if piped, else OS clipboard → encrypt → publish |
 | `paste [--clipboard] [--seq <n>]` | Pull latest or seq; stdout or OS clipboard |
-| `history [--show]` | List metadata; `--show` decrypts locally |
+| `history [--show]` | List local text previews and file names; `--show` decrypts full text locally |
 | `history paste <seq> [--clipboard]` | Paste specific history entry |
 
 ## Images (macOS PNG)
 
 | Command | Description |
 | --- | --- |
-| `copy-image` | OS clipboard PNG → encrypt → publish |
-| `paste-image [--seq <n>] [--out <path>]` | Decrypt to clipboard or file |
+| `copy --image` | OS clipboard PNG → encrypt → publish |
+| `paste --image [--seq <n>] [--out <path>]` | Decrypt to clipboard or file |
 
-Fails cleanly if latest clip is not `payloadKind: image`.
+Fails cleanly if latest clip is not image-like.
 
 ## Files (R2, ≤ 50 MiB)
 
 | Command | Description |
 | --- | --- |
-| `send-file <path> [--mime <type>]` | Encrypt file → R2-backed publish |
-| `paste-file [--seq <n>] --out <path>` | Download, decrypt, write file |
+| `copy <path> [--mime <type>]` | Encrypt file and basename → R2-backed publish |
+| `paste [--seq <n>] [--out <path>]` | Download, decrypt, write original basename or chosen path |
 
 ## Daemon
 
@@ -98,10 +98,10 @@ argv[0] routes to handlers. Inject deps via `CliDeps`: `io`, `paths`, `secrets`,
 | CLI | Method / Path | Auth |
 | --- | --- | --- |
 | `bootstrap` | `POST /v1/accounts/bootstrap` | none |
-| `copy`, `copy-image` | `POST /v1/clips` | signed |
-| `send-file` | `POST /v1/files` | signed |
+| `copy` text/clipboard image | `POST /v1/clips` | signed |
+| `copy <path>` file/image path | `POST /v1/files` | signed |
 | `paste`, `history` | `GET /v1/clips/*` | signed |
-| `paste-file` | `GET /v1/files/:seq` | signed |
+| `paste` file payload | `GET /v1/files/:seq` | signed |
 | `pair request` | `POST /v1/pairing/open` | none |
 | `devices approve` | `POST /v1/pairing/approve` | signed |
 | `pair consume` | `POST /v1/pairing/consume` | none |

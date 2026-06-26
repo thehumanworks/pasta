@@ -11,38 +11,40 @@ nav_order: 9
 | Kind | Commands | Storage |
 | --- | --- | --- |
 | `text` | `copy`, `paste`, `history` | Inline in Durable Object |
-| `image` | `copy-image`, `paste-image` | Inline (PNG on macOS) |
-| `file` | `send-file`, `paste-file` | R2 encrypted blob |
+| `image` | `copy --image`, `paste --image` | Inline or R2 encrypted blob |
+| `file` | `copy <path>`, `paste [--out <path>]` | R2 encrypted blob |
 
-All kinds are **encrypted on your device** before upload. Cloudflare stores ciphertext and metadata — never filenames, local paths, or plaintext.
+All kinds are **encrypted on your device** before upload. Cloudflare stores ciphertext and metadata. File basenames are encrypted for trusted devices; local paths and plaintext names are not stored in Worker, DO, or R2 metadata.
 
 ## Images
 
 macOS PNG pasteboard support is live:
 
 ```bash
-pasta copy-image
-pasta paste-image
-pasta paste-image --out screenshot.png
-pasta paste-image --seq 18 --out screenshot.png
+pasta copy --image
+pasta paste --image
+pasta paste --image --out screenshot.png
+pasta paste --image --seq 18 --out screenshot.png
 ```
 
-If the latest clip is text or a file, `paste-image` fails with a clear message instead of guessing.
+If the latest clip is text or a non-image file, `paste --image` fails with a clear message instead of guessing.
 
 Linux and Windows image clipboard adapters are documented assumptions until native smoke coverage lands.
 
 ## Files
 
 ```bash
-pasta send-file ./notes.txt --mime text/plain
-pasta send-file ./archive.zip --mime application/zip
-pasta paste-file --out ./received.bin
-pasta paste-file --seq 21 --out ./received.zip
+pasta copy ./notes.txt --mime text/plain
+pasta copy --file ./archive.zip --mime application/zip
+pasta paste
+pasta paste --out ./received.bin
+pasta paste --file --seq 21
+pasta paste --file --seq 21 --out ./received.zip
 ```
 
 **Hard cap: 50 MiB.** The CLI rejects larger files before reading them into memory.
 
-Filenames and paths are **not** sent to the relay. MIME type is stored; original names are omitted by design.
+Only encrypted basenames are sent for file context. MIME type is stored; local paths and plaintext names are omitted by design. If no basename is available, paste falls back to `output.<ext>`.
 
 ## Size thresholds
 
@@ -79,21 +81,21 @@ LARGE_PAYLOAD_MAX_BYTES = 50 * 1024 * 1024
 
 ## CLI file path (cli.ts)
 
-`send-file`:
+`copy <path>`:
 1. `Bun.file(path)` — reject if size > MAX
 2. `encryptBytesClip({ payloadKind: "file", mime, bytes, ... })`
 3. `POST /v1/files`
 
-`paste-file`:
+`paste` for file clips:
 1. Resolve seq from arg or `GET /v1/clips/latest`
 2. `GET /v1/files/:seq` → `{ clip, ciphertext }`
-3. `decryptStoredBytes` → `Bun.write(out, bytes)`
+3. `decryptStoredBytes` → `Bun.write(out ?? originalName, bytes)`
 
 ## Image path
 
-`copy-image`: `clipboard.readImage()` → `publishImage` → `POST /v1/clips` with `payloadKind: "image"`
+`copy --image`: `clipboard.readImage()` → `publishImage` → `POST /v1/clips` with `payloadKind: "image"`
 
-`paste-image`: checks `response.clip.payloadKind === "image"` before decrypt
+`paste --image`: accepts `payloadKind: "image"` or image MIME file payloads before decrypt
 
 ## Worker file upload sequence
 

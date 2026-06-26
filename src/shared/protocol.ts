@@ -161,10 +161,20 @@ export interface EncryptedClip {
   storageKind?: "inline" | "r2";
   payloadId?: string;
   r2Key?: string;
+  metadata?: EncryptedClipMetadata;
 }
 
 export interface StoredClip extends EncryptedClip {
   seq: number;
+}
+
+export interface EncryptedClipMetadata {
+  nonce: string;
+  ciphertext: string;
+}
+
+export interface ClipMetadata {
+  name?: string;
 }
 
 export interface DevicePublicKeys {

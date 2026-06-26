@@ -33,8 +33,8 @@ That choice trades metadata visibility (the relay sees *that* you copied, *when*
 | Text copy / paste / history | ✅ All desktop platforms via CLI |
 | Daemon auto-publish | ✅ Text polling |
 | Pairing & device revoke | ✅ |
-| macOS PNG image clipboard | ✅ `copy-image` / `paste-image` |
-| File payloads ≤ 50 MiB | ✅ R2-backed `send-file` / `paste-file` |
+| macOS PNG image clipboard | ✅ `copy --image` / `paste --image` |
+| File payloads <= 50 MiB | ✅ R2-backed `copy <path>` / `paste` |
 | Linux / Windows image clipboard | Documented assumption; not live-smoked here |
 | npm / compiled binaries | Fallback paths; GitHub `bunx` is primary |
 

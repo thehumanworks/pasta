@@ -9,16 +9,16 @@ Binary payload support is behind the text MVP. Text clips remain inline in the D
 - R2 key format: `spaces/{routing_id}/clips/{seq}/{payload_id}` where `payload_id` is random base64url and never derived from a filename, MIME type, or plaintext hash.
 - Sequence allocation: the Durable Object allocates `seq` for each accepted R2-backed image or file payload and derives the R2 key from that sequence plus a random `payload_id`.
 - Finalize semantics: the first implementation uses one signed Worker request for bounded R2-backed payloads. The Worker validates the encrypted envelope, reserves metadata in the Durable Object, writes encrypted bytes to R2, rolls back the metadata row if the R2 write fails, schedules retention after a successful R2 write, and only then returns `201`.
-- MIME and original filename handling: MIME type is stored; filenames are omitted by default or replaced by user-approved labels because names can be sensitive.
+- MIME and original filename handling: MIME type is stored in clip metadata. When a path is copied, only its basename is stored in encrypted clip metadata for trusted devices; local paths and plaintext filenames stay out of Worker/DO/R2 metadata.
 
 ## Metadata Contract
 
 Durable Object rows store:
 
-- `seq`, `clip_id`, origin device, timestamps, expiry, payload kind, MIME, ciphertext byte length, key version, nonce, AAD hash.
+- `seq`, `clip_id`, origin device, timestamps, expiry, payload kind, MIME, ciphertext byte length, key version, nonce, AAD hash, and optional encrypted display metadata.
 - `storage_kind`: `inline` or `r2`.
 - `r2_key`, `payload_id`, and `uploaded_at` for R2-backed payloads.
-- No plaintext, raw group keys, full original filenames, local paths, or user names.
+- No plaintext, raw group keys, plaintext filenames, local paths, or user names.
 
 R2 objects store encrypted bytes only. Object metadata may include content length, MIME, and clip id, but must not include plaintext names or paths.
 
@@ -49,7 +49,7 @@ Failure cases:
 
 - Validation fails before storage: no DO row or R2 object is created.
 - R2 write fails after metadata reservation: the Worker deletes the reserved DO row before returning failure.
-- Client crashes after server `201`: history/latest can still retrieve metadata and `paste --out` can download the encrypted object.
+- Client crashes after server `201`: history/latest can still retrieve metadata and `paste` can download the encrypted object to the original basename or `output.<ext>`.
 - Cleanup retries are idempotent: missing R2 object plus expired DO row is success.
 
 ## Retention
@@ -65,7 +65,7 @@ Retention alarms delete expired DO metadata and associated R2 objects. The alarm
 
 Image clipboard support is implemented for macOS PNG pasteboard data through the primary `copy` and `paste` commands. Small PNG payloads stay inline; large PNG payloads use the R2-backed image path while preserving `payloadKind: "image"`. Linux and Windows image clipboard support remains a command-plan assumption in this environment until a native runner is available.
 
-File payload support is implemented through the primary `copy` and `paste --out` commands. The CLI rejects files above 50 MiB before reading them into memory, encrypts bytes locally, sends encrypted bytes to the Worker, and the Worker stores them in R2 under the DO-assigned key. File payloads require `--out` on paste.
+File payload support is implemented through the primary `copy` and `paste` commands. The CLI rejects files above 50 MiB before reading them into memory, encrypts bytes and basename metadata locally, sends encrypted bytes to the Worker, and the Worker stores them in R2 under the DO-assigned key. File payloads save to the original basename by default, fall back to `output.<ext>` when no name exists, and use `--out` to choose a different path.
 
 Unsupported binary clipboard content outside the implemented PNG image path fails with a controlled unsupported-payload result. Text support does not depend on R2. Goal 06 adds binary support behind platform-scoped clipboard adapters, and Goal 07 makes `copy`/`paste` the primary UX.
 

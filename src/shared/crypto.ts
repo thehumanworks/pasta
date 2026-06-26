@@ -7,7 +7,9 @@ import {
   canonicalRequest,
   clipAadHash,
   type ClipAad,
+  type ClipMetadata,
   type EncryptedClip,
+  type EncryptedClipMetadata,
   type SignedRequestParts
 } from "./protocol";
 import {
@@ -41,6 +43,7 @@ export interface ClipEncryptionInput {
   createdAt?: number;
   expiresAt?: number | null;
   nonce?: string;
+  metadata?: ClipMetadata;
 }
 
 export interface BytesClipEncryptionInput {
@@ -56,6 +59,7 @@ export interface BytesClipEncryptionInput {
   createdAt?: number;
   expiresAt?: number | null;
   nonce?: string;
+  metadata?: ClipMetadata;
 }
 
 export function generateGroupKey(): string {
@@ -117,6 +121,7 @@ export function encryptTextClip(input: ClipEncryptionInput): EncryptedClip {
   if (input.createdAt !== undefined) bytesInput.createdAt = input.createdAt;
   if (input.expiresAt !== undefined) bytesInput.expiresAt = input.expiresAt;
   if (input.nonce !== undefined) bytesInput.nonce = input.nonce;
+  if (input.metadata !== undefined) bytesInput.metadata = input.metadata;
   return encryptInlineClip(bytesInput);
 }
 
@@ -143,7 +148,22 @@ function encryptInlineClip(input: Omit<BytesClipEncryptionInput, "payloadKind"> 
   const cipher = xchacha20poly1305(fromBase64Url(input.groupKey), fromBase64Url(clip.nonce), aadBytes);
   clip.ciphertext = toBase64Url(cipher.encrypt(input.bytes));
   clip.aadHash = clipAadHash(aad);
+  if (input.metadata) {
+    clip.metadata = encryptClipMetadata(input.groupKey, input.accountId, input.routingId, clip, input.metadata);
+  }
   return clip;
+}
+
+export function decryptClipMetadata(groupKey: string, accountId: string, routingId: string, clip: EncryptedClip): ClipMetadata | null {
+  if (!clip.metadata) return null;
+  const cipher = xchacha20poly1305(
+    fromBase64Url(groupKey),
+    fromBase64Url(clip.metadata.nonce),
+    metadataAadBytes(accountId, routingId, clip)
+  );
+  const parsed = JSON.parse(bytesToUtf8(cipher.decrypt(fromBase64Url(clip.metadata.ciphertext)))) as ClipMetadata;
+  const name = typeof parsed.name === "string" ? parsed.name : undefined;
+  return name ? { name } : {};
 }
 
 export function decryptTextClip(groupKey: string, accountId: string, routingId: string, clip: EncryptedClip): string {
@@ -237,4 +257,26 @@ function deriveWrapKey(privateKey: string, ownPublicKey: string, peerPublicKey: 
     new Uint8Array([...utf8ToBytes("pasta.wrap.info.v1"), ...first, ...second]),
     32
   );
+}
+
+function encryptClipMetadata(
+  groupKey: string,
+  accountId: string,
+  routingId: string,
+  clip: EncryptedClip,
+  metadata: ClipMetadata
+): EncryptedClipMetadata {
+  const nonce = toBase64Url(randomBytes(24));
+  const cipher = xchacha20poly1305(fromBase64Url(groupKey), fromBase64Url(nonce), metadataAadBytes(accountId, routingId, clip));
+  return {
+    nonce,
+    ciphertext: toBase64Url(cipher.encrypt(utf8ToBytes(stableJson(metadata))))
+  };
+}
+
+function metadataAadBytes(accountId: string, routingId: string, clip: EncryptedClip): Uint8Array {
+  return utf8ToBytes(stableJson({
+    purpose: "pasta.clip-metadata.v1",
+    clip: aadForClip(accountId, routingId, clip)
+  }));
 }

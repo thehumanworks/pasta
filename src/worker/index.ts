@@ -414,6 +414,7 @@ function validateClip(auth: AuthContext, clip: EncryptedClip): void {
   requireString(clip.nonce, "nonce");
   requireString(clip.aadHash, "aadHash");
   requireString(clip.ciphertext, "ciphertext");
+  validateClipMetadata(clip);
   if (clip.originDeviceId !== auth.deviceId) throw new Error("origin device mismatch");
   if (clip.payloadKind !== "text" && clip.payloadKind !== "image") throw new Error("unsupported payload kind");
   if (clip.payloadKind === "text" && clip.mime !== "text/plain; charset=utf-8") throw new Error("bad text MIME");
@@ -430,6 +431,7 @@ function validateFileClip(auth: AuthContext, clip: EncryptedClip): void {
   requireString(clip.nonce, "nonce");
   requireString(clip.aadHash, "aadHash");
   requireString(clip.ciphertext, "ciphertext");
+  validateClipMetadata(clip);
   if (clip.originDeviceId !== auth.deviceId) throw new Error("origin device mismatch");
   if (clip.payloadKind !== "file" && clip.payloadKind !== "image") throw new Error("unsupported payload kind");
   if (clip.payloadKind === "image" && !clip.mime.startsWith("image/")) throw new Error("bad image MIME");
@@ -440,6 +442,14 @@ function validateFileClip(auth: AuthContext, clip: EncryptedClip): void {
 
 function space(env: Env, auth: Actor): DurableObjectStub<ClipboardSpace> {
   return env.CLIPBOARD.getByName(auth.routingId);
+}
+
+function validateClipMetadata(clip: EncryptedClip): void {
+  if (!clip.metadata) return;
+  requireString(clip.metadata.nonce, "metadata.nonce");
+  requireString(clip.metadata.ciphertext, "metadata.ciphertext");
+  assertBase64Url(clip.metadata.nonce, "metadata.nonce");
+  assertBase64Url(clip.metadata.ciphertext, "metadata.ciphertext");
 }
 
 function actorOf(auth: AuthContext): Actor {

@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "bun:test";
@@ -106,6 +106,9 @@ describe("CLI", () => {
     expect(await runCli(["paste", "--clipboard"], deps)).toBe(0);
     expect(clipboard.value).toBe("alpha");
     output.length = 0;
+    expect(await runCli(["history"], deps)).toBe(0);
+    expect(output.join("")).toContain('"alpha"');
+    output.length = 0;
     expect(await runCli(["history", "--show"], deps)).toBe(0);
     expect(output.join("")).toContain("alpha");
 
@@ -179,6 +182,7 @@ describe("CLI", () => {
         return { clip };
       }
       if (path === "/v1/clips/latest") return { clip: clips.at(-1) ?? null };
+      if (path.startsWith("/v1/clips/history")) return { clips: [...clips].reverse() };
       if (path.startsWith("/v1/clips/")) return { clip: clips.find((clip) => clip.seq === Number(path.split("/").at(-1))) };
       if (method === "GET" && path.startsWith("/v1/files/")) return storedFiles.get(Number(path.split("/").at(-1)));
       throw new Error(`unexpected ${method} ${path}`);
@@ -194,62 +198,78 @@ describe("CLI", () => {
     const largeImageOut = join(paths.home, "large-image.png");
     const out = join(paths.home, "received.bin");
     const outSeq = join(paths.home, "received-seq.bin");
+    const pasteDir = join(paths.home, "paste-dir");
     await Bun.write(pngPath, png);
     await Bun.write(largePngPath, largePng);
     await Bun.write(fakePngPath, new Uint8Array([1, 2, 3, 4]));
     await Bun.write(filePath, new Uint8Array([9, 8, 7, 6]));
+    await mkdir(pasteDir);
     const clipboard = new MemoryClipboardAdapter();
     const output: string[] = [];
     const deps = { io: capture(output), paths, secrets, clipboard, clientFactory: () => client };
+    const previousCwd = process.cwd();
+    process.chdir(pasteDir);
 
-    expect(await runCli(["copy", pngPath], deps)).toBe(0);
-    expect(clips.at(-1)?.payloadKind).toBe("file");
-    expect(clips.at(-1)?.mime).toBe("image/png");
-    expect(output.join("")).toContain("published image");
-    output.length = 0;
-    expect(await runCli(["paste"], deps)).toBe(0);
-    expect(clipboard.image?.bytes).toEqual(png);
-    expect(await runCli(["paste", "--image", "--out", imageOut], deps)).toBe(0);
-    expect(new Uint8Array(await Bun.file(imageOut).arrayBuffer())).toEqual(png);
+    try {
+      expect(await runCli(["copy", pngPath], deps)).toBe(0);
+      expect(clips.at(-1)?.payloadKind).toBe("file");
+      expect(clips.at(-1)?.mime).toBe("image/png");
+      expect(JSON.stringify(clips.at(-1))).not.toContain(paths.home);
+      expect(clips.at(-1)?.metadata?.ciphertext).not.toContain("unlimit.png");
+      expect(output.join("")).toContain("published image");
+      output.length = 0;
+      expect(await runCli(["paste"], deps)).toBe(0);
+      expect(new Uint8Array(await Bun.file(join(pasteDir, "unlimit.png")).arrayBuffer())).toEqual(png);
+      expect(clipboard.image).toBeNull();
+      expect(await runCli(["paste", "--image"], deps)).toBe(0);
+      expect(clipboard.image?.bytes).toEqual(png);
+      clipboard.image = null;
+      expect(await runCli(["paste", "--image", "--out", imageOut], deps)).toBe(0);
+      expect(new Uint8Array(await Bun.file(imageOut).arrayBuffer())).toEqual(png);
 
-    output.length = 0;
-    expect(await runCli(["copy", "--path", pngPath], deps)).toBe(0);
-    expect(clips.at(-1)?.payloadKind).toBe("file");
-    expect(clips.at(-1)?.mime).toBe("image/png");
-    expect(await runCli(["copy", "--image", fakePngPath], deps)).not.toBe(0);
-    expect(output.join("")).toContain("requires PNG image bytes");
-    output.length = 0;
-    expect(await runCli(["copy", fakePngPath], deps)).toBe(0);
-    expect(clips.at(-1)?.payloadKind).toBe("file");
-    output.length = 0;
-    expect(await runCli(["copy", largePngPath], deps)).toBe(0);
-    expect(clips.at(-1)?.payloadKind).toBe("file");
-    expect(clips.at(-1)?.mime).toBe("image/png");
-    expect(clips.at(-1)?.storageKind).toBe("r2");
-    expect(await runCli(["paste", "--image", "--out", largeImageOut], deps)).toBe(0);
-    expect(new Uint8Array(await Bun.file(largeImageOut).arrayBuffer())).toEqual(largePng);
-    clipboard.image = null;
-    expect(await runCli(["copy", "--file", largePngPath], deps)).toBe(0);
-    expect(clips.at(-1)?.payloadKind).toBe("file");
-    expect(clips.at(-1)?.mime).toBe("image/png");
-    expect(await runCli(["paste"], deps)).toBe(0);
-    const pastedLargeFileImage = clipboard.image as { mime: "image/png"; bytes: Uint8Array } | null;
-    expect(pastedLargeFileImage?.bytes).toEqual(largePng);
+      output.length = 0;
+      expect(await runCli(["copy", "--path", pngPath], deps)).toBe(0);
+      expect(clips.at(-1)?.payloadKind).toBe("file");
+      expect(clips.at(-1)?.mime).toBe("image/png");
+      expect(await runCli(["copy", "--image", fakePngPath], deps)).not.toBe(0);
+      expect(output.join("")).toContain("requires PNG image bytes");
+      output.length = 0;
+      expect(await runCli(["copy", fakePngPath], deps)).toBe(0);
+      expect(clips.at(-1)?.payloadKind).toBe("file");
+      output.length = 0;
+      expect(await runCli(["copy", largePngPath], deps)).toBe(0);
+      expect(clips.at(-1)?.payloadKind).toBe("file");
+      expect(clips.at(-1)?.mime).toBe("image/png");
+      expect(clips.at(-1)?.storageKind).toBe("r2");
+      expect(await runCli(["paste", "--image", "--out", largeImageOut], deps)).toBe(0);
+      expect(new Uint8Array(await Bun.file(largeImageOut).arrayBuffer())).toEqual(largePng);
+      clipboard.image = null;
+      expect(await runCli(["copy", "--file", largePngPath], deps)).toBe(0);
+      expect(clips.at(-1)?.payloadKind).toBe("file");
+      expect(clips.at(-1)?.mime).toBe("image/png");
+      expect(await runCli(["paste"], deps)).toBe(0);
+      expect(new Uint8Array(await Bun.file(join(pasteDir, "large.png")).arrayBuffer())).toEqual(largePng);
+      expect(clipboard.image).toBeNull();
 
-    output.length = 0;
-    expect(await runCli(["copy", filePath], deps)).toBe(0);
-    const fileSeq = clips.at(-1)?.seq;
-    expect(clips.at(-1)?.payloadKind).toBe("file");
-    output.length = 0;
-    expect(await runCli(["paste"], deps)).toBe(2);
-    expect(output.join("")).toContain("file clip needs --out");
-    expect(await runCli(["paste", "--out", out], deps)).toBe(0);
-    expect(new Uint8Array(await Bun.file(out).arrayBuffer())).toEqual(new Uint8Array([9, 8, 7, 6]));
-    expect(await runCli(["paste", "--file", "--seq", String(fileSeq), "--out", outSeq], deps)).toBe(0);
-    expect(new Uint8Array(await Bun.file(outSeq).arrayBuffer())).toEqual(new Uint8Array([9, 8, 7, 6]));
-    output.length = 0;
-    expect(await runCli(["paste", "--file", "--seq", String(fileSeq)], deps)).toBe(2);
-    expect(output.join("")).toContain("file clip needs --out");
+      output.length = 0;
+      expect(await runCli(["copy", filePath], deps)).toBe(0);
+      const fileSeq = clips.at(-1)?.seq;
+      expect(clips.at(-1)?.payloadKind).toBe("file");
+      output.length = 0;
+      expect(await runCli(["history"], deps)).toBe(0);
+      expect(output.join("")).toContain('"notes.bin"');
+      output.length = 0;
+      expect(await runCli(["paste"], deps)).toBe(0);
+      expect(new Uint8Array(await Bun.file(join(pasteDir, "notes.bin")).arrayBuffer())).toEqual(new Uint8Array([9, 8, 7, 6]));
+      expect(await runCli(["paste", "--out", out], deps)).toBe(0);
+      expect(new Uint8Array(await Bun.file(out).arrayBuffer())).toEqual(new Uint8Array([9, 8, 7, 6]));
+      expect(await runCli(["paste", "--file", "--seq", String(fileSeq), "--out", outSeq], deps)).toBe(0);
+      expect(new Uint8Array(await Bun.file(outSeq).arrayBuffer())).toEqual(new Uint8Array([9, 8, 7, 6]));
+      expect(await runCli(["paste", "--file", "--seq", String(fileSeq)], deps)).toBe(0);
+      expect(new Uint8Array(await Bun.file(join(pasteDir, "notes.bin")).arrayBuffer())).toEqual(new Uint8Array([9, 8, 7, 6]));
+    } finally {
+      process.chdir(previousCwd);
+    }
   });
 
   it("sends and pastes bounded file payloads through the R2-backed API path", async () => {

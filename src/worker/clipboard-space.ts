@@ -37,6 +37,8 @@ interface ClipRow extends Record<string, SqlStorageValue> {
   payload_id: string | null;
   r2_key: string | null;
   finalized_at: number | null;
+  metadata_nonce: string | null;
+  metadata_ciphertext: string | null;
 }
 
 export class ClipboardSpace extends DurableObject<Env> {
@@ -60,8 +62,9 @@ export class ClipboardSpace extends DurableObject<Env> {
     this.ctx.storage.sql.exec(
       `INSERT INTO clips (
         clip_id, origin_device_id, created_at, expires_at, payload_kind, mime,
-        byte_len, key_version, nonce, aad_hash, inline_ciphertext
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        byte_len, key_version, nonce, aad_hash, inline_ciphertext,
+        metadata_nonce, metadata_ciphertext
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       clip.clipId,
       actor.deviceId,
       clip.createdAt,
@@ -72,7 +75,9 @@ export class ClipboardSpace extends DurableObject<Env> {
       clip.keyVersion,
       clip.nonce,
       clip.aadHash,
-      clip.ciphertext
+      clip.ciphertext,
+      clip.metadata?.nonce ?? null,
+      clip.metadata?.ciphertext ?? null
     );
     if (clip.expiresAt !== null) {
       await this.scheduleNextAlarm();
@@ -93,8 +98,8 @@ export class ClipboardSpace extends DurableObject<Env> {
       `INSERT INTO clips (
         clip_id, origin_device_id, created_at, expires_at, payload_kind, mime,
         byte_len, key_version, nonce, aad_hash, inline_ciphertext, storage_kind,
-        payload_id, r2_key, finalized_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 'r2', ?, '', ?)`,
+        payload_id, r2_key, finalized_at, metadata_nonce, metadata_ciphertext
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 'r2', ?, '', ?, ?, ?)`,
       clip.clipId,
       actor.deviceId,
       clip.createdAt,
@@ -106,7 +111,9 @@ export class ClipboardSpace extends DurableObject<Env> {
       clip.nonce,
       clip.aadHash,
       payloadId,
-      Date.now()
+      Date.now(),
+      clip.metadata?.nonce ?? null,
+      clip.metadata?.ciphertext ?? null
     );
     const inserted = this.ctx.storage.sql
       .exec<ClipRow>("SELECT * FROM clips WHERE clip_id = ?", clip.clipId)
@@ -276,7 +283,9 @@ export class ClipboardSpace extends DurableObject<Env> {
         storage_kind TEXT NOT NULL DEFAULT 'inline',
         payload_id TEXT,
         r2_key TEXT,
-        finalized_at INTEGER
+        finalized_at INTEGER,
+        metadata_nonce TEXT,
+        metadata_ciphertext TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_clips_created_at ON clips(created_at);
       CREATE INDEX IF NOT EXISTS idx_clips_expires_at ON clips(expires_at);
@@ -293,6 +302,8 @@ export class ClipboardSpace extends DurableObject<Env> {
     this.addColumnIfMissing("clips", "payload_id", "TEXT");
     this.addColumnIfMissing("clips", "r2_key", "TEXT");
     this.addColumnIfMissing("clips", "finalized_at", "INTEGER");
+    this.addColumnIfMissing("clips", "metadata_nonce", "TEXT");
+    this.addColumnIfMissing("clips", "metadata_ciphertext", "TEXT");
   }
 
   private addColumnIfMissing(table: string, column: string, definition: string): void {
@@ -336,5 +347,11 @@ function rowToClip(row: ClipRow): StoredClip {
   };
   if (row.payload_id !== null) clip.payloadId = row.payload_id;
   if (row.r2_key !== null) clip.r2Key = row.r2_key;
+  if (row.metadata_nonce !== null && row.metadata_ciphertext !== null) {
+    clip.metadata = {
+      nonce: row.metadata_nonce,
+      ciphertext: row.metadata_ciphertext
+    };
+  }
   return clip;
 }
