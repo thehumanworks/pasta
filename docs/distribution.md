@@ -16,21 +16,21 @@ The bin target has a Bun shebang and the package has no `install`, `postinstall`
 
 - `bun run src/cli.ts --version`
 - `bunx --bun -p file:$PWD pasta --version`
-- `mise use -g github:thehumanworks/pasta@0.1.1`
+- `mise use -g github:thehumanworks/pasta@0.1.2`
 - `bun pm pack --dry-run`
 
 GitHub `bunx` proof is verified against the public repo:
 
 ```bash
 bunx --bun -p github:thehumanworks/pasta pasta --version
-bunx --bun github:thehumanworks/pasta#v0.1.1 --version
-mise use -g github:thehumanworks/pasta@0.1.1
+bunx --bun github:thehumanworks/pasta#v0.1.2 --version
+mise use -g github:thehumanworks/pasta@0.1.2
 ```
 
 The public repo and tag should remain visible without SSH credentials:
 
 ```bash
-git ls-remote origin HEAD refs/heads/main refs/tags/v0.1.1
+git ls-remote origin HEAD refs/heads/main refs/tags/v0.1.2
 curl -fsS -I https://api.github.com/repos/thehumanworks/pasta/tarball/
 ```
 
@@ -41,7 +41,7 @@ cannot mask a remote packaging problem:
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 BUN_INSTALL_CACHE_DIR="$tmp" bunx --bun -p github:thehumanworks/pasta pasta --version
-BUN_INSTALL_CACHE_DIR="$tmp" bunx --bun github:thehumanworks/pasta#v0.1.1 --version
+BUN_INSTALL_CACHE_DIR="$tmp" bunx --bun github:thehumanworks/pasta#v0.1.2 --version
 ```
 
 ## GitHub Release Assets For Mise
