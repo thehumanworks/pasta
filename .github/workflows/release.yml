@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*.*.*"
   workflow_dispatch:
@@ -23,18 +25,22 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      PUBLISH_RELEASE: ${{ github.event_name == 'workflow_dispatch' || github.ref_type == 'tag' }}
+      ARTIFACT_SUFFIX: ${{ github.ref_type == 'branch' && github.ref_name == 'main' && 'latest' || (github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name) }}
     steps:
-      - name: Validate tag
+      - name: Validate release context
         run: |
-          case "$RELEASE_TAG" in
-            v[0-9]*.[0-9]*.[0-9]*) ;;
-            *) echo "expected semantic tag like v0.1.1, got $RELEASE_TAG" >&2; exit 1 ;;
-          esac
+          if [ "$PUBLISH_RELEASE" = "true" ]; then
+            case "$RELEASE_REF" in
+              v[0-9]*.[0-9]*.[0-9]*) ;;
+              *) echo "expected semantic tag like v0.1.1, got $RELEASE_REF" >&2; exit 1 ;;
+            esac
+          fi
 
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -52,24 +58,25 @@ jobs:
 
       - name: Build release assets
         env:
-          PASTA_RELEASE_VERSION: ${{ env.RELEASE_TAG }}
+          PASTA_RELEASE_VERSION: ${{ env.PUBLISH_RELEASE == 'true' && env.RELEASE_REF || '' }}
         run: bun run build:release
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pasta-${{ env.RELEASE_TAG }}-release-assets
+          name: pasta-${{ env.ARTIFACT_SUFFIX }}-release-assets
           path: dist/release/*
           if-no-files-found: error
 
       - name: Publish GitHub release
+        if: env.PUBLISH_RELEASE == 'true'
         run: |
           assets=(dist/release/pasta-* dist/release/checksums.txt)
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          if gh release view "$RELEASE_REF" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_REF" "${assets[@]}" --clobber
           else
-            gh release create "$RELEASE_TAG" "${assets[@]}" \
+            gh release create "$RELEASE_REF" "${assets[@]}" \
               --verify-tag \
-              --title "$RELEASE_TAG" \
+              --title "$RELEASE_REF" \
               --notes-file dist/release/RELEASE_NOTES.md
           fi
