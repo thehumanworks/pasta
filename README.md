@@ -212,6 +212,12 @@ pasta history paste 12
 pasta history paste 12 --clipboard
 ```
 
+Delete a selected history entry:
+
+```bash
+pasta history delete 12
+```
+
 ## Daemon Examples
 
 Run one clipboard poll without publishing:

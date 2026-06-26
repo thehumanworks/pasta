@@ -24,7 +24,7 @@ describe("CLI", () => {
       [["bootstrap", "--help"], "pasta bootstrap --endpoint https://pasta.nothuman.work"],
       [["copy", "--help"], "pasta copy ./Downloads/unlimit.png"],
       [["paste", "--help"], "pasta paste --out ./received.bin"],
-      [["history", "--help"], "pasta history paste 7 --clipboard"],
+      [["history", "--help"], "pasta history delete 7"],
       [["daemon", "--help"], "pasta daemon --interval-ms 2000"],
       [["pair", "--help"], "pasta pair consume"],
       [["devices", "--help"], "pasta devices revoke dev_example"],
@@ -85,6 +85,10 @@ describe("CLI", () => {
       }
       if (path === "/v1/clips/latest") return { clip: clips.at(-1) ?? null };
       if (path.startsWith("/v1/clips/history")) return { clips: [...clips].reverse() };
+      if (method === "DELETE" && path === "/v1/clips/1") {
+        const deleted = clips.splice(0, 1).length;
+        return { deleted, deletedObjects: 0 };
+      }
       if (path === "/v1/clips/1") return { clip: clips[0] };
       throw new Error(`unexpected ${method} ${path}`);
     });
@@ -110,6 +114,9 @@ describe("CLI", () => {
     output.length = 0;
     expect(await runCli(["daemon", "--once"], deps)).toBe(0);
     expect(JSON.parse(output.join("")).published).toBe(0);
+    output.length = 0;
+    expect(await runCli(["history", "delete", "1"], deps)).toBe(0);
+    expect(output.join("")).toContain("deleted 1");
   });
 
   it("copies and pastes inline image clipboard bytes", async () => {
@@ -196,7 +203,10 @@ describe("CLI", () => {
     const deps = { io: capture(output), paths, secrets, clipboard, clientFactory: () => client };
 
     expect(await runCli(["copy", pngPath], deps)).toBe(0);
-    expect(clips.at(-1)?.payloadKind).toBe("image");
+    expect(clips.at(-1)?.payloadKind).toBe("file");
+    expect(clips.at(-1)?.mime).toBe("image/png");
+    expect(output.join("")).toContain("published image");
+    output.length = 0;
     expect(await runCli(["paste"], deps)).toBe(0);
     expect(clipboard.image?.bytes).toEqual(png);
     expect(await runCli(["paste", "--image", "--out", imageOut], deps)).toBe(0);
@@ -204,7 +214,8 @@ describe("CLI", () => {
 
     output.length = 0;
     expect(await runCli(["copy", "--path", pngPath], deps)).toBe(0);
-    expect(clips.at(-1)?.payloadKind).toBe("image");
+    expect(clips.at(-1)?.payloadKind).toBe("file");
+    expect(clips.at(-1)?.mime).toBe("image/png");
     expect(await runCli(["copy", "--image", fakePngPath], deps)).not.toBe(0);
     expect(output.join("")).toContain("requires PNG image bytes");
     output.length = 0;
@@ -212,10 +223,18 @@ describe("CLI", () => {
     expect(clips.at(-1)?.payloadKind).toBe("file");
     output.length = 0;
     expect(await runCli(["copy", largePngPath], deps)).toBe(0);
-    expect(clips.at(-1)?.payloadKind).toBe("image");
+    expect(clips.at(-1)?.payloadKind).toBe("file");
+    expect(clips.at(-1)?.mime).toBe("image/png");
     expect(clips.at(-1)?.storageKind).toBe("r2");
     expect(await runCli(["paste", "--image", "--out", largeImageOut], deps)).toBe(0);
     expect(new Uint8Array(await Bun.file(largeImageOut).arrayBuffer())).toEqual(largePng);
+    clipboard.image = null;
+    expect(await runCli(["copy", "--file", largePngPath], deps)).toBe(0);
+    expect(clips.at(-1)?.payloadKind).toBe("file");
+    expect(clips.at(-1)?.mime).toBe("image/png");
+    expect(await runCli(["paste"], deps)).toBe(0);
+    const pastedLargeFileImage = clipboard.image as { mime: "image/png"; bytes: Uint8Array } | null;
+    expect(pastedLargeFileImage?.bytes).toEqual(largePng);
 
     output.length = 0;
     expect(await runCli(["copy", filePath], deps)).toBe(0);

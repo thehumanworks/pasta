@@ -77,6 +77,15 @@ export const PROTOCOL_ENDPOINTS: ProtocolEndpoint[] = [
     mutation: "D1 device last_seen_at"
   },
   {
+    command: "history delete",
+    method: "DELETE",
+    path: "/v1/clips/:seq",
+    auth: "device-signature",
+    request: "selected sequence",
+    response: "delete count and deleted object count",
+    mutation: "Durable Object clip row delete, optional R2 object delete"
+  },
+  {
     command: "pair",
     method: "POST",
     path: "/v1/pairing/open",

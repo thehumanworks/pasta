@@ -67,6 +67,7 @@ The Worker rejects stale timestamps outside five minutes, bad body hashes, unkno
 | `copy` | `POST /v1/clips` | device signature | encrypted text envelope | assigned `seq` and clip metadata | Durable Object `clips` |
 | `paste` | `GET /v1/clips/latest` or `/v1/clips/:seq` | device signature | empty signed request | encrypted clip | D1 `last_seen_at` |
 | `history` | `GET /v1/clips/history` | device signature | `before`, `limit` query | encrypted clip list | D1 `last_seen_at` |
+| `history delete` | `DELETE /v1/clips/:seq` | device signature | selected sequence | delete count and deleted object count | DO clip row delete, optional R2 object delete |
 | `pair request` | `POST /v1/pairing/open` | none | temporary session, short-code hash, new-device public keys | pending session | D1 `pairing_sessions` |
 | `devices approve` | `POST /v1/pairing/approve` | device signature | short-code hash, wrapped group-key grant | approved new device | D1 `devices`, D1 pairing row, DO `wrapped_keys` |
 | `pair consume` | `POST /v1/pairing/consume` | none | session id and short-code hash | wrapped group key once | D1 `consumed_at` |
@@ -77,4 +78,3 @@ The Worker rejects stale timestamps outside five minutes, bad body hashes, unkno
 ## Reset
 
 Reset creates a new encrypted space and local group key. Old remote ciphertext may remain until retention cleanup, but it is no longer reachable through the new `routing_id` and cannot be decrypted after local keys are deleted. Reset does not delete unrelated local secrets.
-

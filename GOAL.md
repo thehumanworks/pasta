@@ -72,6 +72,7 @@ flowchart LR
 6. [Binary payloads and hardening](docs/goals/06-binary-payloads-and-hardening.md)
 7. [Unified copy/paste UX](docs/goals/07-unified-copy-paste-ux.md)
 8. [GitHub release artifacts](docs/goals/08-github-release-artifacts.md)
+9. [Image copy reliability and history delete](docs/goals/09-image-copy-and-history-delete.md)
 
 ## Research Pack
 

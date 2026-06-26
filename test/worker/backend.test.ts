@@ -134,6 +134,12 @@ describe("Worker backend", () => {
     const imageBody = await imageDownload.json() as { clip: StoredClip; ciphertext: string };
     expect(imageBody.clip.payloadKind).toBe("image");
     expect(decryptBytesClip(groupKey, device.accountId, device.routingId, { ...imageBody.clip, ciphertext: imageBody.ciphertext })).toEqual(imageBytes);
+    expect(await env.BLOBS.get(imageStored.clip.r2Key!)).toBeTruthy();
+    const deletedImage = await signedFetch(device, "DELETE", `/v1/clips/${imageStored.clip.seq}`);
+    await expectStatus(deletedImage, 200);
+    expect(await deletedImage.json()).toMatchObject({ seq: imageStored.clip.seq, deleted: 1, deletedObjects: 1 });
+    expect(await env.BLOBS.get(imageStored.clip.r2Key!)).toBeNull();
+    expect((await signedFetch(device, "GET", `/v1/files/${imageStored.clip.seq}`)).status).toBe(404);
 
     const expiredClip = encryptBytesClip({
       accountId: device.accountId,

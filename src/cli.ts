@@ -263,7 +263,7 @@ async function copyCommand(
 
   if (filePath) {
     const published = await publishPath(config, secrets, client, filePath, mode, option(argv, "--mime"));
-    io.stdout(published.payloadKind === "image" ? "published image\n" : `published file ${published.seq}\n`);
+    io.stdout(clipIsImageLike(published) ? "published image\n" : `published file ${published.seq}\n`);
     return ExitCode.ok;
   }
 
@@ -310,10 +310,10 @@ async function publishPath(
   const isPng = isPngBytes(bytes);
   if (mode === "image") {
     if (!isPng) throw new Error("copy --image requires PNG image bytes");
-    return publishImagePayload(config, secrets, client, bytes, "image/png");
+    return publishFilePayload(config, secrets, client, bytes, explicitMime ?? "image/png");
   }
   if (mode === "auto" && isPng) {
-    return publishImagePayload(config, secrets, client, bytes, "image/png");
+    return publishFilePayload(config, secrets, client, bytes, explicitMime ?? "image/png");
   }
   return publishFilePayload(config, secrets, client, bytes, mime);
 }
@@ -367,7 +367,7 @@ async function pasteCommand(
     io.stderr(`latest clip is ${clip.payloadKind}, not file\n`);
     return ExitCode.unavailable;
   }
-  if (clip.payloadKind === "file" && !out) {
+  if (clip.payloadKind === "file" && !out && !clipIsImageLike(clip)) {
     io.stderr("file clip needs --out <path>\n");
     return ExitCode.usage;
   }
@@ -541,9 +541,13 @@ async function historyCommand(
   const config = await readConfig(paths.configPath);
   const client = clientFor(config, secrets, deps);
   if (argv[0] === "paste") {
-    const seq = argv[1];
-    if (!seq) return ExitCode.usage;
-    const response = await client.request<{ clip: StoredClip }>("GET", `/v1/clips/${Number.parseInt(seq, 10)}`);
+    const seq = parseSeq(argv[1]);
+    if (seq === null) return ExitCode.usage;
+    const response = await client.request<{ clip: StoredClip }>("GET", `/v1/clips/${seq}`);
+    if (response.clip.payloadKind !== "text") {
+      io.stderr(`history paste only supports text clips; use pasta paste --seq ${seq} --out <path>\n`);
+      return ExitCode.usage;
+    }
     const plaintext = await decryptStored(config, secrets, response.clip);
     if (argv.includes("--clipboard")) {
       await clipboard.writeText(plaintext);
@@ -552,10 +556,23 @@ async function historyCommand(
     }
     return ExitCode.ok;
   }
+  if (argv[0] === "delete") {
+    const seq = parseSeq(argv[1]);
+    if (seq === null) return ExitCode.usage;
+    const response = await client.request<{ deleted: number; deletedObjects: number }>("DELETE", `/v1/clips/${seq}`);
+    if (response.deleted === 0) {
+      io.stderr(`no history entry ${seq}\n`);
+      return ExitCode.unavailable;
+    }
+    io.stdout(`deleted ${seq}\n`);
+    return ExitCode.ok;
+  }
   const response = await client.request<{ clips: StoredClip[] }>("GET", "/v1/clips/history?limit=50");
   const showPlaintext = argv.includes("--show");
   for (const clip of response.clips) {
-    const rendered = showPlaintext ? await decryptStored(config, secrets, clip) : `${clip.byteLen} bytes encrypted`;
+    const rendered = showPlaintext && clip.payloadKind === "text"
+      ? await decryptStored(config, secrets, clip)
+      : renderHistoryClip(clip);
     io.stdout(`${clip.seq}\t${new Date(clip.createdAt).toISOString()}\t${rendered}\n`);
   }
   return ExitCode.ok;
@@ -774,7 +791,17 @@ function isClipboardPng(mime: string): boolean {
 }
 
 function clipIsImageLike(clip: StoredClip): boolean {
-  return clip.payloadKind === "image";
+  return clip.payloadKind === "image" || clip.mime.startsWith("image/");
+}
+
+function renderHistoryClip(clip: StoredClip): string {
+  return `${clip.payloadKind} ${clip.mime} ${clip.byteLen} bytes encrypted`;
+}
+
+function parseSeq(value: string | undefined): number | null {
+  if (!value) return null;
+  const seq = Number.parseInt(value, 10);
+  return Number.isSafeInteger(seq) && seq > 0 && String(seq) === value ? seq : null;
 }
 
 function isPngBytes(bytes: Uint8Array): boolean {
@@ -831,15 +858,16 @@ Examples:
   pasta paste --image --out ./screenshot.png
   pasta paste --file --seq 21 --out ./received.zip
 `,
-    history: `usage: pasta history [--show] | pasta history paste <seq> [--clipboard]
+    history: `usage: pasta history [--show] | pasta history paste <seq> [--clipboard] | pasta history delete <seq>
 
-Lists encrypted history metadata or pastes a selected text entry.
+Lists encrypted history metadata, pastes a selected text entry, or deletes a selected history entry.
 
 Examples:
   pasta history
   pasta history --show
   pasta history paste 7
   pasta history paste 7 --clipboard
+  pasta history delete 7
 `,
     daemon: `usage: pasta daemon [--once] [--dry-run] [--interval-ms <n>]
 

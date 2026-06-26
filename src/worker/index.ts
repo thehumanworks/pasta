@@ -99,6 +99,10 @@ async function route(request: Request, env: Env): Promise<Response> {
     return json({ clips: history });
   }
   const clipMatch = url.pathname.match(/^\/v1\/clips\/(\d+)$/u);
+  if (request.method === "DELETE" && clipMatch?.[1]) {
+    const result = await space(env, auth).deleteHistoryClip(actorOf(auth), Number.parseInt(clipMatch[1], 10));
+    return json({ seq: Number.parseInt(clipMatch[1], 10), ...result });
+  }
   if (request.method === "GET" && clipMatch?.[1]) {
     const clip = await space(env, auth).getClip(actorOf(auth), Number.parseInt(clipMatch[1], 10));
     return clip ? json({ clip }) : json({ error: "not_found" }, 404);

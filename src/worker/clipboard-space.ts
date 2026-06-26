@@ -138,6 +138,22 @@ export class ClipboardSpace extends DurableObject<Env> {
     return { deleted: 1 };
   }
 
+  async deleteHistoryClip(_actor: Actor, seq: number): Promise<{ deleted: number; deletedObjects: number }> {
+    this.initializeSchema();
+    const row = this.ctx.storage.sql
+      .exec<ClipRow>("SELECT * FROM clips WHERE seq = ? LIMIT 1", seq)
+      .toArray()[0];
+    if (!row) return { deleted: 0, deletedObjects: 0 };
+    let deletedObjects = 0;
+    if (row.r2_key) {
+      await this.env.BLOBS.delete(row.r2_key);
+      deletedObjects = 1;
+    }
+    this.ctx.storage.sql.exec("DELETE FROM clips WHERE seq = ?", seq);
+    await this.scheduleNextAlarm();
+    return { deleted: 1, deletedObjects };
+  }
+
   getLatest(_actor: Actor): StoredClip | null {
     this.initializeSchema();
     const row = this.ctx.storage.sql
