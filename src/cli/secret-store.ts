@@ -47,11 +47,45 @@ export function secretFileForHome(home: string): string {
 
 export function defaultSecretStoreForHome(home: string): SecretStore {
   const service = secretServiceForHome(home);
-  const mirrors: SecretStore[] = [];
+  const mirrors: SecretStore[] = [new TimedSecretStore(new BunSecretStore(service), "Bun.secrets")];
   if (process.platform === "darwin") {
-    mirrors.push(new MacosKeychainSecretStore(service));
+    mirrors.push(new TimedSecretStore(new MacosKeychainSecretStore(service), "macOS Keychain"));
   }
   return new ResilientSecretStore(new FileSecretStore(secretFileForHome(home)), mirrors);
+}
+
+export class TimedSecretStore implements SecretStore {
+  constructor(
+    private readonly store: SecretStore,
+    private readonly label: string,
+    private readonly timeoutMs = 1000
+  ) {}
+
+  async get(name: SecretNameValue): Promise<string | null> {
+    return this.withTimeout(this.store.get(name), "get", name);
+  }
+
+  async set(name: SecretNameValue, value: string): Promise<void> {
+    await this.withTimeout(this.store.set(name, value), "set", name);
+  }
+
+  async delete(name: SecretNameValue): Promise<void> {
+    await this.withTimeout(this.store.delete(name), "delete", name);
+  }
+
+  private async withTimeout<T>(operation: Promise<T>, action: string, name: SecretNameValue): Promise<T> {
+    let timer: Timer | undefined;
+    try {
+      return await Promise.race([
+        operation,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`${this.label} ${action} ${name} timed out`)), this.timeoutMs);
+        })
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
 }
 
 export class ResilientSecretStore implements SecretStore {
@@ -88,16 +122,12 @@ export class ResilientSecretStore implements SecretStore {
 
   async set(name: SecretNameValue, value: string): Promise<void> {
     await this.fileStore.set(name, value);
-    for (const store of this.mirrorStores) {
-      await store.set(name, value).catch(() => undefined);
-    }
+    await Promise.all(this.mirrorStores.map((store) => store.set(name, value).catch(() => undefined)));
   }
 
   async delete(name: SecretNameValue): Promise<void> {
     await this.fileStore.delete(name);
-    for (const store of this.mirrorStores) {
-      await store.delete(name).catch(() => undefined);
-    }
+    await Promise.all(this.mirrorStores.map((store) => store.delete(name).catch(() => undefined)));
   }
 }
 
@@ -186,7 +216,7 @@ export class MemorySecretStore implements SecretStore {
 export async function requireSecret(store: SecretStore, name: SecretNameValue): Promise<string> {
   const value = await store.get(name);
   if (!value) {
-    throw new Error(`missing ${name}; OS secret storage is required and plaintext fallback is disabled`);
+    throw new Error(`missing ${name}; run pasta bootstrap or pair consume to create $PASTA_HOME/secrets.json`);
   }
   return value;
 }

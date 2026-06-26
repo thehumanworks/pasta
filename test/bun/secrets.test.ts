@@ -4,10 +4,13 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   BunSecretStore,
+  defaultSecretStoreForHome,
   FileSecretStore,
   MacosKeychainSecretStore,
   ResilientSecretStore,
   SecretName,
+  secretServiceForHome,
+  TimedSecretStore,
   type SecretStore
 } from "../../src/cli/secret-store";
 
@@ -58,6 +61,33 @@ describe("BunSecretStore", () => {
     const store = new ResilientSecretStore(fileStore, [mirrorStore]);
     expect(await store.get(SecretName.groupKey)).toBe("mirrored-secret");
     expect(await fileStore.get(SecretName.groupKey)).toBe("mirrored-secret");
+  });
+
+  it("migrates existing Bun.secrets entries into the local fallback", async () => {
+    const home = await mkdtemp(join(tmpdir(), "pasta-secrets-"));
+    const service = secretServiceForHome(home);
+    const legacyStore = new BunSecretStore(service);
+    await legacyStore.set(SecretName.signingPrivateKey, "legacy-signing-key");
+    try {
+      const store = defaultSecretStoreForHome(home);
+      expect(await store.get(SecretName.signingPrivateKey)).toBe("legacy-signing-key");
+      expect(await new FileSecretStore(join(home, "secrets.json")).get(SecretName.signingPrivateKey)).toBe("legacy-signing-key");
+    } finally {
+      await legacyStore.delete(SecretName.signingPrivateKey);
+      await new FileSecretStore(join(home, "secrets.json")).delete(SecretName.signingPrivateKey);
+    }
+  });
+
+  it("does not let slow mirror stores block local secret writes", async () => {
+    const fileStore = new FileSecretStore(join(await mkdtemp(join(tmpdir(), "pasta-secrets-")), "secrets.json"));
+    const slowStore: SecretStore = {
+      get: async () => new Promise<string | null>(() => undefined),
+      set: async () => new Promise<void>(() => undefined),
+      delete: async () => new Promise<void>(() => undefined)
+    };
+    const store = new ResilientSecretStore(fileStore, [new TimedSecretStore(slowStore, "slow", 10)]);
+    await store.set(SecretName.groupKey, "local-secret");
+    expect(await fileStore.get(SecretName.groupKey)).toBe("local-secret");
   });
 
   it("writes macOS Keychain items that security can read without a Bun.secrets call", async () => {

@@ -5,10 +5,10 @@ import { describe, expect, it } from "bun:test";
 import { clipboardCandidatesForPlatform, MemoryClipboardAdapter } from "../../src/cli/clipboard";
 import { FetchApiClient, MockApiClient } from "../../src/cli/client";
 import { readConfig, type PastaConfig, type Paths, writeConfig } from "../../src/cli/config";
-import { defaultSecretStoreForHome, MemorySecretStore, SecretName } from "../../src/cli/secret-store";
+import { BunSecretStore, defaultSecretStoreForHome, FileSecretStore, MemorySecretStore, SecretName, secretServiceForHome } from "../../src/cli/secret-store";
 import { runCli } from "../../src/cli";
 import { encryptTextClip, generateDeviceKeyMaterial, generateGroupKey } from "../../src/shared/crypto";
-import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, type StoredClip } from "../../src/shared/protocol";
+import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, SIGNATURE_HEADERS, type StoredClip } from "../../src/shared/protocol";
 import { shellSnippet } from "../../src/cli/shell";
 
 describe("CLI", () => {
@@ -90,6 +90,44 @@ describe("CLI", () => {
       await secrets.delete(SecretName.groupKey);
       await secrets.delete(SecretName.signingPrivateKey);
       await secrets.delete(SecretName.wrappingPrivateKey);
+    }
+  });
+
+  it("migrates legacy Bun.secrets signing keys for signed device commands", async () => {
+    const output: string[] = [];
+    const paths = await tempPaths();
+    const keyMaterial = generateDeviceKeyMaterial();
+    const config: PastaConfig = {
+      endpoint: "http://127.0.0.1:0",
+      accountId: "acct_legacy",
+      routingId: "space_legacy",
+      deviceId: "dev_legacy",
+      deviceName: "legacy",
+      verifyPublicKey: keyMaterial.signing.publicKey,
+      wrapPublicKey: keyMaterial.wrapping.publicKey,
+      keyVersion: 1
+    };
+    const legacyStore = new BunSecretStore(secretServiceForHome(paths.home));
+    await legacyStore.set(SecretName.signingPrivateKey, keyMaterial.signing.privateKey);
+    let sawSignature = false;
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        sawSignature = Boolean(request.headers.get(SIGNATURE_HEADERS.signature));
+        return Response.json({ devices: [{ deviceId: "dev_legacy", deviceName: "legacy", status: "active" }] });
+      }
+    });
+    try {
+      await writeConfig({ ...config, endpoint: `http://127.0.0.1:${server.port}` }, paths.configPath);
+      expect(await runCli(["devices", "list"], { io: capture(output), paths })).toBe(0);
+      expect(sawSignature).toBe(true);
+      expect(output.join("")).toContain("dev_legacy");
+      expect(await new FileSecretStore(join(paths.home, "secrets.json")).get(SecretName.signingPrivateKey)).toBe(keyMaterial.signing.privateKey);
+    } finally {
+      server.stop(true);
+      await legacyStore.delete(SecretName.signingPrivateKey);
+      await new FileSecretStore(join(paths.home, "secrets.json")).delete(SecretName.signingPrivateKey);
     }
   });
 
