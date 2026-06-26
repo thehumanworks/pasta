@@ -5,7 +5,7 @@ import { describe, expect, it } from "bun:test";
 import { clipboardCandidatesForPlatform, MemoryClipboardAdapter } from "../../src/cli/clipboard";
 import { FetchApiClient, MockApiClient } from "../../src/cli/client";
 import { readConfig, type PastaConfig, type Paths, writeConfig } from "../../src/cli/config";
-import { BunSecretStore, defaultSecretStoreForHome, FileSecretStore, MemorySecretStore, SecretName, secretServiceForHome } from "../../src/cli/secret-store";
+import { defaultSecretStoreForHome, FileSecretStore, MemorySecretStore, ResilientSecretStore, SecretName, type SecretStore } from "../../src/cli/secret-store";
 import { runCli } from "../../src/cli";
 import { encryptTextClip, generateDeviceKeyMaterial, generateGroupKey } from "../../src/shared/crypto";
 import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, SIGNATURE_HEADERS, type StoredClip } from "../../src/shared/protocol";
@@ -93,7 +93,7 @@ describe("CLI", () => {
     }
   });
 
-  it("migrates legacy Bun.secrets signing keys for signed device commands", async () => {
+  it("migrates legacy mirror signing keys for signed device commands", async () => {
     const output: string[] = [];
     const paths = await tempPaths();
     const keyMaterial = generateDeviceKeyMaterial();
@@ -107,8 +107,13 @@ describe("CLI", () => {
       wrapPublicKey: keyMaterial.wrapping.publicKey,
       keyVersion: 1
     };
-    const legacyStore = new BunSecretStore(secretServiceForHome(paths.home));
-    await legacyStore.set(SecretName.signingPrivateKey, keyMaterial.signing.privateKey);
+    const fileStore = new FileSecretStore(join(paths.home, "secrets.json"));
+    const legacyStore: SecretStore = {
+      get: async (name) => name === SecretName.signingPrivateKey ? keyMaterial.signing.privateKey : null,
+      set: async () => undefined,
+      delete: async () => undefined
+    };
+    const secrets = new ResilientSecretStore(fileStore, [legacyStore]);
     let sawSignature = false;
     const server = Bun.serve({
       hostname: "127.0.0.1",
@@ -120,14 +125,13 @@ describe("CLI", () => {
     });
     try {
       await writeConfig({ ...config, endpoint: `http://127.0.0.1:${server.port}` }, paths.configPath);
-      expect(await runCli(["devices", "list"], { io: capture(output), paths })).toBe(0);
+      expect(await runCli(["devices", "list"], { io: capture(output), paths, secrets })).toBe(0);
       expect(sawSignature).toBe(true);
       expect(output.join("")).toContain("dev_legacy");
-      expect(await new FileSecretStore(join(paths.home, "secrets.json")).get(SecretName.signingPrivateKey)).toBe(keyMaterial.signing.privateKey);
+      expect(await fileStore.get(SecretName.signingPrivateKey)).toBe(keyMaterial.signing.privateKey);
     } finally {
       server.stop(true);
-      await legacyStore.delete(SecretName.signingPrivateKey);
-      await new FileSecretStore(join(paths.home, "secrets.json")).delete(SecretName.signingPrivateKey);
+      await fileStore.delete(SecretName.signingPrivateKey);
     }
   });
 
