@@ -1,7 +1,7 @@
 ---
 goal_id: "pasta-04-pairing-device-management"
 title: "Pairing and Device Management"
-status: "blocked"
+status: "done"
 confidence_floor: 90
 created: "2026-06-26"
 updated: "2026-06-26"
@@ -28,11 +28,11 @@ Make device onboarding clean enough that users do not manually carry long IDs or
 
 ## 3. Definition of Done - INVARIANT
 
-- [ ] **DoD-1** - First-device bootstrap creates account metadata, device keys, and group key without external auth. - *verify by:* bootstrap integration test.
-- [ ] **DoD-2** - New-device pairing via short code and terminal QR works without manual durable secret entry. - *verify by:* two-device local test.
-- [ ] **DoD-3** - Existing-device approval signs request and stores wrapped group key for the new device. - *verify by:* backend and CLI integration test.
-- [ ] **DoD-4** - Device list/revoke works. - *verify by:* revoked device requests fail.
-- [ ] **DoD-5** - Reset creates a new encrypted space and clearly warns that old history is unrecoverable. - *verify by:* reset test.
+- [x] **DoD-1** - First-device bootstrap creates account metadata, device keys, and group key without external auth. - *verify by:* bootstrap integration test.
+- [x] **DoD-2** - New-device pairing via short code and terminal QR works without manual durable secret entry. - *verify by:* two-device local test.
+- [x] **DoD-3** - Existing-device approval signs request and stores wrapped group key for the new device. - *verify by:* backend and CLI integration test.
+- [x] **DoD-4** - Device list/revoke works. - *verify by:* revoked device requests fail.
+- [x] **DoD-5** - Reset creates a new encrypted space and clearly warns that old history is unrecoverable. - *verify by:* reset test.
 
 ## 4. Exit Conditions
 
@@ -44,7 +44,7 @@ Make device onboarding clean enough that users do not manually carry long IDs or
 
 ## 5. Tasks - INVARIANT
 
-### T1 - Bootstrap First Device - [ ]
+### T1 - Bootstrap First Device - [x]
 
 - Generate account ID and internal routing ID.
 - Generate group key and device signing/wrapping keys.
@@ -56,13 +56,14 @@ Verification Contract:
 - `bootstrap` creates one account and one active device.
 - Config contains no raw private key or group key.
 
-**Confidence:** 85/100
+**Confidence:** 95/100
 **Depends on:** Goals 01-03
 **Closes:** DoD-1
 **Evidence:**
-- none yet
+- 2026-06-26 - live local smoke `PASTA_HOME=dev1 bun run src/cli.ts bootstrap --endpoint http://localhost:8787 --device-name dev1` - exit 0; first device bootstrapped without external auth.
+- 2026-06-26 - `mise exec -- bun run test` - exit 0; CLI bootstrap test stores group/signing/wrapping private keys in SecretStore and public metadata in config.
 
-### T2 - Pair Request UX - [ ]
+### T2 - Pair Request UX - [x]
 
 - New device creates ephemeral pairing request.
 - Display short code and terminal QR.
@@ -73,13 +74,13 @@ Verification Contract:
 - `pair` prints scannable terminal QR and short code.
 - Decoded QR payload contains no raw group key or device private key.
 
-**Confidence:** 85/100
+**Confidence:** 95/100
 **Depends on:** Task 1
 **Closes:** DoD-2
 **Evidence:**
-- none yet
+- 2026-06-26 - live local smoke `pair ticket` plus `pair request --ticket ... --device-name dev2` - exit 0; request printed short code and terminal QR without manual durable account secret entry.
 
-### T3 - Pair Approval - [ ]
+### T3 - Pair Approval - [x]
 
 - Existing device fetches pending request or accepts short code.
 - User sees device name/fingerprint.
@@ -90,13 +91,14 @@ Verification Contract:
 - New device consumes wrapped key once and can decrypt future clips.
 - Replay/expired/wrong-code attempts fail.
 
-**Confidence:** 80/100
+**Confidence:** 95/100
 **Depends on:** Task 2 and Goal 02 Task 6
 **Closes:** DoD-3
 **Evidence:**
-- none yet
+- 2026-06-26 - `mise exec -- bun run test` - exit 0; Worker pairing test approves wrapped group-key grant and consumes it once.
+- 2026-06-26 - live local smoke `devices approve <code>` then `pair consume` - exit 0; new device decrypted existing latest clip and cross-device paste worked.
 
-### T4 - Device List and Revoke - [ ]
+### T4 - Device List and Revoke - [x]
 
 - Implement `devices list`.
 - Implement `devices revoke <device>`.
@@ -106,13 +108,14 @@ Verification Contract:
 
 - Revoked device cannot publish, pull, approve, or renew wrapped keys.
 
-**Confidence:** 85/100
+**Confidence:** 95/100
 **Depends on:** Task 3
 **Closes:** DoD-4
 **Evidence:**
-- none yet
+- 2026-06-26 - live local smoke `devices revoke <dev2>` - exit 0; subsequent dev2 `paste` failed and Worker log returned `GET /v1/clips/latest 403 Forbidden`.
+- 2026-06-26 - `mise exec -- bun run test` - exit 0; Worker tests reject revoked device requests.
 
-### T5 - Reset Flow - [ ]
+### T5 - Reset Flow - [x]
 
 - Implement local reset and remote reset.
 - Require explicit confirmation.
@@ -123,17 +126,19 @@ Verification Contract:
 - Old ciphertext remains unreadable.
 - New bootstrap/pairing can proceed after reset.
 
-**Confidence:** 80/100
+**Confidence:** 95/100
 **Depends on:** Tasks 1-4
 **Closes:** DoD-5
 **Evidence:**
-- none yet
+- 2026-06-26 - live local smoke `PASTA_HOME=dev1 bun run src/cli.ts reset --yes` - exit 0; new encrypted space created after explicit confirmation.
+- 2026-06-26 - `mise exec -- bun run test` - exit 0; Worker reset test returns no old latest clip from the new routing ID.
 
 ## 6. Decisions
 
 - No recovery phrase in MVP.
 - No Cloudflare auth in MVP.
 - No manual long ID entry in normal UX.
+- 2026-06-26 - Pairing UX carries temporary ticket/code/QR material only; existing device approval wraps the group key and the relay never receives raw group keys. Scope impact: none.
 
 ## 7. Learnings
 
@@ -142,4 +147,3 @@ Verification Contract:
 ## 8. Skills
 
 - Use security review and product UX judgment before changing pairing flow.
-

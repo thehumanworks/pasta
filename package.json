@@ -1,0 +1,42 @@
+{
+  "name": "pasta",
+  "version": "0.1.0",
+  "description": "Terminal-first encrypted clipboard relay for trusted desktop devices.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "bin": {
+    "pasta": "./src/cli.ts"
+  },
+  "files": [
+    "src",
+    "migrations",
+    "LICENSE",
+    "README.md",
+    "GOAL.md",
+    "wrangler.jsonc",
+    "worker-configuration.d.ts"
+  ],
+  "scripts": {
+    "test": "bun test test/bun && vitest run",
+    "test:bun": "bun test test/bun",
+    "test:worker": "vitest run",
+    "types": "wrangler types",
+    "check": "bun run types && bun test test/bun && vitest run",
+    "pack:list": "bun pm pack --dry-run"
+  },
+  "dependencies": {
+    "@noble/ciphers": "latest",
+    "@noble/curves": "latest",
+    "@noble/hashes": "latest",
+    "qrcode": "latest"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "latest",
+    "@types/bun": "latest",
+    "@types/qrcode": "latest",
+    "typescript": "latest",
+    "vitest": "latest",
+    "wrangler": "latest"
+  },
+  "trustedDependencies": []
+}

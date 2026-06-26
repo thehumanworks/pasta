@@ -7,7 +7,7 @@ This file is the fresh-session handoff for a Codex agent driving Pasta from plan
 1. Read root `AGENTS.md`.
 2. Read `GOAL.md`.
 3. Create the Moo orchestration workspace `pasta`.
-4. Spawn the initial Moo agent sessions.
+4. Spawn Moo agent sessions only for the current bounded verification or review slice.
 5. Read the active goal file under `docs/goals/`.
 6. Run `git status --short --branch`.
 7. Run `gdd_status.py --author` against the active goal before editing.
@@ -27,19 +27,24 @@ Use the `moo` MCP server as the coordination plane. The first Moo MCP call in a 
 Current active goal:
 
 ```bash
-python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/01-protocol-and-threat-model.md --author
+python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/05-distribution-and-terminal-integration.md
 ```
 
 ## Moo Agent Orchestration
 
 The lead agent owns coordination, final integration, and verification. Worker agents do bounded work in Moo sessions inside the `pasta` workspace. Do not use untracked local panes, ad hoc terminal windows, or memory-only task assignment for delivery work.
 
-Initial fanout:
+Historical initial fanout:
 
 1. `goal-01-protocol`: implementation owner for `docs/goals/01-protocol-and-threat-model.md`.
 2. `review-01-protocol`: read-only adversarial review of Goal 01 outputs, threat model, and crypto contract.
 3. `scout-02-backend`: read-only Cloudflare Worker/Durable Object scout for Goal 02 interfaces and blockers.
 4. `scout-03-cli`: read-only Bun CLI/daemon scout for Goal 03 interfaces and platform constraints.
+
+Those sessions are obsolete once Goals 01-04 are checkpointed done. For the
+current Goal 05 blocker, use a narrow read-only session to review public repo
+visibility, tag state, and `bunx` evidence. Do not spawn implementation agents
+for Goal 06 until Goal 05 reaches DONE.
 
 Spawn each session with `moo_create_session` using `workspace: "pasta"`, a descriptive `name`, and `agent: "codex"` unless a task explicitly needs another installed agent runtime. Send the full task brief with `moo_send_input` after creation. Each brief must include:
 

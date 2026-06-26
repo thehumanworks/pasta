@@ -27,8 +27,26 @@ Start with:
 
 ```bash
 git status --short --branch
-python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/01-protocol-and-threat-model.md --author
+python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/05-distribution-and-terminal-integration.md
 ```
 
-Then follow `docs/ORCHESTRATION.md`.
+Then follow `GOAL.md` and `docs/ORCHESTRATION.md`. Goals 01-04 are currently
+checkpointed as done; Goal 05 is blocked only on public GitHub `bunx` proof.
 
+## Local Development
+
+```bash
+bun install
+bun run types
+bun test test/bun
+bun run test:worker
+```
+
+Run the CLI locally:
+
+```bash
+bun run src/cli.ts --version
+bun run src/cli.ts doctor
+```
+
+The Worker uses `wrangler.jsonc`, D1 migrations in `migrations/`, and a SQLite-backed Durable Object named `ClipboardSpace`.
