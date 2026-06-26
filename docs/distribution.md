@@ -16,19 +16,21 @@ The bin target has a Bun shebang and the package has no `install`, `postinstall`
 
 - `bun run src/cli.ts --version`
 - `bunx --bun -p file:$PWD pasta --version`
+- `mise use -g github:thehumanworks/pasta`
 - `bun pm pack --dry-run`
 
 GitHub `bunx` proof is verified against the public repo:
 
 ```bash
 bunx --bun -p github:thehumanworks/pasta pasta --version
-bunx --bun github:thehumanworks/pasta#v0.1.0 --version
+bunx --bun github:thehumanworks/pasta#v0.1.1 --version
+mise use -g github:thehumanworks/pasta
 ```
 
 The public repo and tag should remain visible without SSH credentials:
 
 ```bash
-git ls-remote origin HEAD refs/heads/main refs/tags/v0.1.0
+git ls-remote origin HEAD refs/heads/main refs/tags/v0.1.1
 curl -fsS -I https://api.github.com/repos/thehumanworks/pasta/tarball/
 ```
 
@@ -39,7 +41,38 @@ cannot mask a remote packaging problem:
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 BUN_INSTALL_CACHE_DIR="$tmp" bunx --bun -p github:thehumanworks/pasta pasta --version
-BUN_INSTALL_CACHE_DIR="$tmp" bunx --bun github:thehumanworks/pasta#v0.1.0 --version
+BUN_INSTALL_CACHE_DIR="$tmp" bunx --bun github:thehumanworks/pasta#v0.1.1 --version
+```
+
+## GitHub Release Assets For Mise
+
+GitHub release assets are built by `.github/workflows/release.yml` for semver
+tags and manual dispatch. Each archive contains a root-level `pasta` or
+`pasta.exe` binary so mise's GitHub backend can autodetect the matching
+macOS, Linux, or Windows asset.
+
+Build release assets locally:
+
+```bash
+mise exec -- bun run build:release
+```
+
+Verify a release through isolated mise directories so global config is not
+modified during testing:
+
+```bash
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+MISE_DATA_DIR="$tmp/data" \
+MISE_CONFIG_DIR="$tmp/config" \
+MISE_CACHE_DIR="$tmp/cache" \
+MISE_STATE_DIR="$tmp/state" \
+  mise use -g github:thehumanworks/pasta
+MISE_DATA_DIR="$tmp/data" \
+MISE_CONFIG_DIR="$tmp/config" \
+MISE_CACHE_DIR="$tmp/cache" \
+MISE_STATE_DIR="$tmp/state" \
+  mise exec github:thehumanworks/pasta -- pasta --version
 ```
 
 ## Shell Integration

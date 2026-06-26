@@ -911,7 +911,7 @@ Examples:
 
 function helpText(): string {
   return `${[
-    "pasta 0.1.0",
+    `pasta ${PASTA_VERSION}`,
     "",
     "Commands:",
     "  bootstrap --endpoint <url> [--device-name <name>]",

@@ -71,6 +71,7 @@ flowchart LR
 5. [Distribution and terminal integration](docs/goals/05-distribution-and-terminal-integration.md)
 6. [Binary payloads and hardening](docs/goals/06-binary-payloads-and-hardening.md)
 7. [Unified copy/paste UX](docs/goals/07-unified-copy-paste-ux.md)
+8. [GitHub release artifacts](docs/goals/08-github-release-artifacts.md)
 
 ## Research Pack
 
@@ -89,15 +90,15 @@ Current verified state:
 - Goal 06 completed binary payloads and hardening after the text MVP public distribution proof. Image clipboard smoke is live on macOS; Linux/Windows image clipboard behavior remains a documented platform assumption for this environment.
 - Goal 07 completed the unified `copy`/`paste` image and file UX follow-up; old binary commands were removed after the follow-up no-compatibility requirement.
 
-The current next action is release/ops follow-through or a new goal, not another open GDD implementation subgoal:
+The current next action is release artifact verification:
 
 ```bash
-python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/07-unified-copy-paste-ux.md
+python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/08-github-release-artifacts.md
 mise exec -- bun run test
 mise exec -- bunx tsc --noEmit
 ```
 
-Any future work should add a new goal file before changing scope. Binary payload support preserves the end-to-end encryption boundary.
+Binary payload support preserves the end-to-end encryption boundary.
 
 ## Completion Criteria
 

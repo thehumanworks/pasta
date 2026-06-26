@@ -8,14 +8,14 @@ import { readConfig, type PastaConfig, type Paths, writeConfig } from "../../src
 import { MemorySecretStore, SecretName } from "../../src/cli/secret-store";
 import { runCli } from "../../src/cli";
 import { encryptTextClip, generateDeviceKeyMaterial, generateGroupKey } from "../../src/shared/crypto";
-import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, type StoredClip } from "../../src/shared/protocol";
+import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, type StoredClip } from "../../src/shared/protocol";
 import { shellSnippet } from "../../src/cli/shell";
 
 describe("CLI", () => {
   it("prints version and help", async () => {
     const output: string[] = [];
     expect(await runCli(["--version"], { io: capture(output) })).toBe(0);
-    expect(output.join("")).toContain("0.1.0");
+    expect(output.join("")).toContain(PASTA_VERSION);
     output.length = 0;
     expect(await runCli(["--help"], { io: capture(output) })).toBe(0);
     expect(output.join("")).toContain("bootstrap");

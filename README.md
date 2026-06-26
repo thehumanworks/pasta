@@ -32,13 +32,20 @@ pasta --version
 Install the tagged release globally:
 
 ```bash
-bun install --global github:thehumanworks/pasta#v0.1.0
+bun install --global github:thehumanworks/pasta#v0.1.1
 ```
 
 Run the tagged release:
 
 ```bash
-bunx --bun github:thehumanworks/pasta#v0.1.0 --version
+bunx --bun github:thehumanworks/pasta#v0.1.1 --version
+```
+
+Install the latest GitHub release through mise:
+
+```bash
+mise use -g github:thehumanworks/pasta
+pasta --version
 ```
 
 Use a local checkout while developing:

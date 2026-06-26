@@ -1,6 +1,6 @@
 {
   "name": "pasta",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Terminal-first encrypted clipboard relay for trusted desktop devices.",
   "license": "UNLICENSED",
   "type": "module",
@@ -23,6 +23,7 @@
     "test:worker": "vitest run",
     "types": "wrangler types",
     "check": "bun run types && bun test test/bun && vitest run",
+    "build:release": "bun scripts/build-release.ts",
     "smoke:macos-image": "bun scripts/smoke-macos-image.ts",
     "pack:list": "bun pm pack --dry-run"
   },
