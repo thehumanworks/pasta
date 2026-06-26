@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" data-base="{{BASE}}">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>{{TITLE}} · Pasta Docs</title>
+    <meta name="description" content="{{DESCRIPTION}}" />
+    <link rel="alternate" type="text/markdown" href="{{AGENT_MD_URL}}" title="Agent documentation (markdown)" />
+    <link rel="alternate" type="application/json" href="{{API_URL}}" title="Agent documentation (JSON)" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{BASE}}assets/styles.css" />
+    <script type="application/json" id="pasta-page-meta">
+      {"slug":"{{SLUG}}","agentMdUrl":"{{AGENT_MD_URL}}","apiUrl":"{{API_URL}}"}
+    </script>
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+    <div class="glow glow--tl" aria-hidden="true"></div>
+    <div class="glow glow--br" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <a class="brand" href="{{BASE}}">
+        <span class="brand-mark" aria-hidden="true">◉</span>
+        <span class="brand-text">Pasta<span class="brand-accent">Docs</span></span>
+      </a>
+      <div class="header-actions">
+        <div class="audience-toggle" role="group" aria-label="Documentation audience">
+          <button type="button" class="audience-btn audience-btn--active" data-audience="human" aria-pressed="true">
+            <span class="audience-icon">☺</span> Human
+          </button>
+          <button type="button" class="audience-btn" data-audience="agent" aria-pressed="false">
+            <span class="audience-icon">⚙</span> Agent
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <p class="sidebar-label">On this site</p>
+        <nav class="sidebar-nav">{{NAV}}</nav>
+        <div class="sidebar-foot">
+          <p class="sidebar-hint audience-hint audience-hint--human">Toggle <strong>Agent</strong> for machine-oriented docs. Raw markdown lives at <code>{{AGENT_MD_URL}}</code>.</p>
+          <p class="sidebar-hint audience-hint audience-hint--agent hidden">Fetch with <code>Accept: text/markdown</code> against the <code>.md</code> URL, or <code>Accept: application/json</code> against the API URL.</p>
+        </div>
+      </aside>
+
+      <main class="content">
+        <article class="doc-panel doc-panel--human" data-audience-panel="human">
+          <header class="doc-header">
+            <p class="doc-eyebrow">For humans</p>
+            <h1>{{TITLE}}</h1>
+            <p class="doc-lede">{{DESCRIPTION}}</p>
+          </header>
+          <div class="doc-body prose">{{HUMAN_HTML}}</div>
+        </article>
+
+        <article class="doc-panel doc-panel--agent hidden" data-audience-panel="agent">
+          <header class="doc-header doc-header--agent">
+            <p class="doc-eyebrow">For agents</p>
+            <h1>{{TITLE}}</h1>
+            <p class="doc-lede">{{DESCRIPTION}}</p>
+            <div class="agent-fetch-bar">
+              <code class="fetch-snippet">curl -H "Accept: text/markdown" "{{AGENT_MD_URL}}"</code>
+            </div>
+          </header>
+          <div class="doc-body prose prose--agent">{{AGENT_HTML}}</div>
+        </article>
+      </main>
+    </div>
+
+    <footer class="site-footer">
+      <span>Pasta · encrypted clipboard relay</span>
+      <a href="https://github.com/thehumanworks/pasta">GitHub</a>
+    </footer>
+
+    <script src="{{BASE}}assets/app.js" defer></script>
+  </body>
+</html>
