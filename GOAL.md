@@ -64,27 +64,27 @@ flowchart LR
 
 ## Goal Order
 
-1. [Protocol and threat model](goals/01-protocol-and-threat-model.md)
-2. [Cloudflare relay backend](goals/02-cloudflare-relay-backend.md)
-3. [Bun CLI daemon text MVP](goals/03-bun-cli-daemon-text-mvp.md)
-4. [Pairing and device management](goals/04-pairing-and-device-management.md)
-5. [Distribution and terminal integration](goals/05-distribution-and-terminal-integration.md)
-6. [Binary payloads and hardening](goals/06-binary-payloads-and-hardening.md)
+1. [Protocol and threat model](docs/goals/01-protocol-and-threat-model.md)
+2. [Cloudflare relay backend](docs/goals/02-cloudflare-relay-backend.md)
+3. [Bun CLI daemon text MVP](docs/goals/03-bun-cli-daemon-text-mvp.md)
+4. [Pairing and device management](docs/goals/04-pairing-and-device-management.md)
+5. [Distribution and terminal integration](docs/goals/05-distribution-and-terminal-integration.md)
+6. [Binary payloads and hardening](docs/goals/06-binary-payloads-and-hardening.md)
 
 ## Research Pack
 
-- [Consolidated findings](research/consolidated-findings.md)
-- [Adversarial review](research/adversarial-review.md)
-- [Fresh-session orchestration runbook](ORCHESTRATION.md)
+- [Consolidated findings](docs/research/consolidated-findings.md)
+- [Adversarial review](docs/research/adversarial-review.md)
+- [Fresh-session orchestration runbook](docs/ORCHESTRATION.md)
 
 ## Fresh-Session Handoff
 
-A new Codex agent can continue from this repository if it starts at the project root, reads `AGENTS.md`, then follows `outputs/pasta-plan/ORCHESTRATION.md`.
+A new Codex agent can continue from this repository if it starts at the project root, reads `AGENTS.md`, then follows `docs/ORCHESTRATION.md`.
 
 The current next action is Goal 01, Task 1:
 
 ```bash
-python3 /Users/mish/.agents/skills/goal-driven-development/scripts/gdd_status.py outputs/pasta-plan/goals/01-protocol-and-threat-model.md --author
+python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/01-protocol-and-threat-model.md --author
 ```
 
 After Goal 01 is complete, unblock the backend and CLI goals only with recorded evidence, not by assumption.

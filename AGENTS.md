@@ -13,11 +13,19 @@ These project-local instructions apply to this repository.
 
 ## Execution Entry Point
 
-- Read `outputs/pasta-plan/GOAL.md`.
-- Read `outputs/pasta-plan/ORCHESTRATION.md`.
-- Work the goal files in `outputs/pasta-plan/goals/` using the local GDD workflow.
+- Read `GOAL.md`.
+- Read `docs/ORCHESTRATION.md`.
+- Work the goal files in `docs/goals/` using the local GDD workflow.
 - Before changing a goal, run `gdd_status.py` on it and preserve its DoD/task coverage.
 - Record evidence in the task's `Evidence` block before marking any task or DoD complete.
+
+## Toolchain And Secrets
+
+- Use `mise` as the tool manager. Prefer repo-configured tools through `mise exec -- <command>` when a tool is not already on `PATH`.
+- Use `bun` as the TypeScript runtime and package manager. Prefer `bun install`, `bun run`, `bun test`, and `bunx --bun`; do not introduce npm, yarn, pnpm, or their lockfiles unless explicitly requested.
+- Use `fnox` for secrets. Run secret-gated commands as `mise exec -- fnox exec -- <command>` so secrets are injected from `fnox.toml`.
+- `fnox` is already configured to fetch `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_KEY`, and `CLOUDFLARE_ACCOUNT_EMAIL` from Doppler. Do not replace this with `.env` files or hardcoded credentials.
+- Never print, commit, or paste secret values. Secret checks should prove names/configuration, not reveal values.
 
 ## Scope Discipline
 
@@ -25,4 +33,3 @@ These project-local instructions apply to this repository.
 - Shell/keybinding integration comes before global OS hotkeys or OS services.
 - Keep implementation changes narrow to the active goal.
 - Do not store secrets in config files, logs, fixtures, or docs.
-

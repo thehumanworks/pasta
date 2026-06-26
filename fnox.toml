@@ -1,0 +1,11 @@
+default_provider = "doppler"
+
+[providers.doppler]
+type = "doppler"
+project = "pasta"
+config = "prd"
+
+[secrets]
+CLOUDFLARE_ACCOUNT_ID= { provider = "doppler", value = "CLOUDFLARE_ACCOUNT_ID" }
+CLOUDFLARE_API_KEY= { provider = "doppler", value = "CLOUDFLARE_API_KEY" }
+CLOUDFLARE_ACCOUNT_EMAIL= { provider = "doppler", value = "CLOUDFLARE_ACCOUNT_EMAIL" }

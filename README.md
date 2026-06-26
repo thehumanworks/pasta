@@ -6,10 +6,10 @@ Pasta is intentionally central-service based. P2P, LAN discovery, SSH, tailnets,
 
 ## Planning State
 
-- Delivery plan: `outputs/pasta-plan/GOAL.md`
-- Execution runbook: `outputs/pasta-plan/ORCHESTRATION.md`
-- Goal files: `outputs/pasta-plan/goals/`
-- Research pack: `outputs/pasta-plan/research/`
+- Delivery plan: `GOAL.md`
+- Execution runbook: `docs/ORCHESTRATION.md`
+- Goal files: `docs/goals/`
+- Research pack: `docs/research/`
 
 ## MVP Shape
 
@@ -27,8 +27,8 @@ Start with:
 
 ```bash
 git status --short --branch
-python3 /Users/mish/.agents/skills/goal-driven-development/scripts/gdd_status.py outputs/pasta-plan/goals/01-protocol-and-threat-model.md --author
+python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/01-protocol-and-threat-model.md --author
 ```
 
-Then follow `outputs/pasta-plan/ORCHESTRATION.md`.
+Then follow `docs/ORCHESTRATION.md`.
 
