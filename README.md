@@ -1,0 +1,34 @@
+# Pasta
+
+Pasta is a desktop-first, terminal-first clipboard project. It auto-publishes copied text from one trusted desktop and lets another trusted desktop pull the latest encrypted entry on paste.
+
+Pasta is intentionally central-service based. P2P, LAN discovery, SSH, tailnets, STUN/TURN, and WebRTC traversal are out of scope because the target environment includes firewall-constrained systems where those paths can be blocked. The supported architecture is device-initiated HTTPS to a Cloudflare Worker plus one Durable Object per clipboard space.
+
+## Planning State
+
+- Delivery plan: `outputs/pasta-plan/GOAL.md`
+- Execution runbook: `outputs/pasta-plan/ORCHESTRATION.md`
+- Goal files: `outputs/pasta-plan/goals/`
+- Research pack: `outputs/pasta-plan/research/`
+
+## MVP Shape
+
+- CLI name: `pasta`
+- Desktop only: macOS, Linux, Windows
+- First payload: text
+- Backend: Cloudflare Workers, Durable Objects, D1, later R2 for encrypted blobs
+- Local secrets: OS credential store via `Bun.secrets`
+- Pairing: temporary QR/short code plus approval from an existing trusted device
+- Recovery: if all trusted devices are lost, reset the encrypted clipboard space
+
+## Resume Work
+
+Start with:
+
+```bash
+git status --short --branch
+python3 /Users/mish/.agents/skills/goal-driven-development/scripts/gdd_status.py outputs/pasta-plan/goals/01-protocol-and-threat-model.md --author
+```
+
+Then follow `outputs/pasta-plan/ORCHESTRATION.md`.
+
