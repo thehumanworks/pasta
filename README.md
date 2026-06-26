@@ -22,6 +22,19 @@ bunx --bun -p github:thehumanworks/pasta pasta --version
 bunx --bun -p github:thehumanworks/pasta pasta doctor
 ```
 
+Install globally from the GitHub package:
+
+```bash
+bun install --global github:thehumanworks/pasta
+pasta --version
+```
+
+Install the tagged release globally:
+
+```bash
+bun install --global github:thehumanworks/pasta#v0.1.0
+```
+
 Run the tagged release:
 
 ```bash
@@ -72,7 +85,7 @@ mise exec -- fnox exec -- wrangler deploy
 Use the deployed Worker URL as the endpoint in the device examples:
 
 ```bash
-export PASTA_ENDPOINT='https://pasta.<your-subdomain>.workers.dev'
+export PASTA_ENDPOINT='https://pasta.nothuman.work'
 ```
 
 ## First Device

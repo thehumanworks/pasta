@@ -3,6 +3,12 @@
   "name": "pasta",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-06-26",
+  "routes": [
+    {
+      "pattern": "pasta.nothuman.work",
+      "custom_domain": true
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {
