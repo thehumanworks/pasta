@@ -28,7 +28,7 @@ When you `pasta paste --clipboard`, Pasta records a hash of the pasted text in `
 Run the daemon in tmux, systemd user service, or a terminal tab on the machine where you copy most often:
 
 ```bash
-pasta daemon >> ~/.pasta/daemon.log 2>&1
+pasta daemon >> ~/.config/pasta/daemon.log 2>&1
 ```
 
 Paste on other machines with `pasta paste --clipboard` or shell aliases.
@@ -39,7 +39,7 @@ Install a reversible snippet:
 
 ```bash
 pasta install-shell
-source ~/.pasta/pasta-shell.zsh   # path printed by install
+source ~/.config/pasta/shell.zsh   # path printed by install
 ```
 
 The snippet adds short aliases for common flows (copy, paste-to-clipboard, history). For local development:

@@ -1,11 +1,11 @@
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "bun:test";
 import { clipboardCandidatesForPlatform, MemoryClipboardAdapter } from "../../src/cli/clipboard";
 import { FetchApiClient, MockApiClient } from "../../src/cli/client";
 import { readConfig, type PastaConfig, type Paths, writeConfig } from "../../src/cli/config";
-import { MemorySecretStore, SecretName } from "../../src/cli/secret-store";
+import { defaultSecretStoreForHome, MemorySecretStore, SecretName } from "../../src/cli/secret-store";
 import { runCli } from "../../src/cli";
 import { encryptTextClip, generateDeviceKeyMaterial, generateGroupKey } from "../../src/shared/crypto";
 import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, type StoredClip } from "../../src/shared/protocol";
@@ -66,6 +66,31 @@ describe("CLI", () => {
     const configText = await Bun.file(paths.configPath).text();
     expect(configText).not.toContain("group-key");
     expect(configText).not.toContain("private-key");
+  });
+
+  it("bootstraps the default secret store for noninteractive terminals", async () => {
+    const output: string[] = [];
+    const paths = await tempPaths();
+    const client = new MockApiClient(() => ({ ok: true }));
+    try {
+      expect(await runCli(["bootstrap", "--endpoint", "https://relay.example"], {
+        io: capture(output),
+        paths,
+        clientFactory: () => client
+      })).toBe(0);
+      const secrets = defaultSecretStoreForHome(paths.home);
+      expect(await secrets.get(SecretName.groupKey)).toBeTruthy();
+      expect(await secrets.get(SecretName.signingPrivateKey)).toBeTruthy();
+      expect((await stat(join(paths.home, "secrets.json"))).mode & 0o777).toBe(0o600);
+      const configText = await Bun.file(paths.configPath).text();
+      expect(configText).not.toContain("group-key");
+      expect(configText).not.toContain("private-key");
+    } finally {
+      const secrets = defaultSecretStoreForHome(paths.home);
+      await secrets.delete(SecretName.groupKey);
+      await secrets.delete(SecretName.signingPrivateKey);
+      await secrets.delete(SecretName.wrappingPrivateKey);
+    }
   });
 
   it("copies, pastes, lists history, and avoids daemon publish loops", async () => {
@@ -188,11 +213,13 @@ describe("CLI", () => {
       throw new Error(`unexpected ${method} ${path}`);
     });
     const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
+    const heic = new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112, 104, 101, 105, 99]);
     const largePng = new Uint8Array(LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES + 1).fill(5);
     largePng.set(png.slice(0, 8), 0);
     const pngPath = join(paths.home, "unlimit.png");
     const largePngPath = join(paths.home, "large.png");
     const fakePngPath = join(paths.home, "fake.png");
+    const heicPath = join(paths.home, "IMG_3035.heic");
     const filePath = join(paths.home, "notes.bin");
     const imageOut = join(paths.home, "image.png");
     const largeImageOut = join(paths.home, "large-image.png");
@@ -202,6 +229,7 @@ describe("CLI", () => {
     await Bun.write(pngPath, png);
     await Bun.write(largePngPath, largePng);
     await Bun.write(fakePngPath, new Uint8Array([1, 2, 3, 4]));
+    await Bun.write(heicPath, heic);
     await Bun.write(filePath, new Uint8Array([9, 8, 7, 6]));
     await mkdir(pasteDir);
     const clipboard = new MemoryClipboardAdapter();
@@ -250,6 +278,21 @@ describe("CLI", () => {
       expect(await runCli(["paste"], deps)).toBe(0);
       expect(new Uint8Array(await Bun.file(join(pasteDir, "large.png")).arrayBuffer())).toEqual(largePng);
       expect(clipboard.image).toBeNull();
+
+      output.length = 0;
+      expect(await runCli(["copy", heicPath], deps)).toBe(0);
+      expect(clips.at(-1)?.payloadKind).toBe("file");
+      expect(clips.at(-1)?.mime).toBe("image/heic");
+      expect(JSON.stringify(clips.at(-1))).not.toContain(paths.home);
+      expect(JSON.stringify(clips.at(-1))).not.toContain("IMG_3035.heic");
+      expect(output.join("")).toContain("published image");
+      output.length = 0;
+      expect(await runCli(["history"], deps)).toBe(0);
+      expect(output.join("")).toContain('file image/heic 12 bytes encrypted "IMG_3035.heic"');
+      expect(output.join("")).not.toContain('"output.bin"');
+      output.length = 0;
+      expect(await runCli(["paste"], deps)).toBe(0);
+      expect(new Uint8Array(await Bun.file(join(pasteDir, "IMG_3035.heic")).arrayBuffer())).toEqual(heic);
 
       output.length = 0;
       expect(await runCli(["copy", filePath], deps)).toBe(0);

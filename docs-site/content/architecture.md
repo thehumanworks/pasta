@@ -13,7 +13,7 @@ flowchart LR
   subgraph DeviceA["Device A"]
     ClipA["OS clipboard"]
     DaemonA["pasta CLI / daemon"]
-    SecretsA["Bun.secrets"]
+    SecretsA["Pasta secrets"]
   end
   subgraph Cloudflare["Cloudflare"]
     Worker["Worker HTTPS API"]
@@ -24,7 +24,7 @@ flowchart LR
   subgraph DeviceB["Device B"]
     ClipB["OS clipboard"]
     DaemonB["pasta CLI"]
-    SecretsB["Bun.secrets"]
+    SecretsB["Pasta secrets"]
   end
 
   ClipA --> DaemonA
@@ -68,7 +68,7 @@ flowchart LR
 
 | Zone | Sees plaintext? | Sees group key? |
 | --- | --- | --- |
-| Device | Yes (when copying/pasting) | Yes (in OS secret store) |
+| Device | Yes (when copying/pasting) | Yes (in local secret store) |
 | Worker | No | No |
 | Durable Object | No | No (wrapped grants only) |
 | D1 | No | No |

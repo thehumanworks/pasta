@@ -72,9 +72,9 @@ This generates:
 
 - A new **account** and **routing id** (Durable Object name)
 - Device **Ed25519** signing keys and **X25519** wrapping keys
-- A **group key** stored only in your OS credential store
+- A **group key** stored in the local Pasta secret store and mirrored to macOS Keychain when available
 
-Config lands in `~/.pasta/config.json` (or `$PASTA_HOME/config.json`). Secrets never go in that file.
+Config lands in `~/.config/pasta/config.json` (or `$PASTA_HOME/config.json`). Secrets never go in that file.
 
 ## Local Worker smoke test
 
@@ -103,13 +103,13 @@ PASTA_HOME=/tmp/pasta-a pasta bootstrap ...
 PASTA_HOME=/tmp/pasta-b pasta pair request --ticket "$TICKET" ...
 ```
 
-Each profile gets its own config and `Bun.secrets` service namespace.
+Each profile gets its own config, local secret file, and macOS Keychain namespace.
 
 ## Environment variables
 
 | Variable | Effect |
 | --- | --- |
-| `PASTA_HOME` | Override config/secrets home (default `~/.pasta`) |
+| `PASTA_HOME` | Override config/secrets home (default `~/.config/pasta`) |
 | `PASTA_ENDPOINT` | Not auto-read; pass `--endpoint` at bootstrap or set in config |
 
 ## Shell integration
@@ -133,13 +133,13 @@ Package bin: `package.json` → `"pasta": "./src/cli.ts"` (Bun shebang, no lifec
 
 ## Config & secrets (`src/cli/config.ts`, `src/cli/secret-store.ts`)
 
-- `PASTA_HOME` → config dir; default `~/.pasta`
+- `PASTA_HOME` → config dir; default `~/.config/pasta`
 - `config.json` fields: `endpoint`, `accountId`, `routingId`, `deviceId`, `deviceName`, public keys, `keyVersion`, optional `pendingPairing`, `lastRemotePasteHash`
-- Secrets in `Bun.secrets` service `secretServiceForHome(home)`:
+- Secrets in `$PASTA_HOME/secrets.json` (`0600`) and mirrored to macOS Keychain service `secretServiceForHome(home)` when available:
   - `groupKey`
   - `signingPrivateKey`
   - `wrappingPrivateKey`
-- `requireSecret()` throws with setup guidance if unavailable — **no plaintext fallback**
+- `requireSecret()` throws if neither the local file nor an OS-store mirror has the requested secret.
 
 ## Bootstrap implementation (`bootstrap()` in cli.ts)
 
@@ -165,4 +165,4 @@ Replace D1 `database_id` placeholder before remote deploy.
 
 ## Local multi-device testing
 
-Always isolate with `PASTA_HOME=/tmp/pasta-{a,b}` — shares neither config nor Bun.secrets namespace.
+Always isolate with `PASTA_HOME=/tmp/pasta-{a,b}` — shares neither config, local secret file, nor macOS Keychain namespace.

@@ -11,8 +11,8 @@ nav_order: 10
 | Asset | Protection |
 | --- | --- |
 | Clipboard plaintext | Encrypted before upload; decrypted only on device |
-| Group key | OS credential store; wrapped for pairing |
-| Device private keys | `Bun.secrets` only |
+| Group key | Local secret store; wrapped for pairing |
+| Device private keys | Local secret store |
 | Request integrity | Ed25519 signatures + body hash |
 | Replay attacks | Timestamp window + nonce store |
 | Unauthorized pairing | Requires trusted device approval |
@@ -30,9 +30,9 @@ nav_order: 10
 - Secret recovery after total device loss
 - Mobile / browser / GUI surfaces
 
-## Plaintext fallback
+## Local secrets
 
-If OS secret storage is unavailable, commands fail with setup guidance.
+Pasta keeps secrets in a `0600` file under `PASTA_HOME` and mirrors them to macOS Keychain when available. This keeps SSH and other noninteractive terminals working without sending secrets to the relay or storing them in `config.json`.
 
 ## Reset
 
@@ -55,4 +55,4 @@ If OS secret storage is unavailable, commands fail with setup guidance.
 
 ## Do not implement
 
-Cloudflare Access/OAuth, P2P fallback, plaintext secret storage.
+Cloudflare Access/OAuth, P2P fallback, secrets in config/docs/logs/Cloudflare.

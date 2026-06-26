@@ -11,7 +11,7 @@ Pasta is intentionally central-service based. P2P, LAN discovery, SSH, tailnets,
 - Device listing, revocation, and encrypted-space reset.
 - macOS PNG image clipboard copy/paste through unified `copy`/`paste` commands.
 - Bounded image/file payloads up to 50 MiB through the R2-backed API path.
-- Local secrets stored with `Bun.secrets`; plaintext fallback is intentionally disabled.
+- Local secrets stored in a Pasta-local `0600` secret file and mirrored to macOS Keychain when available, so SSH and other noninteractive terminals work.
 
 ## Run It
 
@@ -32,13 +32,13 @@ pasta --version
 Install the tagged release globally:
 
 ```bash
-bun install --global github:thehumanworks/pasta#v0.1.2
+bun install --global github:thehumanworks/pasta#v0.1.3
 ```
 
 Run the tagged release:
 
 ```bash
-bunx --bun github:thehumanworks/pasta#v0.1.2 --version
+bunx --bun github:thehumanworks/pasta#v0.1.3 --version
 ```
 
 Install the latest GitHub release through mise:
@@ -365,7 +365,7 @@ PASTA_HOME=/tmp/pasta-a pasta bootstrap --endpoint "$PASTA_ENDPOINT" --device-na
 PASTA_HOME=/tmp/pasta-b pasta pair request --ticket "$TICKET" --device-name b
 ```
 
-Pasta stores non-secret config in `$PASTA_HOME/config.json` and secrets in a `Bun.secrets` service derived from that home path.
+Pasta stores non-secret config in `$PASTA_HOME/config.json`. Secrets live in `$PASTA_HOME/secrets.json` with owner-only permissions and are mirrored to a macOS Keychain service derived from that home path when available.
 
 ## Local Worker Smoke
 

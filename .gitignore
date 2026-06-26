@@ -5,5 +5,8 @@ coverage/
 dist/
 docs-site/dist/
 docs-site/node_modules/
+config.json
+secrets.json
+.config/pasta/
 *.tsbuildinfo
 .DS_Store

@@ -44,7 +44,7 @@ import {
 import { FetchApiClient, type ApiClient } from "./cli/client";
 import { runDaemonLoop } from "./cli/daemon";
 import { ExitCode, type ExitCodeValue } from "./cli/exit-codes";
-import { BunSecretStore, requireSecret, secretServiceForHome, SecretName, type SecretStore } from "./cli/secret-store";
+import { defaultSecretStoreForHome, requireSecret, SecretName, type SecretStore } from "./cli/secret-store";
 import { installShell, shellSnippet, uninstallShell } from "./cli/shell";
 
 export interface CliIo {
@@ -70,7 +70,7 @@ const defaultIo: CliIo = {
 export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCodeValue> {
   const io = deps.io ?? defaultIo;
   const paths = deps.paths ?? defaultPaths();
-  const secrets = deps.secrets ?? new BunSecretStore(secretServiceForHome(paths.home));
+  const secrets = deps.secrets ?? defaultSecretStoreForHome(paths.home);
   const clipboard = deps.clipboard ?? new SystemClipboardAdapter();
 
   try {
@@ -777,6 +777,8 @@ function mimeForPath(filePath: string, detected: string | undefined): string {
   if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
   if (lower.endsWith(".gif")) return "image/gif";
   if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".heic")) return "image/heic";
+  if (lower.endsWith(".heif")) return "image/heif";
   if (lower.endsWith(".txt")) return "text/plain";
   if (lower.endsWith(".json")) return "application/json";
   if (lower.endsWith(".pdf")) return "application/pdf";
@@ -842,6 +844,8 @@ function extensionForMime(mime: string): string {
     "image/jpeg": "jpg",
     "image/gif": "gif",
     "image/webp": "webp",
+    "image/heic": "heic",
+    "image/heif": "heif",
     "application/pdf": "pdf",
     "application/zip": "zip",
     "application/x-tar": "tar",

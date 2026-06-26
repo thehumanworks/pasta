@@ -82,7 +82,7 @@ Bun CLI on desktop ↔ HTTPS ↔ Cloudflare Worker ↔ D1 registry + DO per clip
 | Data | Where |
 | --- | --- |
 | Plaintext clipboard | Device RAM / OS clipboard only |
-| Group key, device private keys | `Bun.secrets` (service derived from `PASTA_HOME`) |
+| Group key, device private keys | Local Pasta secret store (`PASTA_HOME` scoped) |
 | Non-secret config | `$PASTA_HOME/config.json` |
 | Ciphertext clips | Durable Object (inline) or R2 (files/large) |
 | Device registry, nonces, pairing | D1 |
@@ -93,4 +93,4 @@ Goals 01–06 in `docs/goals/` are **done** with recorded evidence per `GOAL.md`
 
 ## Out of scope (do not reintroduce)
 
-P2P, LAN discovery, SSH, tailnets, STUN/TURN, WebRTC, Cloudflare Access/OAuth, plaintext fallback when secrets unavailable, secret recovery after total device loss.
+P2P, LAN discovery, SSH, tailnets, STUN/TURN, WebRTC, Cloudflare Access/OAuth, secrets in config/docs/logs/Cloudflare, secret recovery after total device loss.

@@ -57,7 +57,7 @@ Behind the scenes, the trusted device wraps the group key for the newcomer's X25
 pasta pair consume
 ```
 
-The wrapped group key is unwrapped locally and stored in `Bun.secrets`. Pending pairing state is cleared.
+The wrapped group key is unwrapped locally and stored in the local Pasta secret store. Pending pairing state is cleared.
 
 ## Manage devices
 
