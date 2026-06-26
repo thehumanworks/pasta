@@ -46,12 +46,26 @@ export class FetchApiClient implements ApiClient {
     }
     const response = await this.fetchImpl(new URL(path, this.config.endpoint), init);
     const responseText = await response.text();
-    const parsed = responseText ? JSON.parse(responseText) : {};
+    const parsed = parseJsonResponse(responseText, response);
     if (!response.ok) {
       const error = parsed?.error ?? `http_${response.status}`;
-      throw new Error(String(error));
+      throw new Error(typeof error === "string" ? error : `http_${response.status}`);
     }
     return parsed as T;
+  }
+}
+
+function parseJsonResponse(responseText: string, response: Response): Record<string, unknown> {
+  if (!responseText) return {};
+  try {
+    return JSON.parse(responseText) as Record<string, unknown>;
+  } catch {
+    const preview = responseText.replace(/\s+/gu, " ").slice(0, 160);
+    const detail = preview ? `: ${preview}` : "";
+    if (!response.ok) {
+      throw new Error(`http_${response.status}${detail}`);
+    }
+    throw new Error(`invalid_json_response${detail}`);
   }
 }
 

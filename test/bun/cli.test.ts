@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "bun:test";
 import { clipboardCandidatesForPlatform, MemoryClipboardAdapter } from "../../src/cli/clipboard";
-import { MockApiClient } from "../../src/cli/client";
+import { FetchApiClient, MockApiClient } from "../../src/cli/client";
 import { readConfig, type PastaConfig, type Paths, writeConfig } from "../../src/cli/config";
 import { MemorySecretStore, SecretName } from "../../src/cli/secret-store";
 import { runCli } from "../../src/cli";
@@ -208,6 +208,12 @@ describe("CLI", () => {
     expect(plan.maxBytes).toBe(50 * 1024 * 1024);
     expect(plan.r2KeyFormat).toBe("spaces/{routing_id}/clips/{seq}/{payload_id}");
     expect(plan.finalizeSemantics).toContain("signed finalize");
+  });
+
+  it("reports non-JSON HTTP responses without a parser stack", async () => {
+    const fetchImpl = (async () => new Response("<html>not a worker</html>", { status: 404 })) as unknown as typeof fetch;
+    const client = new FetchApiClient(sampleConfig(), new MemorySecretStore(), fetchImpl);
+    await expect(client.request("GET", "/v1/devices", undefined, false)).rejects.toThrow("http_404: <html>not a worker</html>");
   });
 });
 
