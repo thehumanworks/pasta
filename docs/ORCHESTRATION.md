@@ -27,7 +27,7 @@ Use the `moo` MCP server as the coordination plane. The first Moo MCP call in a 
 Current active goal:
 
 ```bash
-python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/05-distribution-and-terminal-integration.md
+python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/06-binary-payloads-and-hardening.md
 ```
 
 ## Moo Agent Orchestration
@@ -41,10 +41,9 @@ Historical initial fanout:
 3. `scout-02-backend`: read-only Cloudflare Worker/Durable Object scout for Goal 02 interfaces and blockers.
 4. `scout-03-cli`: read-only Bun CLI/daemon scout for Goal 03 interfaces and platform constraints.
 
-Those sessions are obsolete once Goals 01-04 are checkpointed done. For the
-current Goal 05 blocker, use a narrow read-only session to review public repo
-visibility, tag state, and `bunx` evidence. Do not spawn implementation agents
-for Goal 06 until Goal 05 reaches DONE.
+Those sessions are obsolete once Goals 01-05 are checkpointed done. For Goal 06,
+use narrow sessions for payload design review, platform clipboard research, and
+R2/retention implementation review.
 
 Spawn each session with `moo_create_session` using `workspace: "pasta"`, a descriptive `name`, and `agent: "codex"` unless a task explicitly needs another installed agent runtime. Send the full task brief with `moo_send_input` after creation. Each brief must include:
 

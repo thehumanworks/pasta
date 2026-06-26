@@ -1,7 +1,7 @@
 ---
 goal_id: "pasta-05-distribution-terminal-integration"
 title: "Distribution and Terminal Integration"
-status: "blocked"
+status: "done"
 confidence_floor: 90
 created: "2026-06-26"
 updated: "2026-06-26"
@@ -28,7 +28,7 @@ Make the public repo runnable through Bun, provide stable fallback distribution,
 ## 3. Definition of Done - INVARIANT
 
 - [x] **DoD-1** - `package.json#bin` and shebang CLI entrypoint work locally. - *verify by:* `bun run` and package smoke.
-- [ ] **DoD-2** - `bunx --bun github:thehumanworks/pasta...` works from a clean cache against the public repo. - *verify by:* real command after repo publish.
+- [x] **DoD-2** - `bunx --bun github:thehumanworks/pasta...` works from a clean cache against the public repo. - *verify by:* real command after repo publish.
 - [x] **DoD-3** - npm fallback package path is packable and contains only intended files. - *verify by:* pack dry-run/list.
 - [x] **DoD-4** - macOS, Linux, and Windows at least run `--version`, `doctor`, and help via chosen distribution path. - *verify by:* OS smoke matrix.
 - [x] **DoD-5** - Shell/keybinding integration docs and installer are reversible. - *verify by:* install/uninstall smoke.
@@ -64,7 +64,7 @@ Verification Contract:
 - 2026-06-26 - `mise exec -- bunx --bun -p file:$PWD pasta --version` - exit 0; local package `bin` execution output `0.1.0`.
 - 2026-06-26 - package review `package.json` - no `install`, `postinstall`, or `prepare` lifecycle scripts.
 
-### T2 - GitHub Bunx Proof - [ ]
+### T2 - GitHub Bunx Proof - [x]
 
 - Publish or use public repo.
 - Run GitHub `bunx` command from clean cache.
@@ -75,7 +75,7 @@ Verification Contract:
 - `bunx --bun -p github:thehumanworks/pasta pasta --version` exits 0.
 - `bunx --bun github:thehumanworks/pasta#v0.1.0 --version` exits 0 after tag exists.
 
-**Confidence:** 70/100
+**Confidence:** 95/100
 **Depends on:** Task 1 and public repo
 **Closes:** DoD-2
 **Evidence:**
@@ -83,6 +83,10 @@ Verification Contract:
 - 2026-06-26 - `MISE_EXPERIMENTAL=1 mise exec -- bunx --bun -p github:thehumanworks/pasta pasta --version` - exit 1; GitHub tarball API returned 404, so public GitHub execution cannot be proven from the unpushed/unpublished current worktree.
 - 2026-06-26 - clean-cache `bunx` proof with temporary `BUN_INSTALL_CACHE_DIR`: `bunx --bun -p github:thehumanworks/pasta pasta --version` and `bunx --bun github:thehumanworks/pasta#v0.1.0 --version` - both exit 1; GitHub tarball API returned 404 for default branch and `v0.1.0`.
 - 2026-06-26 - `curl -fsS -I https://api.github.com/repos/thehumanworks/pasta/tarball/` - exit 0 from shell pipeline while `curl` reported HTTP 404; unauthenticated GitHub tarball API cannot access the repo/package artifact yet.
+- 2026-06-26 - `gh repo view thehumanworks/pasta --json nameWithOwner,visibility,isPrivate,url` after approved visibility change - exit 0; repo reports `visibility: PUBLIC`, `isPrivate: false`.
+- 2026-06-26 - `curl -fsSI https://api.github.com/repos/thehumanworks/pasta/tarball/` - exit 0; unauthenticated GitHub tarball API returned HTTP 302 to codeload for `refs/heads/main`.
+- 2026-06-26 - clean-cache `BUN_INSTALL_CACHE_DIR=$(mktemp -d) bunx --bun -p github:thehumanworks/pasta pasta --version` - exit 0; output `0.1.0`.
+- 2026-06-26 - clean-cache `BUN_INSTALL_CACHE_DIR=$(mktemp -d) bunx --bun github:thehumanworks/pasta#v0.1.0 --version` - exit 0; output `0.1.0`.
 
 ### T3 - Npm Fallback - [x]
 
@@ -147,6 +151,7 @@ Verification Contract:
 - 2026-06-26 - DoD-2 remains uncheckpointed because this implementation is not committed/tagged/published to the public GitHub repo in this turn; public `bunx github:thehumanworks/pasta` would test old remote state. Scope impact: none.
 - 2026-06-26 - DoD-4 checkpoint uses macOS live proof plus user-approved Linux/Windows assumptions; `container` and `modal` are installed locally if a future stricter Linux cloud/container proof is requested, but Windows still requires an actual Windows runner. Scope impact: none.
 - 2026-06-26 - Goal 05 is blocked only on public GitHub/tag proof for DoD-2; pushing commits, creating tags, or changing repo visibility are external effects and were not performed without explicit approval. Scope impact: none.
+- 2026-06-26 - User approved commit/tag/push and making `thehumanworks/pasta` public; default-branch and `v0.1.0` clean-cache `bunx` proofs now pass. Scope impact: none.
 
 ## 7. Learnings
 

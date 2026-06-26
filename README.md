@@ -27,11 +27,11 @@ Start with:
 
 ```bash
 git status --short --branch
-python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/05-distribution-and-terminal-integration.md
+python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/06-binary-payloads-and-hardening.md
 ```
 
-Then follow `GOAL.md` and `docs/ORCHESTRATION.md`. Goals 01-04 are currently
-checkpointed as done; Goal 05 is blocked only on public GitHub `bunx` proof.
+Then follow `GOAL.md` and `docs/ORCHESTRATION.md`. Goals 01-05 are currently
+checkpointed as done; Goal 06 is the active remaining goal.
 
 ## Local Development
 

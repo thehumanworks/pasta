@@ -83,18 +83,17 @@ A new Codex agent can continue from this repository if it starts at the project 
 
 Current verified state:
 
-- Goals 01-04 are GDD-done with recorded evidence.
-- Goal 05 is blocked on Task 2 / DoD-2: public GitHub `bunx` proof cannot pass until the implementation is committed, tagged, pushed, and available from the public repo.
+- Goals 01-05 are GDD-done with recorded evidence.
 - Goal 05 Task 4 / DoD-4 uses live macOS smoke proof plus user-approved reasonable assumptions for Linux and Windows. Direct Linux/Windows smoke is not required for this checkpoint unless the proof standard changes.
-- Goal 06 remains blocked behind Goal 05 because binary payloads and hardening are explicitly post-text-MVP work.
+- Goal 06 is the active remaining goal. Binary payloads and hardening are explicitly post-text-MVP work.
 
-The current next action is Goal 05, Task 2:
+The current next action is Goal 06, Task 1:
 
 ```bash
-python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/05-distribution-and-terminal-integration.md
+python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/06-binary-payloads-and-hardening.md
 ```
 
-After public GitHub execution is proven and Goal 05 reaches DONE, unblock Goal 06 only with recorded evidence, not by assumption.
+Work Goal 06 only with recorded evidence. Binary payload support must preserve the end-to-end encryption boundary.
 
 ## Completion Criteria
 
@@ -104,10 +103,10 @@ After public GitHub execution is proven and Goal 05 reaches DONE, unblock Goal 0
 - [x] Pasting on the other device pulls latest, decrypts locally, and writes to stdout or clipboard.
 - [x] History lists append-only encrypted entries and can paste a selected entry.
 - [x] Cloudflare storage never contains plaintext clipboard content or raw group keys.
-- [ ] `bunx` GitHub execution is verified from the public repo.
+- [x] `bunx` GitHub execution is verified from the public repo.
 - [x] npm fallback and at least one local daemon flow are verified before claiming local usability.
 
 ## Current Blockers
 
-- Public GitHub proof is blocked: `github:thehumanworks/pasta` returned GitHub tarball API 404, and no `v0.1.0` tag exists on origin. The local implementation must be committed, tagged, pushed, and publicly available before DoD-2 can be checked.
-- Goal 06 remains blocked until Goal 05 is done. Images/files need R2 and streaming/chunking design after the text MVP distribution proof is complete.
+- None for the encrypted text MVP.
+- Goal 06 remains incomplete: images/files need R2 and streaming/chunking design after the text MVP distribution proof.

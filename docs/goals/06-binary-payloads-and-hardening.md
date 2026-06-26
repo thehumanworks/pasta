@@ -1,7 +1,7 @@
 ---
 goal_id: "pasta-06-binary-payloads-hardening"
 title: "Binary Payloads and Hardening"
-status: "blocked"
+status: "active"
 confidence_floor: 90
 created: "2026-06-26"
 updated: "2026-06-26"
@@ -131,6 +131,7 @@ Verification Contract:
 
 - This goal remains blocked until text MVP is complete.
 - Binary support is opt-in; unsupported binary clipboard content must fail clearly before this goal lands.
+- 2026-06-26 - Goals 01-05 are checkpointed done, including public GitHub `bunx` proof, so binary payload hardening is unblocked for design work. Scope impact: none.
 
 ## 7. Learnings
 
@@ -139,4 +140,3 @@ Verification Contract:
 ## 8. Skills
 
 - Use Cloudflare Workers best practices and coding-excellence hardening guidance.
-

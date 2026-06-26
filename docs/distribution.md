@@ -18,15 +18,14 @@ The bin target has a Bun shebang and the package has no `install`, `postinstall`
 - `bunx --bun -p file:$PWD pasta --version`
 - `bun pm pack --dry-run`
 
-GitHub `bunx` proof remains gated on a public repository/tag check:
+GitHub `bunx` proof is verified against the public repo:
 
 ```bash
 bunx --bun -p github:thehumanworks/pasta pasta --version
 bunx --bun github:thehumanworks/pasta#v0.1.0 --version
 ```
 
-Before marking that proof complete, verify the public repo and tag are visible
-without SSH credentials:
+The public repo and tag should remain visible without SSH credentials:
 
 ```bash
 git ls-remote origin HEAD refs/heads/main refs/tags/v0.1.0
