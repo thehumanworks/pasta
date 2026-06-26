@@ -13,7 +13,7 @@ flowchart LR
   subgraph DeviceA["Device A"]
     ClipA["OS clipboard"]
     DaemonA["pasta CLI / daemon"]
-    SecretsA["Pasta secrets"]
+    SecretsA["Pasta auth cache"]
   end
   subgraph Cloudflare["Cloudflare"]
     Worker["Worker HTTPS API"]
@@ -24,7 +24,7 @@ flowchart LR
   subgraph DeviceB["Device B"]
     ClipB["OS clipboard"]
     DaemonB["pasta CLI"]
-    SecretsB["Pasta secrets"]
+    SecretsB["Pasta auth cache"]
   end
 
   ClipA --> DaemonA
@@ -68,7 +68,7 @@ flowchart LR
 
 | Zone | Sees plaintext? | Sees group key? |
 | --- | --- | --- |
-| Device | Yes (when copying/pasting) | Yes (in local secret store) |
+| Device | Yes (when copying/pasting) | Yes (in local auth cache) |
 | Worker | No | No |
 | Durable Object | No | No (wrapped grants only) |
 | D1 | No | No |
@@ -76,7 +76,7 @@ flowchart LR
 
 ## What the relay can observe
 
-Account IDs, routing IDs, device IDs, timestamps, sequence numbers, payload kind, MIME type, byte length, pairing activity, and IP-level request metadata. Pasta v0.1.0 does not attempt to hide usage patterns.
+Account IDs, routing IDs, device IDs, timestamps, sequence numbers, payload kind, MIME type, byte length, pairing activity, and IP-level request metadata. Pasta v0.1.5 does not attempt to hide usage patterns.
 
 <!-- @agent -->
 ## Routing model

@@ -11,8 +11,8 @@ nav_order: 10
 | Asset | Protection |
 | --- | --- |
 | Clipboard plaintext | Encrypted before upload; decrypted only on device |
-| Group key | Local secret store; wrapped for pairing |
-| Device private keys | Local secret store |
+| Group key | `$PASTA_HOME/auth.json` by default; wrapped for pairing |
+| Device private keys | `$PASTA_HOME/auth.json` by default |
 | Request integrity | Ed25519 signatures + body hash |
 | Replay attacks | Timestamp window + nonce store |
 | Unauthorized pairing | Requires trusted device approval |
@@ -32,7 +32,7 @@ nav_order: 10
 
 ## Local secrets
 
-Pasta keeps secrets in a `0600` file under `PASTA_HOME` and mirrors them to macOS Keychain when available. This keeps SSH and other noninteractive terminals working without sending secrets to the relay or storing them in `config.json`.
+Pasta keeps device auth in `$PASTA_HOME/auth.json` with `0600` permissions by default. OS credential storage is disabled unless you opt in with `$PASTA_HOME/settings.json` or an environment variable such as `PASTA_AUTH_STORE=keychain`. This keeps SSH and other noninteractive terminals working without sending secrets to the relay or storing them in `config.json`.
 
 ## Reset
 

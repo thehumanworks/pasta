@@ -884,7 +884,7 @@ function commandHelp(command: string): string {
   const blocks: Record<string, string> = {
     bootstrap: `usage: pasta bootstrap --endpoint <url> [--device-name <name>]
 
-Creates the first trusted device and stores private keys in the OS secret store.
+Creates the first trusted device and stores auth in the local Pasta auth cache.
 
 Examples:
   pasta bootstrap --endpoint https://pasta.nothuman.work --device-name "$(hostname)"

@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdir, rm } from "node:fs/promises";
 import { Buffer } from "node:buffer";
 import { dirname, join } from "node:path";
@@ -41,17 +42,50 @@ export function secretServiceForHome(home: string): string {
   return `pasta:${sha256Base64Url(home).slice(0, 16)}`;
 }
 
+export function authFileForHome(home: string): string {
+  return join(home, "auth.json");
+}
+
 export function secretFileForHome(home: string): string {
+  return authFileForHome(home);
+}
+
+export function legacySecretFileForHome(home: string): string {
   return join(home, "secrets.json");
 }
 
-export function defaultSecretStoreForHome(home: string): SecretStore {
+export function settingsFileForHome(home: string): string {
+  return join(home, "settings.json");
+}
+
+export function defaultSecretStoreForHome(home: string, env: Record<string, string | undefined> = Bun.env): SecretStore {
   const service = secretServiceForHome(home);
-  const mirrors: SecretStore[] = [new TimedSecretStore(new BunSecretStore(service), "Bun.secrets")];
-  if (process.platform === "darwin") {
-    mirrors.push(new TimedSecretStore(new MacosKeychainSecretStore(service), "macOS Keychain"));
+  const readMirrors: SecretStore[] = [new FileSecretStore(legacySecretFileForHome(home))];
+  const writeMirrors: SecretStore[] = [];
+  if (osCredentialStoreEnabledForHome(home, env)) {
+    const bunSecrets = new TimedSecretStore(new BunSecretStore(service), "Bun.secrets");
+    readMirrors.push(bunSecrets);
+    writeMirrors.push(bunSecrets);
+    if (process.platform === "darwin") {
+      const keychain = new TimedSecretStore(new MacosKeychainSecretStore(service), "macOS Keychain");
+      readMirrors.push(keychain);
+      writeMirrors.push(keychain);
+    }
   }
-  return new ResilientSecretStore(new FileSecretStore(secretFileForHome(home)), mirrors);
+  return new ResilientSecretStore(new FileSecretStore(authFileForHome(home)), readMirrors, writeMirrors);
+}
+
+export function osCredentialStoreEnabledForHome(
+  home: string,
+  env: Record<string, string | undefined> = Bun.env
+): boolean {
+  const envValue = env.PASTA_AUTH_STORE ?? env.PASTA_USE_OS_KEYCHAIN ?? env.PASTA_OS_KEYCHAIN;
+  if (envValue !== undefined) return isTruthyAuthStoreValue(envValue);
+
+  const settings = readSettings(home);
+  if (typeof settings.authStore === "string") return isTruthyAuthStoreValue(settings.authStore);
+  if (typeof settings.useOsKeychain === "boolean") return settings.useOsKeychain;
+  return false;
 }
 
 export class TimedSecretStore implements SecretStore {
@@ -89,17 +123,22 @@ export class TimedSecretStore implements SecretStore {
 }
 
 export class ResilientSecretStore implements SecretStore {
+  private readonly deleteStores: SecretStore[];
+
   constructor(
     private readonly fileStore: SecretStore,
-    private readonly mirrorStores: SecretStore[]
-  ) {}
+    private readonly readStores: SecretStore[],
+    private readonly writeStores: SecretStore[] = readStores
+  ) {
+    this.deleteStores = uniqueStores([...readStores, ...writeStores]);
+  }
 
   async get(name: SecretNameValue): Promise<string | null> {
     const local = await this.fileStore.get(name);
     if (local) return local;
 
     const errors: unknown[] = [];
-    for (const store of [...this.mirrorStores].reverse()) {
+    for (const store of this.readStores) {
       try {
         const value = await store.get(name);
         if (value) {
@@ -114,7 +153,7 @@ export class ResilientSecretStore implements SecretStore {
     const accessError = errors.find(isSecretAccessError);
     if (accessError) {
       throw new Error(
-        `secret ${name} is unavailable in this terminal session; OS credential storage requires interactive access and no local Pasta secret file exists`
+        `secret ${name} is unavailable in this terminal session; OS credential storage requires interactive access and no local Pasta auth cache exists`
       );
     }
     return null;
@@ -122,12 +161,12 @@ export class ResilientSecretStore implements SecretStore {
 
   async set(name: SecretNameValue, value: string): Promise<void> {
     await this.fileStore.set(name, value);
-    await Promise.all(this.mirrorStores.map((store) => store.set(name, value).catch(() => undefined)));
+    await Promise.all(this.writeStores.map((store) => store.set(name, value).catch(() => undefined)));
   }
 
   async delete(name: SecretNameValue): Promise<void> {
     await this.fileStore.delete(name);
-    await Promise.all(this.mirrorStores.map((store) => store.delete(name).catch(() => undefined)));
+    await Promise.all(this.deleteStores.map((store) => store.delete(name).catch(() => undefined)));
   }
 }
 
@@ -216,7 +255,7 @@ export class MemorySecretStore implements SecretStore {
 export async function requireSecret(store: SecretStore, name: SecretNameValue): Promise<string> {
   const value = await store.get(name);
   if (!value) {
-    throw new Error(`missing ${name}; run pasta bootstrap or pair consume to create $PASTA_HOME/secrets.json`);
+    throw new Error(`missing ${name}; run pasta bootstrap or pair consume to create $PASTA_HOME/auth.json`);
   }
   return value;
 }
@@ -228,7 +267,7 @@ function bunSecrets(): {
 } {
   const secrets = (Bun as unknown as { secrets?: unknown }).secrets;
   if (!secrets || typeof secrets !== "object") {
-    throw new Error("Bun.secrets is unavailable; plaintext fallback is disabled");
+    throw new Error("Bun.secrets is unavailable");
   }
   return secrets as ReturnType<typeof bunSecrets>;
 }
@@ -259,4 +298,23 @@ async function runSecurity(args: string[]): Promise<{ code: number; stdout: stri
   ]).finally(() => clearTimeout(timeout));
   if (timedOut) return { code: 124, stdout, stderr: "security command timed out" };
   return { code, stdout, stderr: stderr.trim() };
+}
+
+function readSettings(home: string): { authStore?: unknown; useOsKeychain?: unknown } {
+  const filePath = settingsFileForHome(home);
+  if (!existsSync(filePath)) return {};
+  try {
+    return JSON.parse(readFileSync(filePath, "utf8")) as { authStore?: unknown; useOsKeychain?: unknown };
+  } catch {
+    return {};
+  }
+}
+
+function isTruthyAuthStoreValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return ["keychain", "os-keychain", "os_keychain", "true", "1", "yes", "on"].includes(normalized);
+}
+
+function uniqueStores(stores: SecretStore[]): SecretStore[] {
+  return [...new Set(stores)];
 }

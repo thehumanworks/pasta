@@ -14,7 +14,6 @@ interface PageMeta {
   slug: string;
   description: string;
   nav_order: number;
-  icon?: string;
 }
 
 interface PageDoc {
@@ -22,22 +21,6 @@ interface PageDoc {
   humanMd: string;
   agentMd: string;
 }
-
-const NAV_ICONS: Record<string, string> = {
-  "quick-start": "⚡",
-  overview: "🍝",
-  installation: "⬇",
-  "cli-reference": "⌨",
-  architecture: "🏗",
-  protocol: "🔐",
-  pairing: "🔗",
-  "daemon-shell": "👻",
-  payloads: "📦",
-  security: "🛡",
-  "deploy-relay": "☁",
-  development: "🔧",
-  "agent-handbook": "🤖"
-};
 
 function parseFrontmatter(raw: string): { meta: Record<string, string>; body: string } {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
@@ -73,8 +56,7 @@ async function loadPages(): Promise<PageDoc[]> {
         title: meta.title ?? slug,
         slug,
         description: meta.description ?? "",
-        nav_order: Number.parseInt(meta.nav_order ?? "99", 10),
-        icon: NAV_ICONS[slug] ?? "·"
+        nav_order: Number.parseInt(meta.nav_order ?? "99", 10)
       },
       humanMd,
       agentMd
@@ -98,9 +80,10 @@ function escapeHtml(text: string): string {
 
 function buildNav(pages: PageDoc[], activeSlug: string, basePath: string): string {
   return pages
-    .map((p) => {
+    .map((p, index) => {
       const active = p.meta.slug === activeSlug ? ' aria-current="page"' : "";
-      return `<a class="nav-link${p.meta.slug === activeSlug ? " nav-link--active" : ""}" href="${basePath}${p.meta.slug}/"${active}><span class="nav-icon">${p.meta.icon}</span>${escapeHtml(p.meta.title)}</a>`;
+      const navIndex = String(index + 1).padStart(2, "0");
+      return `<a class="nav-link${p.meta.slug === activeSlug ? " nav-link--active" : ""}" href="${basePath}${p.meta.slug}/"${active}><span class="nav-index" aria-hidden="true">${navIndex}</span>${escapeHtml(p.meta.title)}</a>`;
     })
     .join("\n");
 }
@@ -208,7 +191,7 @@ async function buildSite(): Promise<void> {
     JSON.stringify(
       {
         name: "Pasta Documentation",
-        version: "0.1.0",
+        version: "0.1.5",
         accept_markdown: "Request /agent/{slug}.md with Accept: text/markdown, text/plain, or */*",
         accept_json: "Request /api/{slug}.json with Accept: application/json",
         pages: agentManifest

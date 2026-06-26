@@ -6,6 +6,7 @@ dist/
 docs-site/dist/
 docs-site/node_modules/
 config.json
+auth.json
 secrets.json
 .config/pasta/
 *.tsbuildinfo

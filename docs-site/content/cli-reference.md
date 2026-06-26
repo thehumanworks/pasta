@@ -1,7 +1,7 @@
 ---
 title: CLI Reference
 slug: cli-reference
-description: Every pasta command, flags, and exit codes at v0.1.0.
+description: Every pasta command, flags, and exit codes at v0.1.5.
 nav_order: 4
 ---
 

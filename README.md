@@ -11,7 +11,7 @@ Pasta is intentionally central-service based. P2P, LAN discovery, SSH, tailnets,
 - Device listing, revocation, and encrypted-space reset.
 - macOS PNG image clipboard copy/paste through unified `copy`/`paste` commands.
 - Bounded image/file payloads up to 50 MiB through the R2-backed API path.
-- Local secrets stored in a Pasta-local `0600` secret file and mirrored to macOS Keychain when available, so SSH and other noninteractive terminals work.
+- Device auth cached in `$PASTA_HOME/auth.json` (`0600`) by default. OS credential storage is opt-in via `$PASTA_HOME/settings.json` or `PASTA_AUTH_STORE=keychain`, so SSH and other noninteractive terminals work without keychain access.
 
 ## Run It
 
@@ -365,7 +365,7 @@ PASTA_HOME=/tmp/pasta-a pasta bootstrap --endpoint "$PASTA_ENDPOINT" --device-na
 PASTA_HOME=/tmp/pasta-b pasta pair request --ticket "$TICKET" --device-name b
 ```
 
-Pasta stores non-secret config in `$PASTA_HOME/config.json`. Secrets live in `$PASTA_HOME/secrets.json` with owner-only permissions and are mirrored to a macOS Keychain service derived from that home path when available.
+Pasta stores non-secret config in `$PASTA_HOME/config.json`. Device auth lives in `$PASTA_HOME/auth.json` with owner-only permissions. Legacy `$PASTA_HOME/secrets.json` files are read as a migration source only. OS credential storage is disabled by default; opt in with `$PASTA_HOME/settings.json` containing `{ "authStore": "keychain" }` or with `PASTA_AUTH_STORE=keychain`.
 
 ## Local Worker Smoke
 

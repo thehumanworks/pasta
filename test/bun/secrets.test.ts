@@ -3,13 +3,17 @@ import { mkdtemp, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  authFileForHome,
   BunSecretStore,
   defaultSecretStoreForHome,
   FileSecretStore,
+  legacySecretFileForHome,
   MacosKeychainSecretStore,
+  osCredentialStoreEnabledForHome,
   ResilientSecretStore,
   SecretName,
   secretServiceForHome,
+  settingsFileForHome,
   TimedSecretStore,
   type SecretStore
 } from "../../src/cli/secret-store";
@@ -25,7 +29,7 @@ describe("BunSecretStore", () => {
   });
 
   it("writes local fallback secrets with owner-only permissions", async () => {
-    const filePath = join(await mkdtemp(join(tmpdir(), "pasta-secrets-")), "secrets.json");
+    const filePath = join(await mkdtemp(join(tmpdir(), "pasta-secrets-")), "auth.json");
     const store = new FileSecretStore(filePath);
     await store.set(SecretName.groupKey, "local-secret");
     expect(await store.get(SecretName.groupKey)).toBe("local-secret");
@@ -35,7 +39,7 @@ describe("BunSecretStore", () => {
   });
 
   it("uses the local fallback when OS credential storage is noninteractive", async () => {
-    const fileStore = new FileSecretStore(join(await mkdtemp(join(tmpdir(), "pasta-secrets-")), "secrets.json"));
+    const fileStore = new FileSecretStore(join(await mkdtemp(join(tmpdir(), "pasta-secrets-")), "auth.json"));
     const blockedStore: SecretStore = {
       get: async () => {
         throw new Error("User interaction is not allowed. (code: -25308)");
@@ -51,8 +55,8 @@ describe("BunSecretStore", () => {
     expect(await store.get(SecretName.groupKey)).toBe("local-secret");
   });
 
-  it("mirrors existing OS-store secrets into the local fallback", async () => {
-    const fileStore = new FileSecretStore(join(await mkdtemp(join(tmpdir(), "pasta-secrets-")), "secrets.json"));
+  it("migrates existing read-store secrets into auth.json", async () => {
+    const fileStore = new FileSecretStore(join(await mkdtemp(join(tmpdir(), "pasta-secrets-")), "auth.json"));
     const mirrorStore: SecretStore = {
       get: async () => "mirrored-secret",
       set: async () => undefined,
@@ -63,23 +67,45 @@ describe("BunSecretStore", () => {
     expect(await fileStore.get(SecretName.groupKey)).toBe("mirrored-secret");
   });
 
-  it("migrates existing Bun.secrets entries into the local fallback", async () => {
+  it("migrates old secrets.json entries into auth.json by default", async () => {
+    const home = await mkdtemp(join(tmpdir(), "pasta-secrets-"));
+    const legacyStore = new FileSecretStore(legacySecretFileForHome(home));
+    await legacyStore.set(SecretName.signingPrivateKey, "legacy-signing-key");
+    const store = defaultSecretStoreForHome(home, {});
+    expect(await store.get(SecretName.signingPrivateKey)).toBe("legacy-signing-key");
+    expect(await new FileSecretStore(authFileForHome(home)).get(SecretName.signingPrivateKey)).toBe("legacy-signing-key");
+    await store.delete(SecretName.signingPrivateKey);
+    expect(await store.get(SecretName.signingPrivateKey)).toBeNull();
+    expect(await legacyStore.get(SecretName.signingPrivateKey)).toBeNull();
+  });
+
+  it("does not use OS credential stores unless settings or env opt in", async () => {
+    const home = await mkdtemp(join(tmpdir(), "pasta-secrets-"));
+    expect(osCredentialStoreEnabledForHome(home, {})).toBe(false);
+    expect(osCredentialStoreEnabledForHome(home, { PASTA_AUTH_STORE: "keychain" })).toBe(true);
+    expect(osCredentialStoreEnabledForHome(home, { PASTA_AUTH_STORE: "file" })).toBe(false);
+    await Bun.write(settingsFileForHome(home), `${JSON.stringify({ authStore: "keychain" })}\n`);
+    expect(osCredentialStoreEnabledForHome(home, {})).toBe(true);
+  });
+
+  it("migrates existing Bun.secrets entries into auth.json only when OS storage is enabled", async () => {
     const home = await mkdtemp(join(tmpdir(), "pasta-secrets-"));
     const service = secretServiceForHome(home);
     const legacyStore = new BunSecretStore(service);
     await legacyStore.set(SecretName.signingPrivateKey, "legacy-signing-key");
     try {
-      const store = defaultSecretStoreForHome(home);
+      expect(await defaultSecretStoreForHome(home, {}).get(SecretName.signingPrivateKey)).toBeNull();
+      const store = defaultSecretStoreForHome(home, { PASTA_AUTH_STORE: "keychain" });
       expect(await store.get(SecretName.signingPrivateKey)).toBe("legacy-signing-key");
-      expect(await new FileSecretStore(join(home, "secrets.json")).get(SecretName.signingPrivateKey)).toBe("legacy-signing-key");
+      expect(await new FileSecretStore(authFileForHome(home)).get(SecretName.signingPrivateKey)).toBe("legacy-signing-key");
     } finally {
       await legacyStore.delete(SecretName.signingPrivateKey);
-      await new FileSecretStore(join(home, "secrets.json")).delete(SecretName.signingPrivateKey);
+      await new FileSecretStore(authFileForHome(home)).delete(SecretName.signingPrivateKey);
     }
   });
 
   it("does not let slow mirror stores block local secret writes", async () => {
-    const fileStore = new FileSecretStore(join(await mkdtemp(join(tmpdir(), "pasta-secrets-")), "secrets.json"));
+    const fileStore = new FileSecretStore(join(await mkdtemp(join(tmpdir(), "pasta-secrets-")), "auth.json"));
     const slowStore: SecretStore = {
       get: async () => new Promise<string | null>(() => undefined),
       set: async () => new Promise<void>(() => undefined),

@@ -28,7 +28,7 @@ flowchart LR
   subgraph "Device A"
     AClip["OS clipboard adapter"]
     ADaemon["Bun CLI daemon"]
-    ASecrets["OS credential store via Bun.secrets"]
+    ASecrets["local auth.json cache\noptional OS credential store"]
   end
   subgraph "Cloudflare"
     Worker["Worker HTTPS API"]
@@ -39,7 +39,7 @@ flowchart LR
   subgraph "Device B"
     BClip["OS clipboard adapter"]
     BDaemon["Bun CLI daemon"]
-    BSecrets["OS credential store via Bun.secrets"]
+    BSecrets["local auth.json cache\noptional OS credential store"]
   end
 
   AClip --> ADaemon
@@ -59,8 +59,8 @@ flowchart LR
 - **One Durable Object per clipboard space**: route by internal `routing_id`; it is required, but not secret and not user-facing in normal UX.
 - **Device-owned interactions**: devices initiate every meaningful action. Copy publishes ciphertext; paste pulls `latest` or a history entry; pairing approval wraps keys. The central service coordinates and stores encrypted state but does not own clipboard intent.
 - **Pull-on-paste is valid**: the MVP does not need continuous device sync. `paste` can pull `latest` from the relay, decrypt locally, set stdout/clipboard, and optionally append to local history.
-- **Clean pairing UX**: no durable random ID or huge secret should be manually carried. The new device shows a short code or QR containing an ephemeral pairing request. An existing trusted device approves, wraps the group key for the new device, and the new device stores secrets in the OS credential store.
-- **No plaintext fallback**: if OS secret storage is unavailable, authenticated commands fail with setup guidance.
+- **Clean pairing UX**: no durable random ID or huge secret should be manually carried. The new device shows a short code or QR containing an ephemeral pairing request. An existing trusted device approves, wraps the group key for the new device, and the new device stores auth in the local `auth.json` cache.
+- **Noninteractive auth by default**: device auth is cached in `$PASTA_HOME/auth.json` with owner-only permissions. OS credential storage is opt-in through settings or environment when a user wants keychain mirroring.
 
 ## Goal Order
 

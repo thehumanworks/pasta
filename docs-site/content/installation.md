@@ -12,7 +12,7 @@ nav_order: 3
 
 ```bash
 bunx --bun -p github:thehumanworks/pasta pasta --version
-bunx --bun github:thehumanworks/pasta#v0.1.0 --version
+bunx --bun github:thehumanworks/pasta#v0.1.5 --version
 ```
 
 **From a local checkout (developers):**
@@ -72,7 +72,7 @@ This generates:
 
 - A new **account** and **routing id** (Durable Object name)
 - Device **Ed25519** signing keys and **X25519** wrapping keys
-- A **group key** stored in the local Pasta secret store and mirrored to macOS Keychain when available
+- A **group key** cached in `$PASTA_HOME/auth.json` (`0600`), with OS credential storage available only when explicitly enabled
 
 Config lands in `~/.config/pasta/config.json` (or `$PASTA_HOME/config.json`). Secrets never go in that file.
 
@@ -103,7 +103,7 @@ PASTA_HOME=/tmp/pasta-a pasta bootstrap ...
 PASTA_HOME=/tmp/pasta-b pasta pair request --ticket "$TICKET" ...
 ```
 
-Each profile gets its own config, local secret file, and macOS Keychain namespace.
+Each profile gets its own config, auth cache, and optional OS credential namespace.
 
 ## Environment variables
 
@@ -111,6 +111,8 @@ Each profile gets its own config, local secret file, and macOS Keychain namespac
 | --- | --- |
 | `PASTA_HOME` | Override config/secrets home (default `~/.config/pasta`) |
 | `PASTA_ENDPOINT` | Not auto-read; pass `--endpoint` at bootstrap or set in config |
+| `PASTA_AUTH_STORE=keychain` | Opt in to OS credential storage mirroring |
+| `PASTA_USE_OS_KEYCHAIN=1` | Boolean alias for OS credential storage opt-in |
 
 ## Shell integration
 
@@ -135,11 +137,13 @@ Package bin: `package.json` → `"pasta": "./src/cli.ts"` (Bun shebang, no lifec
 
 - `PASTA_HOME` → config dir; default `~/.config/pasta`
 - `config.json` fields: `endpoint`, `accountId`, `routingId`, `deviceId`, `deviceName`, public keys, `keyVersion`, optional `pendingPairing`, `lastRemotePasteHash`
-- Secrets in `$PASTA_HOME/secrets.json` (`0600`) and mirrored to macOS Keychain service `secretServiceForHome(home)` when available:
+- Device auth in `$PASTA_HOME/auth.json` (`0600`) by default:
   - `groupKey`
   - `signingPrivateKey`
   - `wrappingPrivateKey`
-- `requireSecret()` throws if neither the local file nor an OS-store mirror has the requested secret.
+- Legacy `$PASTA_HOME/secrets.json` is read as a migration source and deleted when auth is deleted.
+- OS credential mirrors (`Bun.secrets`, macOS Keychain) are used only when `$PASTA_HOME/settings.json` enables `authStore: "keychain"` or `useOsKeychain: true`, or an env var such as `PASTA_AUTH_STORE=keychain` is set.
+- `requireSecret()` throws if neither the local auth cache nor an enabled OS-store mirror has the requested secret.
 
 ## Bootstrap implementation (`bootstrap()` in cli.ts)
 
@@ -165,4 +169,4 @@ Replace D1 `database_id` placeholder before remote deploy.
 
 ## Local multi-device testing
 
-Always isolate with `PASTA_HOME=/tmp/pasta-{a,b}` — shares neither config, local secret file, nor macOS Keychain namespace.
+Always isolate with `PASTA_HOME=/tmp/pasta-{a,b}` — shares neither config, auth cache, nor optional OS credential namespace.

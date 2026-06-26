@@ -5,7 +5,7 @@ import { describe, expect, it } from "bun:test";
 import { clipboardCandidatesForPlatform, MemoryClipboardAdapter } from "../../src/cli/clipboard";
 import { FetchApiClient, MockApiClient } from "../../src/cli/client";
 import { readConfig, type PastaConfig, type Paths, writeConfig } from "../../src/cli/config";
-import { defaultSecretStoreForHome, FileSecretStore, MemorySecretStore, ResilientSecretStore, SecretName, type SecretStore } from "../../src/cli/secret-store";
+import { authFileForHome, defaultSecretStoreForHome, FileSecretStore, MemorySecretStore, ResilientSecretStore, SecretName, type SecretStore } from "../../src/cli/secret-store";
 import { runCli } from "../../src/cli";
 import { encryptTextClip, generateDeviceKeyMaterial, generateGroupKey } from "../../src/shared/crypto";
 import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, SIGNATURE_HEADERS, type StoredClip } from "../../src/shared/protocol";
@@ -78,15 +78,16 @@ describe("CLI", () => {
         paths,
         clientFactory: () => client
       })).toBe(0);
-      const secrets = defaultSecretStoreForHome(paths.home);
+      const secrets = defaultSecretStoreForHome(paths.home, {});
       expect(await secrets.get(SecretName.groupKey)).toBeTruthy();
       expect(await secrets.get(SecretName.signingPrivateKey)).toBeTruthy();
-      expect((await stat(join(paths.home, "secrets.json"))).mode & 0o777).toBe(0o600);
+      expect((await stat(authFileForHome(paths.home))).mode & 0o777).toBe(0o600);
+      expect(await Bun.file(join(paths.home, "secrets.json")).exists()).toBe(false);
       const configText = await Bun.file(paths.configPath).text();
       expect(configText).not.toContain("group-key");
       expect(configText).not.toContain("private-key");
     } finally {
-      const secrets = defaultSecretStoreForHome(paths.home);
+      const secrets = defaultSecretStoreForHome(paths.home, {});
       await secrets.delete(SecretName.groupKey);
       await secrets.delete(SecretName.signingPrivateKey);
       await secrets.delete(SecretName.wrappingPrivateKey);
@@ -107,7 +108,7 @@ describe("CLI", () => {
       wrapPublicKey: keyMaterial.wrapping.publicKey,
       keyVersion: 1
     };
-    const fileStore = new FileSecretStore(join(paths.home, "secrets.json"));
+    const fileStore = new FileSecretStore(authFileForHome(paths.home));
     const legacyStore: SecretStore = {
       get: async (name) => name === SecretName.signingPrivateKey ? keyMaterial.signing.privateKey : null,
       set: async () => undefined,

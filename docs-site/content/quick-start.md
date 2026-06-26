@@ -78,7 +78,7 @@ pasta daemon              # polls clipboard every 750ms
 
 ## Mental model
 
-- **Your devices** hold plaintext and the group encryption key (in the local Pasta secret store).
+- **Your devices** hold plaintext and the group encryption key (cached in local Pasta auth storage).
 - **The relay** stores ciphertext, sequence numbers, and pairing metadata — never plaintext.
 - **Paste is pull-based** — nothing syncs continuously unless you run the daemon on the publishing side.
 - **Lost all devices?** Run `pasta reset --yes` from any remaining trusted device. Old history becomes unreadable. There is no secret recovery.
@@ -92,7 +92,7 @@ pasta daemon              # polls clipboard every 750ms
 <!-- @agent -->
 ## Product summary
 
-Pasta v0.1.0 — terminal-first encrypted clipboard relay. Central Cloudflare Worker transport only. Devices encrypt locally; relay stores ciphertext.
+Pasta v0.1.5 — terminal-first encrypted clipboard relay. Central Cloudflare Worker transport only. Devices encrypt locally; relay stores ciphertext.
 
 ## Repository layout
 
@@ -138,7 +138,7 @@ reset --yes → new routing_id + group key
 ## Quick verification commands
 
 ```bash
-bunx --bun -p github:thehumanworks/pasta pasta --version   # expect 0.1.0
+bunx --bun -p github:thehumanworks/pasta pasta --version   # expect 0.1.5
 pasta protocol                                              # PROTOCOL_ENDPOINTS JSON
 pasta payload-plan                                          # R2 thresholds
 pasta doctor                                                # clipboard adapter probe

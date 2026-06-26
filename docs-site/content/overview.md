@@ -1,7 +1,7 @@
 ---
 title: Overview
 slug: overview
-description: What Pasta is for, what it is not, and the product shape at v0.1.0.
+description: What Pasta is for, what it is not, and the product shape at v0.1.5.
 nav_order: 2
 ---
 
@@ -10,7 +10,7 @@ nav_order: 2
 
 Pasta lets **trusted desktops share a clipboard** through an encrypted central relay. When you copy text (or, on supported paths, an image or file) on one machine, another machine you have paired can pull and decrypt it — locally — on paste.
 
-The experience is deliberately **terminal-first**: a `pasta` CLI, an optional background daemon that watches your clipboard, and shell aliases for common flows. There is no GUI, browser extension, or mobile client in v0.1.0.
+The experience is deliberately **terminal-first**: a `pasta` CLI, an optional background daemon that watches your clipboard, and shell aliases for common flows. There is no GUI, browser extension, or mobile client in v0.1.5.
 
 ## Why a central relay?
 
@@ -26,15 +26,15 @@ That choice trades metadata visibility (the relay sees *that* you copied, *when*
 4. **Clean pairing** — short code + QR; no typing long secrets.
 5. **Honest recovery** — lose all devices → `reset`; no backdoor recovery.
 
-## Supported today (v0.1.0)
+## Supported today (v0.1.5)
 
 | Capability | Status |
 | --- | --- |
-| Text copy / paste / history | ✅ All desktop platforms via CLI |
-| Daemon auto-publish | ✅ Text polling |
-| Pairing & device revoke | ✅ |
-| macOS PNG image clipboard | ✅ `copy --image` / `paste --image` |
-| File payloads <= 50 MiB | ✅ R2-backed `copy <path>` / `paste` |
+| Text copy / paste / history | Done: all desktop platforms via CLI |
+| Daemon auto-publish | Done: text polling |
+| Pairing & device revoke | Done |
+| macOS PNG image clipboard | Done: `copy --image` / `paste --image` |
+| File payloads <= 50 MiB | Done: R2-backed `copy <path>` / `paste` |
 | Linux / Windows image clipboard | Documented assumption; not live-smoked here |
 | npm / compiled binaries | Fallback paths; GitHub `bunx` is primary |
 
@@ -57,7 +57,7 @@ That choice trades metadata visibility (the relay sees *that* you copied, *when*
 ## System identity
 
 - **Name:** Pasta (`pasta` CLI/bin)
-- **Version:** 0.1.0 (`PASTA_VERSION` in `src/shared/protocol.ts`)
+- **Version:** 0.1.5 (`PASTA_VERSION` in `src/shared/protocol.ts`)
 - **License:** UNLICENSED (package.json)
 - **Public repo:** github:thehumanworks/pasta
 
@@ -82,7 +82,7 @@ Bun CLI on desktop ↔ HTTPS ↔ Cloudflare Worker ↔ D1 registry + DO per clip
 | Data | Where |
 | --- | --- |
 | Plaintext clipboard | Device RAM / OS clipboard only |
-| Group key, device private keys | Local Pasta secret store (`PASTA_HOME` scoped) |
+| Group key, device private keys | `$PASTA_HOME/auth.json` local auth cache by default |
 | Non-secret config | `$PASTA_HOME/config.json` |
 | Ciphertext clips | Durable Object (inline) or R2 (files/large) |
 | Device registry, nonces, pairing | D1 |
