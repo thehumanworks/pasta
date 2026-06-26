@@ -187,7 +187,7 @@ async function publishFile(env: Env, auth: AuthContext, clip: EncryptedClip): Pr
 
 async function getFile(env: Env, auth: AuthContext, seq: number): Promise<Response> {
   const clip = await space(env, auth).getClip(actorOf(auth), seq);
-  if (!clip || clip.payloadKind !== "file" || !clip.r2Key) return json({ error: "not_found" }, 404);
+  if (!clip || !clip.r2Key) return json({ error: "not_found" }, 404);
   const object = await env.BLOBS.get(clip.r2Key);
   if (!object) return json({ error: "blob_missing" }, 404);
   const ciphertext = toBase64Url(new Uint8Array(await object.arrayBuffer()));
@@ -427,7 +427,8 @@ function validateFileClip(auth: AuthContext, clip: EncryptedClip): void {
   requireString(clip.aadHash, "aadHash");
   requireString(clip.ciphertext, "ciphertext");
   if (clip.originDeviceId !== auth.deviceId) throw new Error("origin device mismatch");
-  if (clip.payloadKind !== "file") throw new Error("unsupported payload kind");
+  if (clip.payloadKind !== "file" && clip.payloadKind !== "image") throw new Error("unsupported payload kind");
+  if (clip.payloadKind === "image" && !clip.mime.startsWith("image/")) throw new Error("bad image MIME");
   if (clip.byteLen < 0 || clip.byteLen > LARGE_PAYLOAD_MAX_BYTES) throw new Error("file payload too large");
   const aad = aadForClip(auth.accountId, auth.routingId, clip);
   if (clip.aadHash !== sha256Base64Url(stableJson(aad))) throw new Error("bad AAD hash");

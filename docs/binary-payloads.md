@@ -7,8 +7,8 @@ Binary payload support is behind the text MVP. Text clips remain inline in the D
 - Inline ciphertext threshold: 512 KiB. Text stays inline; binary payloads above this threshold use R2.
 - Max binary payload size: 50 MiB for the first hardening pass.
 - R2 key format: `spaces/{routing_id}/clips/{seq}/{payload_id}` where `payload_id` is random base64url and never derived from a filename, MIME type, or plaintext hash.
-- Sequence allocation: the Durable Object allocates `seq` for each accepted file payload and derives the R2 key from that sequence plus a random `payload_id`.
-- Finalize semantics: the first implementation uses one signed Worker request for bounded files. The Worker validates the encrypted envelope, reserves metadata in the Durable Object, writes encrypted bytes to R2, rolls back the metadata row if the R2 write fails, schedules retention after a successful R2 write, and only then returns `201`.
+- Sequence allocation: the Durable Object allocates `seq` for each accepted R2-backed image or file payload and derives the R2 key from that sequence plus a random `payload_id`.
+- Finalize semantics: the first implementation uses one signed Worker request for bounded R2-backed payloads. The Worker validates the encrypted envelope, reserves metadata in the Durable Object, writes encrypted bytes to R2, rolls back the metadata row if the R2 write fails, schedules retention after a successful R2 write, and only then returns `201`.
 - MIME and original filename handling: MIME type is stored; filenames are omitted by default or replaced by user-approved labels because names can be sensitive.
 
 ## Metadata Contract
@@ -24,7 +24,7 @@ R2 objects store encrypted bytes only. Object metadata may include content lengt
 
 ## API Shape
 
-1. `POST /v1/files` accepts a normal signed device request containing an `EncryptedClip` with `payloadKind: "file"` and base64url encrypted bytes in `ciphertext`.
+1. `POST /v1/files` accepts a normal signed device request containing an `EncryptedClip` with `payloadKind: "file"` or `payloadKind: "image"` and base64url encrypted bytes in `ciphertext`.
 2. The Worker validates the 50 MiB max, AAD hash, origin device, MIME, and ciphertext encoding before touching storage.
 3. The Durable Object reserves metadata, assigns `seq`, and returns an R2 key in the form `spaces/{routing_id}/clips/{seq}/{payload_id}`.
 4. The Worker writes encrypted bytes to R2 using that key. R2 custom metadata is limited to clip id, payload kind, and MIME.
@@ -63,11 +63,11 @@ Retention alarms delete expired DO metadata and associated R2 objects. The alarm
 
 ## Current MVP Behavior
 
-Image clipboard support is implemented for macOS PNG pasteboard data through explicit `copy-image` and `paste-image` commands. Linux and Windows image clipboard support remains a command-plan assumption in this environment until a native runner is available.
+Image clipboard support is implemented for macOS PNG pasteboard data through the primary `copy` and `paste` commands, with `copy-image` and `paste-image` retained as compatibility aliases. Small PNG payloads stay inline; large PNG payloads use the R2-backed image path while preserving `payloadKind: "image"`. Linux and Windows image clipboard support remains a command-plan assumption in this environment until a native runner is available.
 
-File payload support is implemented through explicit `send-file` and `paste-file` commands. The CLI rejects files above 50 MiB before reading them into memory, encrypts bytes locally, sends encrypted bytes to the Worker, and the Worker stores them in R2 under the DO-assigned key. `paste-file` downloads the encrypted object through the Worker, decrypts locally, and writes to `--out`.
+File payload support is implemented through the primary `copy` and `paste --out` commands, with `send-file` and `paste-file` retained as compatibility aliases. The CLI rejects files above 50 MiB before reading them into memory, encrypts bytes locally, sends encrypted bytes to the Worker, and the Worker stores them in R2 under the DO-assigned key. File payloads require `--out` on paste.
 
-Unsupported binary clipboard content outside the implemented image path fails with a controlled unsupported-payload result. Text support does not depend on R2. Goal 06 adds binary support behind explicit commands and platform-scoped clipboard adapters.
+Unsupported binary clipboard content outside the implemented PNG image path fails with a controlled unsupported-payload result. Text support does not depend on R2. Goal 06 adds binary support behind platform-scoped clipboard adapters, and Goal 07 makes `copy`/`paste` the primary UX.
 
 ## Design Review Result
 

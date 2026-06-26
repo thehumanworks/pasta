@@ -43,14 +43,18 @@ export class SystemClipboardAdapter implements ClipboardAdapter {
     try {
       await runCommand([
         "osascript",
+        "-l",
+        "JavaScript",
         "-e",
-        `set outFile to open for access (POSIX file "${out}") with write permission`,
-        "-e",
-        "set eof of outFile to 0",
-        "-e",
-        "write (the clipboard as «class PNGf») to outFile",
-        "-e",
-        "close access outFile"
+        `function run(argv) {
+  ObjC.import("AppKit");
+  const out = argv[0];
+  const data = $.NSPasteboard.generalPasteboard.dataForType($("public.png"));
+  if (!data) throw new Error("no PNG image in clipboard");
+  const ok = data.writeToFileAtomically($(out), true);
+  if (!ok) throw new Error("failed to write clipboard image");
+}`,
+        out
       ]);
       return { mime: "image/png", bytes: new Uint8Array(await Bun.file(out).arrayBuffer()) };
     } finally {
@@ -68,7 +72,23 @@ export class SystemClipboardAdapter implements ClipboardAdapter {
     const input = join(dir, "clipboard.png");
     try {
       await writeFile(input, image.bytes);
-      await runCommand(["osascript", "-e", `set the clipboard to (read (POSIX file "${input}") as «class PNGf»)`]);
+      await runCommand([
+        "osascript",
+        "-l",
+        "JavaScript",
+        "-e",
+        `function run(argv) {
+  ObjC.import("AppKit");
+  const input = argv[0];
+  const data = $.NSData.dataWithContentsOfFile($(input));
+  if (!data) throw new Error("failed to read PNG file");
+  const pasteboard = $.NSPasteboard.generalPasteboard;
+  pasteboard.clearContents;
+  const ok = pasteboard.setDataForType(data, $("public.png"));
+  if (!ok) throw new Error("failed to write PNG image to clipboard");
+}`,
+        input
+      ]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

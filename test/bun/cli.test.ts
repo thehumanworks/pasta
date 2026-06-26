@@ -8,7 +8,7 @@ import { readConfig, type PastaConfig, type Paths, writeConfig } from "../../src
 import { MemorySecretStore, SecretName } from "../../src/cli/secret-store";
 import { runCli } from "../../src/cli";
 import { encryptTextClip, generateDeviceKeyMaterial, generateGroupKey } from "../../src/shared/crypto";
-import { LARGE_PAYLOAD_MAX_BYTES, type StoredClip } from "../../src/shared/protocol";
+import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, type StoredClip } from "../../src/shared/protocol";
 import { shellSnippet } from "../../src/cli/shell";
 
 describe("CLI", () => {
@@ -19,6 +19,31 @@ describe("CLI", () => {
     output.length = 0;
     expect(await runCli(["--help"], { io: capture(output) })).toBe(0);
     expect(output.join("")).toContain("bootstrap");
+    expect(output.join("")).toContain("Examples:");
+    for (const [args, expected] of [
+      [["bootstrap", "--help"], "pasta bootstrap --endpoint https://pasta.nothuman.work"],
+      [["copy", "--help"], "pasta copy ./Downloads/unlimit.png"],
+      [["copy-image", "--help"], "pasta copy-image ./Downloads/unlimit.png"],
+      [["paste", "--help"], "pasta paste --out ./received.bin"],
+      [["paste-image", "--help"], "pasta paste-image --out latest.png"],
+      [["send-file", "--help"], "pasta send-file ./archive.zip"],
+      [["paste-file", "--help"], "pasta paste-file --seq 21 --out ./received.zip"],
+      [["history", "--help"], "pasta history paste 7 --clipboard"],
+      [["daemon", "--help"], "pasta daemon --interval-ms 2000"],
+      [["pair", "--help"], "pasta pair consume"],
+      [["devices", "--help"], "pasta devices revoke dev_example"],
+      [["doctor", "--help"], "pasta doctor"],
+      [["reset", "--help"], "pasta reset --yes"],
+      [["install-shell", "--help"], "pasta install-shell --command"],
+      [["uninstall-shell", "--help"], "pasta uninstall-shell"],
+      [["protocol", "--help"], "pasta protocol"],
+      [["payload-plan", "--help"], "pasta payload-plan"]
+    ] as Array<[string[], string]>) {
+      output.length = 0;
+      expect(await runCli(args, { io: capture(output) }), args.join(" ")).toBe(0);
+      expect(output.join(""), args.join(" ")).toContain("Examples:");
+      expect(output.join(""), args.join(" ")).toContain(expected);
+    }
   });
 
   it("bootstraps config with Bun.secrets-compatible secret store and no raw secret config fields", async () => {
@@ -73,6 +98,10 @@ describe("CLI", () => {
     expect(await runCli(["paste"], deps)).toBe(0);
     expect(output.join("")).toContain("alpha");
     output.length = 0;
+    clipboard.value = "";
+    expect(await runCli(["paste", "--clipboard"], deps)).toBe(0);
+    expect(clipboard.value).toBe("alpha");
+    output.length = 0;
     expect(await runCli(["history", "--show"], deps)).toBe(0);
     expect(output.join("")).toContain("alpha");
 
@@ -115,6 +144,96 @@ describe("CLI", () => {
     const pasted = clipboard.image as { mime: "image/png"; bytes: Uint8Array } | null;
     expect(pasted?.mime).toBe("image/png");
     expect(pasted?.bytes).toEqual(png);
+  });
+
+  it("routes unified copy and paste for image paths and file paths", async () => {
+    const paths = await tempPaths();
+    const secrets = new MemorySecretStore();
+    const groupKey = generateGroupKey();
+    await secrets.set(SecretName.groupKey, groupKey);
+    await secrets.set(SecretName.signingPrivateKey, generateDeviceKeyMaterial().signing.privateKey);
+    await secrets.set(SecretName.wrappingPrivateKey, generateDeviceKeyMaterial().wrapping.privateKey);
+    const config = sampleConfig();
+    await writeConfig(config, paths.configPath);
+    let nextSeq = 1;
+    const clips: StoredClip[] = [];
+    const storedFiles = new Map<number, { clip: StoredClip; ciphertext: string }>();
+    const client = new MockApiClient(({ method, path, body }) => {
+      if (method === "POST" && path === "/v1/clips") {
+        const clip = { ...(body as StoredClip), seq: nextSeq++ };
+        clips.push(clip);
+        return { clip };
+      }
+      if (method === "POST" && path === "/v1/files") {
+        const source = body as StoredClip;
+        const clip = { ...source, seq: nextSeq++, ciphertext: "", storageKind: "r2" as const, r2Key: `spaces/test/${nextSeq}/payload` };
+        clips.push(clip);
+        storedFiles.set(clip.seq, { clip, ciphertext: source.ciphertext });
+        return { clip };
+      }
+      if (path === "/v1/clips/latest") return { clip: clips.at(-1) ?? null };
+      if (path.startsWith("/v1/clips/")) return { clip: clips.find((clip) => clip.seq === Number(path.split("/").at(-1))) };
+      if (method === "GET" && path.startsWith("/v1/files/")) return storedFiles.get(Number(path.split("/").at(-1)));
+      throw new Error(`unexpected ${method} ${path}`);
+    });
+    const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
+    const largePng = new Uint8Array(LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES + 1).fill(5);
+    largePng.set(png.slice(0, 8), 0);
+    const pngPath = join(paths.home, "unlimit.png");
+    const largePngPath = join(paths.home, "large.png");
+    const fakePngPath = join(paths.home, "fake.png");
+    const filePath = join(paths.home, "notes.bin");
+    const imageOut = join(paths.home, "image.png");
+    const largeImageOut = join(paths.home, "large-image.png");
+    const out = join(paths.home, "received.bin");
+    const outSeq = join(paths.home, "received-seq.bin");
+    await Bun.write(pngPath, png);
+    await Bun.write(largePngPath, largePng);
+    await Bun.write(fakePngPath, new Uint8Array([1, 2, 3, 4]));
+    await Bun.write(filePath, new Uint8Array([9, 8, 7, 6]));
+    const clipboard = new MemoryClipboardAdapter();
+    const output: string[] = [];
+    const deps = { io: capture(output), paths, secrets, clipboard, clientFactory: () => client };
+
+    expect(await runCli(["copy", pngPath], deps)).toBe(0);
+    expect(clips.at(-1)?.payloadKind).toBe("image");
+    expect(await runCli(["paste"], deps)).toBe(0);
+    expect(clipboard.image?.bytes).toEqual(png);
+    expect(await runCli(["paste", "--image", "--out", imageOut], deps)).toBe(0);
+    expect(new Uint8Array(await Bun.file(imageOut).arrayBuffer())).toEqual(png);
+
+    output.length = 0;
+    expect(await runCli(["copy", "--path", pngPath], deps)).toBe(0);
+    expect(clips.at(-1)?.payloadKind).toBe("image");
+    expect(await runCli(["copy-image", pngPath], deps)).toBe(0);
+    expect(clips.at(-1)?.payloadKind).toBe("image");
+    output.length = 0;
+    expect(await runCli(["copy", "--image", fakePngPath], deps)).not.toBe(0);
+    expect(output.join("")).toContain("requires PNG image bytes");
+    output.length = 0;
+    expect(await runCli(["copy", fakePngPath], deps)).toBe(0);
+    expect(clips.at(-1)?.payloadKind).toBe("file");
+    output.length = 0;
+    expect(await runCli(["copy", largePngPath], deps)).toBe(0);
+    expect(clips.at(-1)?.payloadKind).toBe("image");
+    expect(clips.at(-1)?.storageKind).toBe("r2");
+    expect(await runCli(["paste", "--image", "--out", largeImageOut], deps)).toBe(0);
+    expect(new Uint8Array(await Bun.file(largeImageOut).arrayBuffer())).toEqual(largePng);
+
+    output.length = 0;
+    expect(await runCli(["copy", filePath], deps)).toBe(0);
+    const fileSeq = clips.at(-1)?.seq;
+    expect(clips.at(-1)?.payloadKind).toBe("file");
+    output.length = 0;
+    expect(await runCli(["paste"], deps)).toBe(2);
+    expect(output.join("")).toContain("file clip needs --out");
+    expect(await runCli(["paste", "--out", out], deps)).toBe(0);
+    expect(new Uint8Array(await Bun.file(out).arrayBuffer())).toEqual(new Uint8Array([9, 8, 7, 6]));
+    expect(await runCli(["paste", "--file", "--seq", String(fileSeq), "--out", outSeq], deps)).toBe(0);
+    expect(new Uint8Array(await Bun.file(outSeq).arrayBuffer())).toEqual(new Uint8Array([9, 8, 7, 6]));
+    output.length = 0;
+    expect(await runCli(["paste", "--file", "--seq", String(fileSeq)], deps)).toBe(2);
+    expect(output.join("")).toContain("file clip needs --out");
   });
 
   it("sends and pastes bounded file payloads through the R2-backed API path", async () => {

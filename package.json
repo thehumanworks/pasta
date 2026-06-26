@@ -9,6 +9,7 @@
   },
   "files": [
     "src",
+    "scripts",
     "migrations",
     "LICENSE",
     "README.md",
@@ -22,6 +23,7 @@
     "test:worker": "vitest run",
     "types": "wrangler types",
     "check": "bun run types && bun test test/bun && vitest run",
+    "smoke:macos-image": "bun scripts/smoke-macos-image.ts",
     "pack:list": "bun pm pack --dry-run"
   },
   "dependencies": {

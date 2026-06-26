@@ -9,8 +9,8 @@ Pasta is intentionally central-service based. P2P, LAN discovery, SSH, tailnets,
 - Text clipboard copy, paste, history, and daemon polling.
 - Pairing with a short code or terminal QR, approved by an existing device.
 - Device listing, revocation, and encrypted-space reset.
-- macOS PNG image clipboard copy/paste through explicit image commands.
-- Bounded file payloads up to 50 MiB through the R2-backed API path.
+- macOS PNG image clipboard copy/paste through unified `copy`/`paste` commands.
+- Bounded image/file payloads up to 50 MiB through the R2-backed API path.
 - Local secrets stored with `Bun.secrets`; plaintext fallback is intentionally disabled.
 
 ## Run It
@@ -237,31 +237,43 @@ The daemon skips republishing text that was just pulled from the remote clipboar
 
 Image clipboard support is live for macOS PNG pasteboard data. Linux and Windows image clipboard support are documented platform assumptions for now.
 
+Publish a PNG image from a path:
+
+```bash
+pasta copy ./Downloads/unlimit.png
+```
+
+The explicit image alias is still available:
+
+```bash
+pasta copy-image ./Downloads/unlimit.png
+```
+
 Publish the current macOS PNG clipboard image:
 
 ```bash
-pasta copy-image
+pasta copy --image
 ```
 
 Pull the latest image into the OS clipboard:
 
 ```bash
-pasta paste-image
+pasta paste
 ```
 
 Write the latest image to a file:
 
 ```bash
-pasta paste-image --out latest.png
+pasta paste --image --out latest.png
 ```
 
 Paste a specific image sequence:
 
 ```bash
-pasta paste-image --seq 18 --out screenshot.png
+pasta paste --image --seq 18 --out screenshot.png
 ```
 
-If the latest clip is text or file data, `paste-image` fails cleanly instead of guessing.
+If the latest clip is text or non-image file data, `pasta paste --image` and `paste-image` fail cleanly instead of guessing.
 
 ## File Examples
 
@@ -270,10 +282,16 @@ File payloads are encrypted locally, stored in R2 as encrypted bytes, and omit l
 Send a small file:
 
 ```bash
-pasta send-file ./notes.txt --mime text/plain
+pasta copy ./notes.txt --mime text/plain
 ```
 
 Send a binary file:
+
+```bash
+pasta copy --file ./archive.zip --mime application/zip
+```
+
+The explicit file alias is still available:
 
 ```bash
 pasta send-file ./archive.zip --mime application/zip
@@ -282,19 +300,19 @@ pasta send-file ./archive.zip --mime application/zip
 Paste the latest file to a new path:
 
 ```bash
-pasta paste-file --out ./received.bin
+pasta paste --out ./received.bin
 ```
 
 Paste a specific file sequence:
 
 ```bash
-pasta paste-file --seq 21 --out ./received.zip
+pasta paste --file --seq 21 --out ./received.zip
 ```
 
 The CLI rejects files above 50 MiB before reading them into memory:
 
 ```bash
-pasta send-file ./large.iso
+pasta copy ./large.iso
 ```
 
 ## Shell Integration

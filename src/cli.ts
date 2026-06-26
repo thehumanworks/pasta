@@ -82,6 +82,10 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
     }
 
     if (command === "bootstrap") {
+      if (argv.includes("--help")) {
+        io.stdout(commandHelp("bootstrap"));
+        return ExitCode.ok;
+      }
       const endpoint = option(argv, "--endpoint") ?? "http://127.0.0.1:8787";
       const deviceName = option(argv, "--device-name") ?? defaultDeviceName();
       const config = await bootstrap(endpoint, deviceName, paths, secrets, deps.clientFactory);
@@ -90,140 +94,66 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
     }
 
     if (command === "doctor") {
+      if (argv.includes("--help")) {
+        io.stdout(commandHelp("doctor"));
+        return ExitCode.ok;
+      }
       const result = await clipboard.doctor();
       io.stdout(JSON.stringify({ version: PASTA_VERSION, clipboard: result }, null, 2) + "\n");
       return result.available ? ExitCode.ok : ExitCode.unavailable;
     }
 
     if (command === "copy") {
-      if (argv.includes("--help")) {
-        io.stdout("usage: pasta copy\n\nReads text from stdin when piped, otherwise from the OS clipboard, then encrypts and publishes it.\n");
-        return ExitCode.ok;
-      }
-      const config = await readConfig(paths.configPath);
-      const text = process.stdin.isTTY ? await clipboard.readText() : await deps.io?.stdinText?.() ?? await defaultIo.stdinText();
-      await publishText(config, secrets, clientFor(config, secrets, deps), text);
-      io.stdout("published\n");
-      return ExitCode.ok;
+      return await copyCommand(argv.slice(1), io, paths, secrets, clipboard, deps);
     }
 
     if (command === "copy-image") {
       if (argv.includes("--help")) {
-        io.stdout("usage: pasta copy-image\n\nReads PNG image bytes from the OS clipboard, encrypts locally, and publishes an inline image clip.\n");
+        io.stdout(commandHelp("copy-image"));
         return ExitCode.ok;
       }
-      const config = await readConfig(paths.configPath);
-      const image = await clipboard.readImage();
-      await publishImage(config, secrets, clientFor(config, secrets, deps), image.bytes, image.mime);
-      io.stdout("published image\n");
-      return ExitCode.ok;
+      return await copyCommand(["--image", ...argv.slice(1)], io, paths, secrets, clipboard, deps);
     }
 
     if (command === "paste") {
-      if (argv.includes("--help")) {
-        io.stdout("usage: pasta paste [--clipboard] [--seq <n>]\n\nPulls latest or selected encrypted text, decrypts locally, and writes stdout or clipboard.\n");
-        return ExitCode.ok;
-      }
-      const config = await readConfig(paths.configPath);
-      const seq = option(argv, "--seq");
-      const response = seq
-        ? await clientFor(config, secrets, deps).request<{ clip: StoredClip }>("GET", `/v1/clips/${Number.parseInt(seq, 10)}`)
-        : await clientFor(config, secrets, deps).request<{ clip: StoredClip | null }>("GET", "/v1/clips/latest");
-      if (!response.clip) {
-        io.stderr("no remote clip\n");
-        return ExitCode.unavailable;
-      }
-      const plaintext = await decryptStored(config, secrets, response.clip);
-      if (argv.includes("--clipboard")) {
-        await clipboard.writeText(plaintext);
-        await updateConfig((current) => ({ ...current, lastRemotePasteHash: sha256Base64Url(plaintext) }), paths.configPath);
-      } else {
-        io.stdout(plaintext);
-        if (!plaintext.endsWith("\n")) io.stdout("\n");
-      }
-      return ExitCode.ok;
+      return await pasteCommand(argv.slice(1), io, paths, secrets, clipboard, deps);
     }
 
     if (command === "paste-image") {
       if (argv.includes("--help")) {
-        io.stdout("usage: pasta paste-image [--seq <n>] [--out <path>]\n\nPulls latest or selected encrypted image, decrypts locally, and writes the OS clipboard or a PNG file.\n");
+        io.stdout(commandHelp("paste-image"));
         return ExitCode.ok;
       }
-      const config = await readConfig(paths.configPath);
-      const seq = option(argv, "--seq");
-      const response = seq
-        ? await clientFor(config, secrets, deps).request<{ clip: StoredClip }>("GET", `/v1/clips/${Number.parseInt(seq, 10)}`)
-        : await clientFor(config, secrets, deps).request<{ clip: StoredClip | null }>("GET", "/v1/clips/latest");
-      if (!response.clip) {
-        io.stderr("no remote image clip\n");
-        return ExitCode.unavailable;
-      }
-      if (response.clip.payloadKind !== "image") {
-        io.stderr(`latest clip is ${response.clip.payloadKind}, not image\n`);
-        return ExitCode.unavailable;
-      }
-      const bytes = await decryptStoredBytes(config, secrets, response.clip);
-      const out = option(argv, "--out");
-      if (out) {
-        await Bun.write(out, bytes);
-      } else {
-        await clipboard.writeImage({ mime: response.clip.mime as "image/png", bytes });
-      }
-      return ExitCode.ok;
+      return await pasteCommand(["--image", ...argv.slice(1)], io, paths, secrets, clipboard, deps);
     }
 
     if (command === "send-file") {
       if (argv.includes("--help")) {
-        io.stdout("usage: pasta send-file <path> [--mime <type>]\n\nEncrypts a bounded file locally and stores encrypted bytes through the R2-backed Worker path.\n");
+        io.stdout(commandHelp("send-file"));
         return ExitCode.ok;
       }
-      const filePath = argv[1];
-      if (!filePath) return ExitCode.usage;
-      const file = Bun.file(filePath);
-      if (!(await file.exists())) throw new Error(`file not found: ${filePath}`);
-      if (file.size > LARGE_PAYLOAD_MAX_BYTES) throw new Error(`file exceeds max size ${LARGE_PAYLOAD_MAX_BYTES}`);
-      const config = await readConfig(paths.configPath);
-      const mime = option(argv, "--mime") ?? (file.type || "application/octet-stream");
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const stored = await publishFilePayload(config, secrets, clientFor(config, secrets, deps), bytes, mime);
-      io.stdout(`published file ${stored.seq}\n`);
-      return ExitCode.ok;
+      return await copyCommand(["--file", ...argv.slice(1)], io, paths, secrets, clipboard, deps);
     }
 
     if (command === "paste-file") {
       if (argv.includes("--help")) {
-        io.stdout("usage: pasta paste-file [--seq <n>] --out <path>\n\nDownloads an encrypted file payload, decrypts locally, and writes it to the requested path.\n");
+        io.stdout(commandHelp("paste-file"));
         return ExitCode.ok;
       }
-      const out = option(argv, "--out");
-      if (!out) return ExitCode.usage;
-      const config = await readConfig(paths.configPath);
-      const seq = option(argv, "--seq");
-      const metadata = seq
-        ? { clip: { seq: Number.parseInt(seq, 10) } as StoredClip }
-        : await clientFor(config, secrets, deps).request<{ clip: StoredClip | null }>("GET", "/v1/clips/latest");
-      if (!metadata.clip) {
-        io.stderr("no remote file clip\n");
-        return ExitCode.unavailable;
-      }
-      const response = await clientFor(config, secrets, deps).request<{ clip: StoredClip; ciphertext: string }>("GET", `/v1/files/${metadata.clip.seq}`);
-      const clip = { ...response.clip, ciphertext: response.ciphertext };
-      const bytes = await decryptStoredBytes(config, secrets, clip);
-      await Bun.write(out, bytes);
-      return ExitCode.ok;
+      return await pasteCommand(["--file", ...argv.slice(1)], io, paths, secrets, clipboard, deps);
     }
 
     if (command === "history") {
       if (argv.includes("--help")) {
-        io.stdout("usage: pasta history [--show] | pasta history paste <seq> [--clipboard]\n\nLists encrypted history metadata or pastes a selected entry.\n");
+        io.stdout(commandHelp("history"));
         return ExitCode.ok;
       }
-      return historyCommand(argv.slice(1), io, paths, secrets, clipboard, deps);
+      return await historyCommand(argv.slice(1), io, paths, secrets, clipboard, deps);
     }
 
     if (command === "daemon") {
       if (argv.includes("--help")) {
-        io.stdout("usage: pasta daemon [--once] [--dry-run] [--interval-ms <n>]\n\nPolls the clipboard and auto-publishes local text changes.\n");
+        io.stdout(commandHelp("daemon"));
         return ExitCode.ok;
       }
       const once = argv.includes("--once") || argv.includes("--dry-run");
@@ -246,14 +176,26 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
     }
 
     if (command === "pair") {
-      return pairCommand(argv.slice(1), io, paths, secrets, deps);
+      if (argv.includes("--help")) {
+        io.stdout(commandHelp("pair"));
+        return ExitCode.ok;
+      }
+      return await pairCommand(argv.slice(1), io, paths, secrets, deps);
     }
 
     if (command === "devices") {
-      return devicesCommand(argv.slice(1), io, paths, secrets, deps);
+      if (argv.includes("--help")) {
+        io.stdout(commandHelp("devices"));
+        return ExitCode.ok;
+      }
+      return await devicesCommand(argv.slice(1), io, paths, secrets, deps);
     }
 
     if (command === "reset") {
+      if (argv.includes("--help")) {
+        io.stdout(commandHelp("reset"));
+        return ExitCode.ok;
+      }
       const config = await readConfig(paths.configPath);
       if (!argv.includes("--yes")) {
         io.stderr("reset requires --yes and makes old encrypted history unrecoverable\n");
@@ -269,23 +211,39 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
     }
 
     if (command === "install-shell") {
+      if (argv.includes("--help")) {
+        io.stdout(commandHelp("install-shell"));
+        return ExitCode.ok;
+      }
       const installed = await installShell(paths, option(argv, "--command") ?? "pasta");
       io.stdout(`installed ${installed}\nsource ${installed}\n`);
       return ExitCode.ok;
     }
 
     if (command === "uninstall-shell") {
+      if (argv.includes("--help")) {
+        io.stdout(commandHelp("uninstall-shell"));
+        return ExitCode.ok;
+      }
       const uninstalled = await uninstallShell(paths);
       io.stdout(`removed Pasta shell snippet from ${uninstalled}\n`);
       return ExitCode.ok;
     }
 
     if (command === "protocol") {
+      if (argv.includes("--help")) {
+        io.stdout(commandHelp("protocol"));
+        return ExitCode.ok;
+      }
       io.stdout(JSON.stringify(PROTOCOL_ENDPOINTS, null, 2) + "\n");
       return ExitCode.ok;
     }
 
     if (command === "payload-plan") {
+      if (argv.includes("--help")) {
+        io.stdout(commandHelp("payload-plan"));
+        return ExitCode.ok;
+      }
       io.stdout(
         JSON.stringify(
           {
@@ -307,6 +265,194 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
     io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
     return ExitCode.internal;
   }
+}
+
+type CopyMode = "auto" | "image" | "file";
+type PasteMode = "auto" | "image" | "file";
+
+async function copyCommand(
+  argv: string[],
+  io: CliIo,
+  paths: Paths,
+  secrets: SecretStore,
+  clipboard: ClipboardAdapter,
+  deps: CliDeps
+): Promise<ExitCodeValue> {
+  if (argv.includes("--help")) {
+    io.stdout(commandHelp("copy"));
+    return ExitCode.ok;
+  }
+  const forceImage = argv.includes("--image");
+  const forceFile = argv.includes("--file");
+  if (forceImage && forceFile) {
+    io.stderr("copy accepts only one of --image or --file\n");
+    return ExitCode.usage;
+  }
+  const mode: CopyMode = forceImage ? "image" : forceFile ? "file" : "auto";
+  const filePath = option(argv, "--path") ?? firstPositional(argv);
+  const config = await readConfig(paths.configPath);
+  const client = clientFor(config, secrets, deps);
+
+  if (filePath) {
+    const published = await publishPath(config, secrets, client, filePath, mode, option(argv, "--mime"));
+    io.stdout(published.payloadKind === "image" ? "published image\n" : `published file ${published.seq}\n`);
+    return ExitCode.ok;
+  }
+
+  if (mode === "file") {
+    io.stderr("copy --file requires a path\n");
+    return ExitCode.usage;
+  }
+
+  if (mode === "image") {
+    const image = await clipboard.readImage();
+    await publishImagePayload(config, secrets, client, image.bytes, image.mime);
+    io.stdout("published image\n");
+    return ExitCode.ok;
+  }
+
+  if (process.stdin.isTTY) {
+    const image = await clipboard.readImage().catch(() => null);
+    if (image) {
+      await publishImagePayload(config, secrets, client, image.bytes, image.mime);
+      io.stdout("published image\n");
+      return ExitCode.ok;
+    }
+  }
+
+  const text = process.stdin.isTTY ? await clipboard.readText() : await deps.io?.stdinText?.() ?? await defaultIo.stdinText();
+  await publishText(config, secrets, client, text);
+  io.stdout("published\n");
+  return ExitCode.ok;
+}
+
+async function publishPath(
+  config: PastaConfig,
+  secrets: SecretStore,
+  client: ApiClient,
+  filePath: string,
+  mode: CopyMode,
+  explicitMime?: string
+): Promise<StoredClip> {
+  const file = Bun.file(filePath);
+  if (!(await file.exists())) throw new Error(`file not found: ${filePath}`);
+  const mime = mimeForPath(filePath, explicitMime ?? file.type);
+  if (file.size > LARGE_PAYLOAD_MAX_BYTES) throw new Error(`file exceeds max size ${LARGE_PAYLOAD_MAX_BYTES}`);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const isPng = isPngBytes(bytes);
+  if (mode === "image") {
+    if (!isPng) throw new Error("copy --image requires PNG image bytes");
+    return publishImagePayload(config, secrets, client, bytes, "image/png");
+  }
+  if (mode === "auto" && isPng) {
+    return publishImagePayload(config, secrets, client, bytes, "image/png");
+  }
+  return publishFilePayload(config, secrets, client, bytes, mime);
+}
+
+async function pasteCommand(
+  argv: string[],
+  io: CliIo,
+  paths: Paths,
+  secrets: SecretStore,
+  clipboard: ClipboardAdapter,
+  deps: CliDeps
+): Promise<ExitCodeValue> {
+  if (argv.includes("--help")) {
+    io.stdout(commandHelp("paste"));
+    return ExitCode.ok;
+  }
+  const forceImage = argv.includes("--image");
+  const forceFile = argv.includes("--file");
+  if (forceImage && forceFile) {
+    io.stderr("paste accepts only one of --image or --file\n");
+    return ExitCode.usage;
+  }
+  const mode: PasteMode = forceImage ? "image" : forceFile ? "file" : "auto";
+  const out = option(argv, "--out");
+  const config = await readConfig(paths.configPath);
+  const client = clientFor(config, secrets, deps);
+  const seq = option(argv, "--seq");
+  if (mode === "file" && !out) {
+    io.stderr("file clip needs --out <path>\n");
+    return ExitCode.usage;
+  }
+  if (mode === "file" && seq) {
+    const payload = await fetchFilePayload(config, secrets, client, Number.parseInt(seq, 10));
+    if (payload.clip.payloadKind !== "file") {
+      io.stderr(`latest clip is ${payload.clip.payloadKind}, not file\n`);
+      return ExitCode.unavailable;
+    }
+    await Bun.write(out!, payload.bytes);
+    return ExitCode.ok;
+  }
+  const clip = await fetchClip(client, seq);
+  if (!clip) {
+    io.stderr(`no remote ${mode === "auto" ? "clip" : `${mode} clip`}\n`);
+    return ExitCode.unavailable;
+  }
+  if (mode === "image" && !clipIsImageLike(clip)) {
+    io.stderr(`latest clip is ${clip.payloadKind}, not image\n`);
+    return ExitCode.unavailable;
+  }
+  if (mode === "file" && clip.payloadKind !== "file") {
+    io.stderr(`latest clip is ${clip.payloadKind}, not file\n`);
+    return ExitCode.unavailable;
+  }
+  if (clip.payloadKind === "file" && !out) {
+    io.stderr("file clip needs --out <path>\n");
+    return ExitCode.usage;
+  }
+
+  if (clip.payloadKind === "text") {
+    const plaintext = await decryptStored(config, secrets, clip);
+    if (out) {
+      await Bun.write(out, plaintext);
+    } else if (argv.includes("--clipboard")) {
+      await clipboard.writeText(plaintext);
+      await updateConfig((current) => ({ ...current, lastRemotePasteHash: sha256Base64Url(plaintext) }), paths.configPath);
+    } else {
+      io.stdout(plaintext);
+      if (!plaintext.endsWith("\n")) io.stdout("\n");
+    }
+    return ExitCode.ok;
+  }
+
+  const bytes = clip.storageKind === "r2" || !clip.ciphertext
+    ? (await fetchFilePayload(config, secrets, client, clip.seq)).bytes
+    : await decryptStoredBytes(config, secrets, clip);
+  if (out) {
+    await Bun.write(out, bytes);
+    return ExitCode.ok;
+  }
+  if (isClipboardPng(clip.mime)) {
+    await clipboard.writeImage({ mime: "image/png", bytes });
+    return ExitCode.ok;
+  }
+  io.stderr(`${clip.payloadKind} clip needs --out <path>\n`);
+  return ExitCode.usage;
+}
+
+async function fetchClip(client: ApiClient, seq: string | undefined): Promise<StoredClip | null> {
+  if (seq) {
+    const response = await client.request<{ clip: StoredClip }>("GET", `/v1/clips/${Number.parseInt(seq, 10)}`);
+    return response.clip;
+  }
+  const response = await client.request<{ clip: StoredClip | null }>("GET", "/v1/clips/latest");
+  return response.clip;
+}
+
+async function fetchFilePayload(
+  config: PastaConfig,
+  secrets: SecretStore,
+  client: ApiClient,
+  seq: number
+): Promise<{ clip: StoredClip; bytes: Uint8Array }> {
+  const response = await client.request<{ clip: StoredClip; ciphertext: string }>("GET", `/v1/files/${seq}`);
+  return {
+    clip: response.clip,
+    bytes: await decryptStoredBytes(config, secrets, { ...response.clip, ciphertext: response.ciphertext })
+  };
 }
 
 async function bootstrap(
@@ -378,14 +524,28 @@ async function publishImage(config: PastaConfig, secrets: SecretStore, client: A
   return response.clip;
 }
 
-async function publishFilePayload(config: PastaConfig, secrets: SecretStore, client: ApiClient, bytes: Uint8Array, mime: string): Promise<StoredClip> {
+async function publishImagePayload(config: PastaConfig, secrets: SecretStore, client: ApiClient, bytes: Uint8Array, mime: string): Promise<StoredClip> {
+  if (bytes.length <= LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES) {
+    return publishImage(config, secrets, client, bytes, mime);
+  }
+  return publishFilePayload(config, secrets, client, bytes, mime, "image");
+}
+
+async function publishFilePayload(
+  config: PastaConfig,
+  secrets: SecretStore,
+  client: ApiClient,
+  bytes: Uint8Array,
+  mime: string,
+  payloadKind: "file" | "image" = "file"
+): Promise<StoredClip> {
   const groupKey = await requireSecret(secrets, SecretName.groupKey);
   const clip = encryptBytesClip({
     accountId: config.accountId,
     routingId: config.routingId,
     originDeviceId: config.deviceId,
     bytes,
-    payloadKind: "file",
+    payloadKind,
     mime,
     groupKey,
     keyVersion: config.keyVersion
@@ -601,6 +761,21 @@ function option(argv: string[], name: string): string | undefined {
   return argv[index + 1];
 }
 
+function firstPositional(argv: string[]): string | undefined {
+  const valueOptions = new Set(["--endpoint", "--device-name", "--ticket", "--account-id", "--routing-id", "--seq", "--out", "--mime", "--path", "--command", "--interval-ms"]);
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (!arg) continue;
+    if (arg === "--") return argv[index + 1];
+    if (valueOptions.has(arg)) {
+      index += 1;
+      continue;
+    }
+    if (!arg.startsWith("-")) return arg;
+  }
+  return undefined;
+}
+
 function parsePairTicket(ticket: string): { endpoint: string; accountId: string; routingId: string } {
   const url = new URL(ticket);
   return {
@@ -608,6 +783,194 @@ function parsePairTicket(ticket: string): { endpoint: string; accountId: string;
     accountId: url.searchParams.get("account") ?? "",
     routingId: url.searchParams.get("routing") ?? ""
   };
+}
+
+function mimeForPath(filePath: string, detected: string | undefined): string {
+  if (detected) return detected;
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".txt")) return "text/plain";
+  if (lower.endsWith(".json")) return "application/json";
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".zip")) return "application/zip";
+  if (lower.endsWith(".tar")) return "application/x-tar";
+  if (lower.endsWith(".gz")) return "application/gzip";
+  return "application/octet-stream";
+}
+
+function isClipboardPng(mime: string): boolean {
+  return mime === "image/png";
+}
+
+function clipIsImageLike(clip: StoredClip): boolean {
+  return clip.payloadKind === "image";
+}
+
+function isPngBytes(bytes: Uint8Array): boolean {
+  return bytes.length >= 8
+    && bytes[0] === 0x89
+    && bytes[1] === 0x50
+    && bytes[2] === 0x4e
+    && bytes[3] === 0x47
+    && bytes[4] === 0x0d
+    && bytes[5] === 0x0a
+    && bytes[6] === 0x1a
+    && bytes[7] === 0x0a;
+}
+
+function commandHelp(command: string): string {
+  const blocks: Record<string, string> = {
+    bootstrap: `usage: pasta bootstrap --endpoint <url> [--device-name <name>]
+
+Creates the first trusted device and stores private keys in the OS secret store.
+
+Examples:
+  pasta bootstrap --endpoint https://pasta.nothuman.work --device-name "$(hostname)"
+  pasta bootstrap --endpoint http://127.0.0.1:8787 --device-name test-mac
+`,
+    doctor: `usage: pasta doctor
+
+Checks local clipboard adapter availability.
+
+Examples:
+  pasta doctor
+`,
+    copy: `usage: pasta copy [path] [--path <path>] [--image|--file] [--mime <type>]
+
+Copies text, image, or file data. Piped stdin is text. A path is detected as an image when possible, otherwise as a file.
+
+Examples:
+  echo "hello" | pasta copy
+  pasta copy
+  pasta copy ./Downloads/unlimit.png
+  pasta copy --path ./archive.zip --mime application/zip
+  pasta copy --image
+  pasta copy --file ./notes.txt --mime text/plain
+`,
+    "copy-image": `usage: pasta copy-image [path]
+
+Compatibility alias for image copy. Without a path, reads PNG image bytes from the OS clipboard.
+
+Examples:
+  pasta copy-image
+  pasta copy-image ./Downloads/unlimit.png
+`,
+    paste: `usage: pasta paste [--clipboard] [--seq <n>] [--out <path>] [--image|--file]
+
+Pulls the latest or selected encrypted clip, decrypts locally, and routes by payload kind.
+
+Examples:
+  pasta paste
+  pasta paste --clipboard
+  pasta paste --seq 12
+  pasta paste --out ./received.bin
+  pasta paste --image --out ./screenshot.png
+  pasta paste --file --seq 21 --out ./received.zip
+`,
+    "paste-image": `usage: pasta paste-image [--seq <n>] [--out <path>]
+
+Compatibility alias for image paste.
+
+Examples:
+  pasta paste-image
+  pasta paste-image --out latest.png
+  pasta paste-image --seq 18 --out screenshot.png
+`,
+    "send-file": `usage: pasta send-file <path> [--mime <type>]
+
+Compatibility alias for file copy through the R2-backed API path.
+
+Examples:
+  pasta send-file ./notes.txt --mime text/plain
+  pasta send-file ./archive.zip --mime application/zip
+`,
+    "paste-file": `usage: pasta paste-file [--seq <n>] --out <path>
+
+Compatibility alias for file paste.
+
+Examples:
+  pasta paste-file --out ./received.bin
+  pasta paste-file --seq 21 --out ./received.zip
+`,
+    history: `usage: pasta history [--show] | pasta history paste <seq> [--clipboard]
+
+Lists encrypted history metadata or pastes a selected text entry.
+
+Examples:
+  pasta history
+  pasta history --show
+  pasta history paste 7
+  pasta history paste 7 --clipboard
+`,
+    daemon: `usage: pasta daemon [--once] [--dry-run] [--interval-ms <n>]
+
+Polls the clipboard and auto-publishes local text changes.
+
+Examples:
+  pasta daemon
+  pasta daemon --once
+  pasta daemon --dry-run
+  pasta daemon --interval-ms 2000
+`,
+    pair: `usage: pasta pair ticket | pasta pair request --ticket <payload> | pasta pair consume
+
+Creates, requests, or consumes a trusted-device pairing flow.
+
+Examples:
+  pasta pair ticket
+  pasta pair request --ticket 'pasta://pair?...' --device-name "$(hostname)"
+  pasta pair consume
+`,
+    devices: `usage: pasta devices list | pasta devices approve <code> | pasta devices revoke <device>
+
+Lists, approves, or revokes trusted devices.
+
+Examples:
+  pasta devices list
+  pasta devices approve 123456
+  pasta devices revoke dev_example
+`,
+    reset: `usage: pasta reset --yes
+
+Resets the encrypted clipboard space from a trusted device.
+
+Examples:
+  pasta reset --yes
+`,
+    "install-shell": `usage: pasta install-shell [--command <command>]
+
+Installs a reversible shell snippet.
+
+Examples:
+  pasta install-shell
+  pasta install-shell --command "$PWD/src/cli.ts"
+`,
+    "uninstall-shell": `usage: pasta uninstall-shell
+
+Removes the Pasta shell snippet.
+
+Examples:
+  pasta uninstall-shell
+`,
+    protocol: `usage: pasta protocol
+
+Prints protocol endpoint metadata.
+
+Examples:
+  pasta protocol
+`,
+    "payload-plan": `usage: pasta payload-plan
+
+Prints binary payload limits and storage design metadata.
+
+Examples:
+  pasta payload-plan
+`
+  };
+  return blocks[command] ?? helpText();
 }
 
 function helpText(): string {
@@ -618,9 +981,9 @@ function helpText(): string {
     "  bootstrap --endpoint <url> [--device-name <name>]",
     "  pair ticket | pair request --ticket <payload> | pair consume",
     "  devices list | devices approve <code> | devices revoke <device>",
-    "  copy",
-    "  copy-image",
-    "  paste [--clipboard] [--seq <n>]",
+    "  copy [path] [--image|--file] [--mime <type>]",
+    "  copy-image [path]",
+    "  paste [--clipboard] [--seq <n>] [--out <path>]",
     "  paste-image [--seq <n>] [--out <path>]",
     "  send-file <path> [--mime <type>]",
     "  paste-file [--seq <n>] --out <path>",
@@ -629,6 +992,12 @@ function helpText(): string {
     "  doctor",
     "  reset --yes",
     "  install-shell | uninstall-shell",
+    "",
+    "Examples:",
+    "  echo hello | pasta copy",
+    "  pasta copy ./Downloads/unlimit.png",
+    "  pasta paste --clipboard",
+    "  pasta paste --out ./received.bin",
     "",
     "Shell snippet:",
     shellSnippet("pasta")

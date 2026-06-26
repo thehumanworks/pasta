@@ -86,7 +86,7 @@ export class ClipboardSpace extends DurableObject<Env> {
 
   async publishR2Clip(actor: Actor, clip: EncryptedClip, payloadId: string): Promise<StoredClip> {
     this.initializeSchema();
-    if (clip.payloadKind !== "file") {
+    if (clip.payloadKind !== "file" && clip.payloadKind !== "image") {
       throw new Error("unsupported R2 payload kind");
     }
     this.ctx.storage.sql.exec(

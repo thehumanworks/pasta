@@ -70,6 +70,7 @@ flowchart LR
 4. [Pairing and device management](docs/goals/04-pairing-and-device-management.md)
 5. [Distribution and terminal integration](docs/goals/05-distribution-and-terminal-integration.md)
 6. [Binary payloads and hardening](docs/goals/06-binary-payloads-and-hardening.md)
+7. [Unified copy/paste UX](docs/goals/07-unified-copy-paste-ux.md)
 
 ## Research Pack
 
@@ -83,14 +84,15 @@ A new Codex agent can continue from this repository if it starts at the project 
 
 Current verified state:
 
-- Goals 01-06 are GDD-done with recorded evidence.
+- Goals 01-07 are GDD-done with recorded evidence.
 - Goal 05 Task 4 / DoD-4 uses live macOS smoke proof plus user-approved reasonable assumptions for Linux and Windows. Direct Linux/Windows smoke is not required for this checkpoint unless the proof standard changes.
 - Goal 06 completed binary payloads and hardening after the text MVP public distribution proof. Image clipboard smoke is live on macOS; Linux/Windows image clipboard behavior remains a documented platform assumption for this environment.
+- Goal 07 completed the unified `copy`/`paste` image and file UX follow-up; explicit binary commands remain compatibility aliases.
 
-The current next action is final release/ops follow-through, not another GDD implementation subgoal:
+The current next action is release/ops follow-through or a new goal, not another open GDD implementation subgoal:
 
 ```bash
-python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/06-binary-payloads-and-hardening.md
+python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/07-unified-copy-paste-ux.md
 mise exec -- bun run test
 mise exec -- bunx tsc --noEmit
 ```

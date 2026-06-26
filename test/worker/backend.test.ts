@@ -113,6 +113,28 @@ describe("Worker backend", () => {
     const body = await download.json() as { clip: StoredClip; ciphertext: string };
     expect(decryptBytesClip(groupKey, device.accountId, device.routingId, { ...body.clip, ciphertext: body.ciphertext })).toEqual(medium);
 
+    const imageBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, ...new Array(64 * 1024).fill(7)]);
+    const imageClip = encryptBytesClip({
+      accountId: device.accountId,
+      routingId: device.routingId,
+      originDeviceId: device.deviceId,
+      bytes: imageBytes,
+      payloadKind: "image",
+      mime: "image/png",
+      groupKey,
+      keyVersion: 1
+    });
+    const imagePublish = await signedFetch(device, "POST", "/v1/files", imageClip);
+    await expectStatus(imagePublish, 201);
+    const imageStored = await imagePublish.json() as { clip: StoredClip };
+    expect(imageStored.clip.payloadKind).toBe("image");
+    expect(imageStored.clip.storageKind).toBe("r2");
+    const imageDownload = await signedFetch(device, "GET", `/v1/files/${imageStored.clip.seq}`);
+    await expectStatus(imageDownload, 200);
+    const imageBody = await imageDownload.json() as { clip: StoredClip; ciphertext: string };
+    expect(imageBody.clip.payloadKind).toBe("image");
+    expect(decryptBytesClip(groupKey, device.accountId, device.routingId, { ...imageBody.clip, ciphertext: imageBody.ciphertext })).toEqual(imageBytes);
+
     const expiredClip = encryptBytesClip({
       accountId: device.accountId,
       routingId: device.routingId,
