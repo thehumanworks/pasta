@@ -23,11 +23,7 @@ describe("CLI", () => {
     for (const [args, expected] of [
       [["bootstrap", "--help"], "pasta bootstrap --endpoint https://pasta.nothuman.work"],
       [["copy", "--help"], "pasta copy ./Downloads/unlimit.png"],
-      [["copy-image", "--help"], "pasta copy-image ./Downloads/unlimit.png"],
       [["paste", "--help"], "pasta paste --out ./received.bin"],
-      [["paste-image", "--help"], "pasta paste-image --out latest.png"],
-      [["send-file", "--help"], "pasta send-file ./archive.zip"],
-      [["paste-file", "--help"], "pasta paste-file --seq 21 --out ./received.zip"],
       [["history", "--help"], "pasta history paste 7 --clipboard"],
       [["daemon", "--help"], "pasta daemon --interval-ms 2000"],
       [["pair", "--help"], "pasta pair consume"],
@@ -43,6 +39,11 @@ describe("CLI", () => {
       expect(await runCli(args, { io: capture(output) }), args.join(" ")).toBe(0);
       expect(output.join(""), args.join(" ")).toContain("Examples:");
       expect(output.join(""), args.join(" ")).toContain(expected);
+    }
+    for (const removed of ["copy-image", "paste-image", "send-file", "paste-file"]) {
+      output.length = 0;
+      expect(await runCli([removed, "--help"], { io: capture(output) }), removed).toBe(2);
+      expect(output.join(""), removed).toContain(`unknown command: ${removed}`);
     }
   });
 
@@ -72,7 +73,6 @@ describe("CLI", () => {
     const secrets = new MemorySecretStore();
     const groupKey = generateGroupKey();
     await secrets.set(SecretName.groupKey, groupKey);
-    await secrets.set(SecretName.signingPrivateKey, generateDeviceKeyMaterial().signing.privateKey);
     await secrets.set(SecretName.wrappingPrivateKey, generateDeviceKeyMaterial().wrapping.privateKey);
     const config = sampleConfig();
     await writeConfig(config, paths.configPath);
@@ -136,11 +136,11 @@ describe("CLI", () => {
     const output: string[] = [];
     const deps = { io: capture(output), paths, secrets, clipboard, clientFactory: () => client };
 
-    expect(await runCli(["copy-image"], deps)).toBe(0);
+    expect(await runCli(["copy", "--image"], deps)).toBe(0);
     expect(clips[0]?.payloadKind).toBe("image");
     expect(clips[0]?.ciphertext).not.toContain("PNG");
     clipboard.image = null;
-    expect(await runCli(["paste-image"], deps)).toBe(0);
+    expect(await runCli(["paste", "--image"], deps)).toBe(0);
     const pasted = clipboard.image as { mime: "image/png"; bytes: Uint8Array } | null;
     expect(pasted?.mime).toBe("image/png");
     expect(pasted?.bytes).toEqual(png);
@@ -205,9 +205,6 @@ describe("CLI", () => {
     output.length = 0;
     expect(await runCli(["copy", "--path", pngPath], deps)).toBe(0);
     expect(clips.at(-1)?.payloadKind).toBe("image");
-    expect(await runCli(["copy-image", pngPath], deps)).toBe(0);
-    expect(clips.at(-1)?.payloadKind).toBe("image");
-    output.length = 0;
     expect(await runCli(["copy", "--image", fakePngPath], deps)).not.toBe(0);
     expect(output.join("")).toContain("requires PNG image bytes");
     output.length = 0;
@@ -265,18 +262,18 @@ describe("CLI", () => {
     const output: string[] = [];
     const deps = { io: capture(output), paths, secrets, clientFactory: () => client };
 
-    expect(await runCli(["send-file", small], deps)).toBe(0);
-    expect(await runCli(["send-file", medium, "--mime", "application/octet-stream"], deps)).toBe(0);
+    expect(await runCli(["copy", "--file", small], deps)).toBe(0);
+    expect(await runCli(["copy", "--file", medium, "--mime", "application/octet-stream"], deps)).toBe(0);
     expect(storedFiles).toHaveLength(2);
     expect(storedFiles[1]?.clip.storageKind).toBe("r2");
     expect(storedFiles[1]?.clip.r2Key).toContain("spaces/");
-    expect(await runCli(["paste-file", "--seq", "2", "--out", out], deps)).toBe(0);
+    expect(await runCli(["paste", "--file", "--seq", "2", "--out", out], deps)).toBe(0);
     expect(new Uint8Array(await Bun.file(out).arrayBuffer())).toEqual(new Uint8Array(64 * 1024).fill(7));
 
     const tooLarge = join(paths.home, "too-large.bin");
     await Bun.spawn(["truncate", "-s", String(LARGE_PAYLOAD_MAX_BYTES + 1), tooLarge]).exited;
     output.length = 0;
-    expect(await runCli(["send-file", tooLarge], deps)).not.toBe(0);
+    expect(await runCli(["copy", "--file", tooLarge], deps)).not.toBe(0);
     expect(output.join("")).toContain("exceeds max size");
   });
 

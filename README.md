@@ -243,12 +243,6 @@ Publish a PNG image from a path:
 pasta copy ./Downloads/unlimit.png
 ```
 
-The explicit image alias is still available:
-
-```bash
-pasta copy-image ./Downloads/unlimit.png
-```
-
 Publish the current macOS PNG clipboard image:
 
 ```bash
@@ -273,11 +267,12 @@ Paste a specific image sequence:
 pasta paste --image --seq 18 --out screenshot.png
 ```
 
-If the latest clip is text or non-image file data, `pasta paste --image` and `paste-image` fail cleanly instead of guessing.
+If the latest clip is text or non-image file data, `pasta paste --image` fails cleanly instead of guessing.
 
 ## File Examples
 
 File payloads are encrypted locally, stored in R2 as encrypted bytes, and omit local paths and filenames from Worker/DO/R2 metadata.
+The `--mime` flag is optional. Pasta infers a MIME type from the file and extension when it can, then falls back to `application/octet-stream`; use `--mime` only when you want to override that metadata.
 
 Send a small file:
 
@@ -289,12 +284,6 @@ Send a binary file:
 
 ```bash
 pasta copy --file ./archive.zip --mime application/zip
-```
-
-The explicit file alias is still available:
-
-```bash
-pasta send-file ./archive.zip --mime application/zip
 ```
 
 Paste the latest file to a new path:

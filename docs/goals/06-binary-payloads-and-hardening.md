@@ -76,9 +76,9 @@ Verification Contract:
 **Depends on:** Task 1
 **Closes:** DoD-2
 **Evidence:**
-- 2026-06-26 - `mise exec -- bun run test` - exit 0; 13 Bun tests and 6 Worker tests passed, including inline image byte encryption/decryption, CLI `copy-image`/`paste-image`, and Worker inline image storage as ciphertext.
+- 2026-06-26 - `mise exec -- bun run test` - exit 0; 13 Bun tests and 6 Worker tests passed, including inline image byte encryption/decryption, CLI image copy/paste coverage now exposed through unified `copy`/`paste`, and Worker inline image storage as ciphertext.
 - 2026-06-26 - macOS image clipboard smoke `SystemClipboardAdapter.writeImage` then `readImage` using a 68-byte PNG - exit 0; output `image-ok 68`, proving identical PNG bytes through the local pasteboard adapter.
-- 2026-06-26 - live local Worker two-profile image smoke with `PASTA_HOME` isolation - exit 0; dev1 bootstrapped, dev2 paired, dev1 `copy-image` published encrypted PNG, dev2 `paste-image --out` wrote identical 68-byte PNG.
+- 2026-06-26 - live local Worker two-profile image smoke with `PASTA_HOME` isolation - exit 0; dev1 bootstrapped, dev2 paired, dev1 published encrypted PNG, dev2 wrote identical 68-byte PNG. Current UX uses `copy`/`paste`.
 - 2026-06-26 - supported OS scope review - live image clipboard support is macOS PNG for this checkpoint; Linux/Windows image support remains a documented command-plan assumption because this environment cannot run those native clipboards.
 
 ### T3 - File Payload - [x]
@@ -95,8 +95,8 @@ Verification Contract:
 **Depends on:** Task 1
 **Closes:** DoD-3
 **Evidence:**
-- 2026-06-26 - `mise exec -- bun run test` - exit 0; 14 Bun tests and 7 Worker tests passed, including `send-file`/`paste-file` small+medium file CLI coverage, over-limit rejection, and Worker R2 upload/download/decrypt coverage.
-- 2026-06-26 - live local Worker two-profile file smoke - exit 0; dev1 sent a 10-byte file and 65,536-byte file through `send-file`, dev2 wrote both with `paste-file --out`, and `cmp` verified identical bytes.
+- 2026-06-26 - `mise exec -- bun run test` - exit 0; 14 Bun tests and 7 Worker tests passed, including unified `copy`/`paste --out` small+medium file CLI coverage, over-limit rejection, and Worker R2 upload/download/decrypt coverage.
+- 2026-06-26 - live local Worker two-profile file smoke - exit 0; dev1 sent a 10-byte file and 65,536-byte file, dev2 wrote both with paste-to-out behavior, and `cmp` verified identical bytes. Current UX uses `copy`/`paste --out`.
 - 2026-06-26 - `mise exec -- bunx tsc --noEmit` - exit 0; R2-backed file metadata and CLI commands compile.
 
 ### T4 - Retention Cleanup - [x]
@@ -145,7 +145,7 @@ Verification Contract:
 - 2026-06-26 - Goals 01-05 are checkpointed done, including public GitHub `bunx` proof, so binary payload hardening is unblocked for design work. Scope impact: none.
 - 2026-06-26 - T1 design keeps filenames out of default metadata because filenames and paths can be sensitive; user-approved labels can be added later without changing the encrypted object contract. Scope impact: none.
 - 2026-06-26 - T2 scopes direct image clipboard support to macOS PNG in this environment, matching the user's instruction to test macOS and make reasonable assumptions for Linux/Windows. Scope impact: none.
-- 2026-06-26 - T3 keeps filenames and local paths out of Worker/DO/R2 metadata; `send-file` accepts an explicit MIME type but not a filename label. Scope impact: none.
+- 2026-06-26 - T3 keeps filenames and local paths out of Worker/DO/R2 metadata; `copy` accepts an optional MIME override but not a filename label. Scope impact: none.
 - 2026-06-26 - T5 caps unauthenticated pairing-open attempts to 5 live unconsumed sessions per account. This is a simple abuse control for the MVP; production tuning can later add IP/account windows without changing the E2E crypto boundary. Scope impact: none.
 
 ## 7. Learnings

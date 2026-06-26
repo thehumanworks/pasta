@@ -49,7 +49,7 @@ Failure cases:
 
 - Validation fails before storage: no DO row or R2 object is created.
 - R2 write fails after metadata reservation: the Worker deletes the reserved DO row before returning failure.
-- Client crashes after server `201`: history/latest can still retrieve metadata and `paste-file` can download the encrypted object.
+- Client crashes after server `201`: history/latest can still retrieve metadata and `paste --out` can download the encrypted object.
 - Cleanup retries are idempotent: missing R2 object plus expired DO row is success.
 
 ## Retention
@@ -63,9 +63,9 @@ Retention alarms delete expired DO metadata and associated R2 objects. The alarm
 
 ## Current MVP Behavior
 
-Image clipboard support is implemented for macOS PNG pasteboard data through the primary `copy` and `paste` commands, with `copy-image` and `paste-image` retained as compatibility aliases. Small PNG payloads stay inline; large PNG payloads use the R2-backed image path while preserving `payloadKind: "image"`. Linux and Windows image clipboard support remains a command-plan assumption in this environment until a native runner is available.
+Image clipboard support is implemented for macOS PNG pasteboard data through the primary `copy` and `paste` commands. Small PNG payloads stay inline; large PNG payloads use the R2-backed image path while preserving `payloadKind: "image"`. Linux and Windows image clipboard support remains a command-plan assumption in this environment until a native runner is available.
 
-File payload support is implemented through the primary `copy` and `paste --out` commands, with `send-file` and `paste-file` retained as compatibility aliases. The CLI rejects files above 50 MiB before reading them into memory, encrypts bytes locally, sends encrypted bytes to the Worker, and the Worker stores them in R2 under the DO-assigned key. File payloads require `--out` on paste.
+File payload support is implemented through the primary `copy` and `paste --out` commands. The CLI rejects files above 50 MiB before reading them into memory, encrypts bytes locally, sends encrypted bytes to the Worker, and the Worker stores them in R2 under the DO-assigned key. File payloads require `--out` on paste.
 
 Unsupported binary clipboard content outside the implemented PNG image path fails with a controlled unsupported-payload result. Text support does not depend on R2. Goal 06 adds binary support behind platform-scoped clipboard adapters, and Goal 07 makes `copy`/`paste` the primary UX.
 

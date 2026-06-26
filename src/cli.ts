@@ -107,40 +107,8 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
       return await copyCommand(argv.slice(1), io, paths, secrets, clipboard, deps);
     }
 
-    if (command === "copy-image") {
-      if (argv.includes("--help")) {
-        io.stdout(commandHelp("copy-image"));
-        return ExitCode.ok;
-      }
-      return await copyCommand(["--image", ...argv.slice(1)], io, paths, secrets, clipboard, deps);
-    }
-
     if (command === "paste") {
       return await pasteCommand(argv.slice(1), io, paths, secrets, clipboard, deps);
-    }
-
-    if (command === "paste-image") {
-      if (argv.includes("--help")) {
-        io.stdout(commandHelp("paste-image"));
-        return ExitCode.ok;
-      }
-      return await pasteCommand(["--image", ...argv.slice(1)], io, paths, secrets, clipboard, deps);
-    }
-
-    if (command === "send-file") {
-      if (argv.includes("--help")) {
-        io.stdout(commandHelp("send-file"));
-        return ExitCode.ok;
-      }
-      return await copyCommand(["--file", ...argv.slice(1)], io, paths, secrets, clipboard, deps);
-    }
-
-    if (command === "paste-file") {
-      if (argv.includes("--help")) {
-        io.stdout(commandHelp("paste-file"));
-        return ExitCode.ok;
-      }
-      return await pasteCommand(["--file", ...argv.slice(1)], io, paths, secrets, clipboard, deps);
     }
 
     if (command === "history") {
@@ -841,6 +809,7 @@ Examples:
     copy: `usage: pasta copy [path] [--path <path>] [--image|--file] [--mime <type>]
 
 Copies text, image, or file data. Piped stdin is text. A path is detected as an image when possible, otherwise as a file.
+--mime is optional; Pasta infers a MIME type from the file and extension, then falls back to application/octet-stream.
 
 Examples:
   echo "hello" | pasta copy
@@ -849,14 +818,6 @@ Examples:
   pasta copy --path ./archive.zip --mime application/zip
   pasta copy --image
   pasta copy --file ./notes.txt --mime text/plain
-`,
-    "copy-image": `usage: pasta copy-image [path]
-
-Compatibility alias for image copy. Without a path, reads PNG image bytes from the OS clipboard.
-
-Examples:
-  pasta copy-image
-  pasta copy-image ./Downloads/unlimit.png
 `,
     paste: `usage: pasta paste [--clipboard] [--seq <n>] [--out <path>] [--image|--file]
 
@@ -869,31 +830,6 @@ Examples:
   pasta paste --out ./received.bin
   pasta paste --image --out ./screenshot.png
   pasta paste --file --seq 21 --out ./received.zip
-`,
-    "paste-image": `usage: pasta paste-image [--seq <n>] [--out <path>]
-
-Compatibility alias for image paste.
-
-Examples:
-  pasta paste-image
-  pasta paste-image --out latest.png
-  pasta paste-image --seq 18 --out screenshot.png
-`,
-    "send-file": `usage: pasta send-file <path> [--mime <type>]
-
-Compatibility alias for file copy through the R2-backed API path.
-
-Examples:
-  pasta send-file ./notes.txt --mime text/plain
-  pasta send-file ./archive.zip --mime application/zip
-`,
-    "paste-file": `usage: pasta paste-file [--seq <n>] --out <path>
-
-Compatibility alias for file paste.
-
-Examples:
-  pasta paste-file --out ./received.bin
-  pasta paste-file --seq 21 --out ./received.zip
 `,
     history: `usage: pasta history [--show] | pasta history paste <seq> [--clipboard]
 
@@ -982,11 +918,7 @@ function helpText(): string {
     "  pair ticket | pair request --ticket <payload> | pair consume",
     "  devices list | devices approve <code> | devices revoke <device>",
     "  copy [path] [--image|--file] [--mime <type>]",
-    "  copy-image [path]",
     "  paste [--clipboard] [--seq <n>] [--out <path>]",
-    "  paste-image [--seq <n>] [--out <path>]",
-    "  send-file <path> [--mime <type>]",
-    "  paste-file [--seq <n>] --out <path>",
     "  history [--show] | history paste <seq>",
     "  daemon [--once] [--dry-run] [--interval-ms <n>]",
     "  doctor",
