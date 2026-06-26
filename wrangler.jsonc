@@ -21,7 +21,7 @@
     {
       "binding": "DB",
       "database_name": "pasta-registry",
-      "database_id": "00000000-0000-0000-0000-000000000000"
+      "database_id": "6f9cf498-a22b-4155-92c1-298a4d456ebb"
     }
   ],
   "r2_buckets": [
@@ -31,4 +31,3 @@
     }
   ]
 }
-
