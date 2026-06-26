@@ -6,6 +6,8 @@ import {
   aadForClip,
   assertBase64Url,
   clampHistoryLimit,
+  LARGE_PAYLOAD_MAX_BYTES,
+  MAX_OPEN_PAIRING_SESSIONS,
   sha256Base64Url,
   TEXT_INLINE_LIMIT_BYTES,
   type BootstrapRequest,
@@ -16,7 +18,7 @@ import {
   type PairingOpenRequest,
   type ResetRequest
 } from "../shared/protocol";
-import { stableJson } from "../shared/encoding";
+import { fromBase64Url, randomBase64Url, stableJson, toBase64Url } from "../shared/encoding";
 import { verifyCanonicalRequest } from "../shared/crypto";
 
 export { ClipboardSpace };
@@ -77,6 +79,13 @@ async function route(request: Request, env: Env): Promise<Response> {
 
   if (request.method === "POST" && url.pathname === "/v1/clips") {
     return publishClip(env, auth, parseJson<EncryptedClip>(bodyText));
+  }
+  if (request.method === "POST" && url.pathname === "/v1/files") {
+    return publishFile(env, auth, parseJson<EncryptedClip>(bodyText));
+  }
+  const fileMatch = url.pathname.match(/^\/v1\/files\/(\d+)$/u);
+  if (request.method === "GET" && fileMatch?.[1]) {
+    return getFile(env, auth, Number.parseInt(fileMatch[1], 10));
   }
   if (request.method === "GET" && url.pathname === "/v1/clips/latest") {
     const latest = await space(env, auth).getLatest(actorOf(auth));
@@ -149,6 +158,42 @@ async function publishClip(env: Env, auth: AuthContext, clip: EncryptedClip): Pr
   return json({ clip: stored }, 201);
 }
 
+async function publishFile(env: Env, auth: AuthContext, clip: EncryptedClip): Promise<Response> {
+  validateFileClip(auth, clip);
+  const encryptedBytes = fromBase64Url(clip.ciphertext);
+  const actor = actorOf(auth);
+  const stored = await space(env, auth).publishR2Clip(actor, { ...clip, ciphertext: "" }, `payload_${randomBase64Url(12)}`);
+  if (!stored.r2Key) throw new Error("missing R2 key");
+  try {
+    await env.BLOBS.put(stored.r2Key, encryptedBytes, {
+      httpMetadata: {
+        contentType: "application/octet-stream"
+      },
+      customMetadata: {
+        clipId: stored.clipId,
+        payloadKind: stored.payloadKind,
+        mime: stored.mime
+      }
+    });
+  } catch (error) {
+    await space(env, auth).deleteClip(actor, stored.seq, stored.clipId);
+    throw error;
+  }
+  if (stored.expiresAt !== null) {
+    await space(env, auth).scheduleRetention();
+  }
+  return json({ clip: stored }, 201);
+}
+
+async function getFile(env: Env, auth: AuthContext, seq: number): Promise<Response> {
+  const clip = await space(env, auth).getClip(actorOf(auth), seq);
+  if (!clip || clip.payloadKind !== "file" || !clip.r2Key) return json({ error: "not_found" }, 404);
+  const object = await env.BLOBS.get(clip.r2Key);
+  if (!object) return json({ error: "blob_missing" }, 404);
+  const ciphertext = toBase64Url(new Uint8Array(await object.arrayBuffer()));
+  return json({ clip, ciphertext });
+}
+
 async function pairingOpen(env: Env, body: PairingOpenRequest): Promise<Response> {
   requireString(body.sessionId, "sessionId");
   requireString(body.accountId, "accountId");
@@ -159,7 +204,18 @@ async function pairingOpen(env: Env, body: PairingOpenRequest): Promise<Response
   assertBase64Url(body.wrapPublicKey, "wrapPublicKey");
   const account = await getAccount(env, body.accountId);
   if (!account) return json({ error: "unknown_account" }, 404);
-  if (body.expiresAt <= Date.now()) return json({ error: "expired_pairing" }, 400);
+  const now = Date.now();
+  if (body.expiresAt <= now) return json({ error: "expired_pairing" }, 400);
+  const openSessions = await env.DB.prepare(
+    `SELECT COUNT(*) AS open_count
+     FROM pairing_sessions
+     WHERE account_id = ? AND consumed_at IS NULL AND expires_at > ?`
+  )
+    .bind(body.accountId, now)
+    .first<{ open_count: number }>();
+  if ((openSessions?.open_count ?? 0) >= MAX_OPEN_PAIRING_SESSIONS) {
+    return json({ error: "pairing_rate_limited", limit: MAX_OPEN_PAIRING_SESSIONS }, 429);
+  }
   await env.DB.prepare(
     `INSERT INTO pairing_sessions(
       session_id, account_id, short_code_hash, new_device_id, new_device_name,
@@ -355,8 +411,24 @@ function validateClip(auth: AuthContext, clip: EncryptedClip): void {
   requireString(clip.aadHash, "aadHash");
   requireString(clip.ciphertext, "ciphertext");
   if (clip.originDeviceId !== auth.deviceId) throw new Error("origin device mismatch");
-  if (clip.payloadKind !== "text") throw new Error("unsupported payload kind");
-  if (clip.byteLen < 0 || clip.byteLen > TEXT_INLINE_LIMIT_BYTES) throw new Error("clip too large for text MVP");
+  if (clip.payloadKind !== "text" && clip.payloadKind !== "image") throw new Error("unsupported payload kind");
+  if (clip.payloadKind === "text" && clip.mime !== "text/plain; charset=utf-8") throw new Error("bad text MIME");
+  if (clip.payloadKind === "image" && !clip.mime.startsWith("image/")) throw new Error("bad image MIME");
+  if (clip.byteLen < 0 || clip.byteLen > TEXT_INLINE_LIMIT_BYTES) throw new Error("clip too large for inline payload");
+  const aad = aadForClip(auth.accountId, auth.routingId, clip);
+  if (clip.aadHash !== sha256Base64Url(stableJson(aad))) throw new Error("bad AAD hash");
+}
+
+function validateFileClip(auth: AuthContext, clip: EncryptedClip): void {
+  requireString(clip.clipId, "clipId");
+  requireString(clip.originDeviceId, "originDeviceId");
+  requireString(clip.mime, "mime");
+  requireString(clip.nonce, "nonce");
+  requireString(clip.aadHash, "aadHash");
+  requireString(clip.ciphertext, "ciphertext");
+  if (clip.originDeviceId !== auth.deviceId) throw new Error("origin device mismatch");
+  if (clip.payloadKind !== "file") throw new Error("unsupported payload kind");
+  if (clip.byteLen < 0 || clip.byteLen > LARGE_PAYLOAD_MAX_BYTES) throw new Error("file payload too large");
   const aad = aadForClip(auth.accountId, auth.routingId, clip);
   if (clip.aadHash !== sha256Base64Url(stableJson(aad))) throw new Error("bad AAD hash");
 }

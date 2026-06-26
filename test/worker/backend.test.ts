@@ -4,7 +4,9 @@ import { env } from "cloudflare:workers";
 import { SELF, runDurableObjectAlarm } from "cloudflare:test";
 import { REGISTRY_SCHEMA_SQL } from "../../src/worker/registry-schema";
 import {
+  decryptBytesClip,
   decryptTextClip,
+  encryptBytesClip,
   encryptTextClip,
   generateDeviceKeyMaterial,
   generateGroupKey,
@@ -13,7 +15,7 @@ import {
   wrapGroupKey
 } from "../../src/shared/crypto";
 import { randomBase64Url, stableJson } from "../../src/shared/encoding";
-import { sha256Base64Url, SIGNATURE_HEADERS, type BootstrapRequest, type SignedRequestParts } from "../../src/shared/protocol";
+import { LARGE_PAYLOAD_MAX_BYTES, MAX_OPEN_PAIRING_SESSIONS, sha256Base64Url, SIGNATURE_HEADERS, type BootstrapRequest, type SignedRequestParts, type StoredClip } from "../../src/shared/protocol";
 
 describe("Worker backend", () => {
   beforeEach(async () => {
@@ -60,6 +62,103 @@ describe("Worker backend", () => {
     const dump = await env.CLIPBOARD.getByName(device.routingId).debugDump();
     expect(JSON.stringify(dump)).not.toContain("plain text should not be stored");
     expect(JSON.stringify(dump)).toContain(clip.ciphertext);
+  });
+
+  it("stores inline image payloads as ciphertext and returns identical decrypted bytes", async () => {
+    const device = await bootstrap();
+    const groupKey = generateGroupKey();
+    const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
+    const clip = encryptBytesClip({
+      accountId: device.accountId,
+      routingId: device.routingId,
+      originDeviceId: device.deviceId,
+      bytes: png,
+      payloadKind: "image",
+      mime: "image/png",
+      groupKey,
+      keyVersion: 1
+    });
+    await expectStatus(await signedFetch(device, "POST", "/v1/clips", clip), 201);
+    const latest = await (await signedFetch(device, "GET", "/v1/clips/latest")).json() as { clip: StoredClip };
+    expect(latest.clip.payloadKind).toBe("image");
+    expect(decryptBytesClip(groupKey, device.accountId, device.routingId, latest.clip)).toEqual(png);
+    const dump = await env.CLIPBOARD.getByName(device.routingId).debugDump();
+    expect(JSON.stringify(dump)).not.toContain("PNG");
+    expect(JSON.stringify(dump)).toContain(clip.ciphertext);
+  });
+
+  it("uploads and downloads file payloads through R2 with bounded sizes", async () => {
+    const device = await bootstrap();
+    const groupKey = generateGroupKey();
+    const medium = new Uint8Array(64 * 1024).fill(5);
+    const clip = encryptBytesClip({
+      accountId: device.accountId,
+      routingId: device.routingId,
+      originDeviceId: device.deviceId,
+      bytes: medium,
+      payloadKind: "file",
+      mime: "application/octet-stream",
+      groupKey,
+      keyVersion: 1
+    });
+    const publish = await signedFetch(device, "POST", "/v1/files", clip);
+    await expectStatus(publish, 201);
+    const stored = await publish.json() as { clip: StoredClip };
+    expect(stored.clip.storageKind).toBe("r2");
+    expect(stored.clip.r2Key).toContain(`/clips/${stored.clip.seq}/`);
+    const dump = await env.CLIPBOARD.getByName(device.routingId).debugDump();
+    expect(JSON.stringify(dump)).not.toContain(clip.ciphertext);
+    const download = await signedFetch(device, "GET", `/v1/files/${stored.clip.seq}`);
+    await expectStatus(download, 200);
+    const body = await download.json() as { clip: StoredClip; ciphertext: string };
+    expect(decryptBytesClip(groupKey, device.accountId, device.routingId, { ...body.clip, ciphertext: body.ciphertext })).toEqual(medium);
+
+    const expiredClip = encryptBytesClip({
+      accountId: device.accountId,
+      routingId: device.routingId,
+      originDeviceId: device.deviceId,
+      bytes: new Uint8Array([9, 8, 7]),
+      payloadKind: "file",
+      mime: "application/octet-stream",
+      groupKey,
+      keyVersion: 1,
+      expiresAt: Date.now() - 1
+    });
+    const expiredPublish = await signedFetch(device, "POST", "/v1/files", expiredClip);
+    await expectStatus(expiredPublish, 201);
+    const expiredStored = await expiredPublish.json() as { clip: StoredClip };
+    expect(expiredStored.clip.r2Key).toBeTruthy();
+    expect(await env.BLOBS.get(expiredStored.clip.r2Key!)).toBeTruthy();
+    const stub = env.CLIPBOARD.getByName(device.routingId);
+    expect(await stub.runRetention(Date.now())).toMatchObject({ deletedClips: 1, deletedObjects: 1 });
+    expect(await env.BLOBS.get(expiredStored.clip.r2Key!)).toBeNull();
+    expect((await signedFetch(device, "GET", `/v1/files/${expiredStored.clip.seq}`)).status).toBe(404);
+    expect(await stub.runRetention(Date.now())).toMatchObject({ deletedClips: 0, deletedObjects: 0 });
+    expect(await env.BLOBS.get(expiredStored.clip.r2Key!)).toBeNull();
+
+    const tooLarge = encryptBytesClip({
+      accountId: device.accountId,
+      routingId: device.routingId,
+      originDeviceId: device.deviceId,
+      bytes: new Uint8Array([1]),
+      payloadKind: "file",
+      mime: "application/octet-stream",
+      groupKey,
+      keyVersion: 1
+    });
+    tooLarge.byteLen = LARGE_PAYLOAD_MAX_BYTES + 1;
+    tooLarge.aadHash = sha256Base64Url(stableJson({
+      accountId: device.accountId,
+      routingId: device.routingId,
+      clipId: tooLarge.clipId,
+      originDeviceId: tooLarge.originDeviceId,
+      createdAt: tooLarge.createdAt,
+      payloadKind: tooLarge.payloadKind,
+      mime: tooLarge.mime,
+      byteLen: tooLarge.byteLen,
+      keyVersion: tooLarge.keyVersion
+    }));
+    expect((await signedFetch(device, "POST", "/v1/files", tooLarge)).status).toBe(500);
   });
 
   it("rejects stale, bad-hash, unknown, revoked, and replayed requests", async () => {
@@ -118,6 +217,44 @@ describe("Worker backend", () => {
       body: stableJson({ sessionId, shortCodeHash })
     });
     expect(replay.status).toBe(409);
+  });
+
+  it("rate-limits excessive open pairing sessions per account", async () => {
+    const existing = await bootstrap();
+    for (let index = 0; index < MAX_OPEN_PAIRING_SESSIONS; index += 1) {
+      const requester = generateDeviceKeyMaterial();
+      const open = await SELF.fetch("https://pasta.test/v1/pairing/open", {
+        method: "POST",
+        body: stableJson({
+          sessionId: `pair_${index}_${randomBase64Url(8)}`,
+          accountId: existing.accountId,
+          shortCodeHash: hashShortCode(`ABUSE${index}`, existing.accountId),
+          newDeviceId: `dev_new_${index}`,
+          newDeviceName: `new-${index}`,
+          verifyPublicKey: requester.signing.publicKey,
+          wrapPublicKey: requester.wrapping.publicKey,
+          expiresAt: Date.now() + 60_000
+        })
+      });
+      expect(open.status).toBe(201);
+    }
+
+    const blockedRequester = generateDeviceKeyMaterial();
+    const blocked = await SELF.fetch("https://pasta.test/v1/pairing/open", {
+      method: "POST",
+      body: stableJson({
+        sessionId: `pair_blocked_${randomBase64Url(8)}`,
+        accountId: existing.accountId,
+        shortCodeHash: hashShortCode("ABUSE_BLOCKED", existing.accountId),
+        newDeviceId: "dev_blocked",
+        newDeviceName: "blocked",
+        verifyPublicKey: blockedRequester.signing.publicKey,
+        wrapPublicKey: blockedRequester.wrapping.publicKey,
+        expiresAt: Date.now() + 60_000
+      })
+    });
+    expect(blocked.status).toBe(429);
+    expect(await blocked.json()).toMatchObject({ error: "pairing_rate_limited", limit: MAX_OPEN_PAIRING_SESSIONS });
   });
 
   it("resets to a new encrypted space and runs retention alarms idempotently", async () => {

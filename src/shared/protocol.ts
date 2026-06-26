@@ -10,6 +10,7 @@ export const MAX_HISTORY_LIMIT = 100;
 export const TEXT_INLINE_LIMIT_BYTES = 512 * 1024;
 export const LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES = 512 * 1024;
 export const LARGE_PAYLOAD_MAX_BYTES = 50 * 1024 * 1024;
+export const MAX_OPEN_PAIRING_SESSIONS = 5;
 
 export const SIGNATURE_HEADERS = {
   accountId: "pasta-account-id",
@@ -148,6 +149,9 @@ export interface EncryptedClip {
   nonce: string;
   aadHash: string;
   ciphertext: string;
+  storageKind?: "inline" | "r2";
+  payloadId?: string;
+  r2Key?: string;
 }
 
 export interface StoredClip extends EncryptedClip {
@@ -255,4 +259,3 @@ export function clampHistoryLimit(value: string | null): number {
   if (!Number.isSafeInteger(parsed) || parsed < 1) return DEFAULT_HISTORY_LIMIT;
   return Math.min(parsed, MAX_HISTORY_LIMIT);
 }
-

@@ -1,6 +1,17 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+export interface ClipboardImage {
+  mime: "image/png";
+  bytes: Uint8Array;
+}
+
 export interface ClipboardAdapter {
   readText(): Promise<string>;
   writeText(text: string): Promise<void>;
+  readImage(): Promise<ClipboardImage>;
+  writeImage(image: ClipboardImage): Promise<void>;
   doctor(): Promise<ClipboardDoctorResult>;
 }
 
@@ -20,6 +31,47 @@ export class SystemClipboardAdapter implements ClipboardAdapter {
   async writeText(text: string): Promise<void> {
     const plan = await chooseClipboardPlan("write");
     await runCommand(plan.command, text);
+  }
+
+  async readImage(): Promise<ClipboardImage> {
+    if (process.platform !== "darwin") {
+      throw new Error("image clipboard is currently supported only on macOS; Linux/Windows remain command-plan assumptions");
+    }
+    await requireCommand("osascript");
+    const dir = await mkdtemp(join(tmpdir(), "pasta-image-"));
+    const out = join(dir, "clipboard.png");
+    try {
+      await runCommand([
+        "osascript",
+        "-e",
+        `set outFile to open for access (POSIX file "${out}") with write permission`,
+        "-e",
+        "set eof of outFile to 0",
+        "-e",
+        "write (the clipboard as «class PNGf») to outFile",
+        "-e",
+        "close access outFile"
+      ]);
+      return { mime: "image/png", bytes: new Uint8Array(await Bun.file(out).arrayBuffer()) };
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  async writeImage(image: ClipboardImage): Promise<void> {
+    if (process.platform !== "darwin") {
+      throw new Error("image clipboard is currently supported only on macOS; Linux/Windows remain command-plan assumptions");
+    }
+    await requireCommand("osascript");
+    if (image.mime !== "image/png") throw new Error(`unsupported image MIME for clipboard: ${image.mime}`);
+    const dir = await mkdtemp(join(tmpdir(), "pasta-image-"));
+    const input = join(dir, "clipboard.png");
+    try {
+      await writeFile(input, image.bytes);
+      await runCommand(["osascript", "-e", `set the clipboard to (read (POSIX file "${input}") as «class PNGf»)`]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   }
 
   async doctor(): Promise<ClipboardDoctorResult> {
@@ -46,7 +98,7 @@ export class SystemClipboardAdapter implements ClipboardAdapter {
 }
 
 export class MemoryClipboardAdapter implements ClipboardAdapter {
-  constructor(public value = "") {}
+  constructor(public value = "", public image: ClipboardImage | null = null) {}
 
   async readText(): Promise<string> {
     return this.value;
@@ -54,6 +106,15 @@ export class MemoryClipboardAdapter implements ClipboardAdapter {
 
   async writeText(text: string): Promise<void> {
     this.value = text;
+  }
+
+  async readImage(): Promise<ClipboardImage> {
+    if (!this.image) throw new Error("no image in clipboard");
+    return this.image;
+  }
+
+  async writeImage(image: ClipboardImage): Promise<void> {
+    this.image = image;
   }
 
   async doctor(): Promise<ClipboardDoctorResult> {
@@ -115,6 +176,12 @@ async function commandExists(command: string): Promise<boolean> {
     stderr: "ignore"
   });
   return (await proc.exited) === 0;
+}
+
+async function requireCommand(command: string): Promise<void> {
+  if (!(await commandExists(command))) {
+    throw new Error(`${command} is required for image clipboard support`);
+  }
 }
 
 async function runCommand(command: string[], input?: string): Promise<string> {

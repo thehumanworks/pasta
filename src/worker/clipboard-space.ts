@@ -33,6 +33,10 @@ interface ClipRow extends Record<string, SqlStorageValue> {
   nonce: string;
   aad_hash: string;
   inline_ciphertext: string;
+  storage_kind: string;
+  payload_id: string | null;
+  r2_key: string | null;
+  finalized_at: number | null;
 }
 
 export class ClipboardSpace extends DurableObject<Env> {
@@ -48,9 +52,9 @@ export class ClipboardSpace extends DurableObject<Env> {
     return { ok: true };
   }
 
-  publishClip(actor: Actor, clip: EncryptedClip): StoredClip {
+  async publishClip(actor: Actor, clip: EncryptedClip): Promise<StoredClip> {
     this.initializeSchema();
-    if (clip.payloadKind !== "text") {
+    if (clip.payloadKind !== "text" && clip.payloadKind !== "image") {
       throw new Error("unsupported payload kind");
     }
     this.ctx.storage.sql.exec(
@@ -71,13 +75,67 @@ export class ClipboardSpace extends DurableObject<Env> {
       clip.ciphertext
     );
     if (clip.expiresAt !== null) {
-      this.scheduleNextAlarm();
+      await this.scheduleNextAlarm();
     }
     const row = this.ctx.storage.sql
       .exec<ClipRow>("SELECT * FROM clips WHERE clip_id = ?", clip.clipId)
       .toArray()[0];
     if (!row) throw new Error("clip insert failed");
     return rowToClip(row);
+  }
+
+  async publishR2Clip(actor: Actor, clip: EncryptedClip, payloadId: string): Promise<StoredClip> {
+    this.initializeSchema();
+    if (clip.payloadKind !== "file") {
+      throw new Error("unsupported R2 payload kind");
+    }
+    this.ctx.storage.sql.exec(
+      `INSERT INTO clips (
+        clip_id, origin_device_id, created_at, expires_at, payload_kind, mime,
+        byte_len, key_version, nonce, aad_hash, inline_ciphertext, storage_kind,
+        payload_id, r2_key, finalized_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 'r2', ?, '', ?)`,
+      clip.clipId,
+      actor.deviceId,
+      clip.createdAt,
+      clip.expiresAt,
+      clip.payloadKind,
+      clip.mime,
+      clip.byteLen,
+      clip.keyVersion,
+      clip.nonce,
+      clip.aadHash,
+      payloadId,
+      Date.now()
+    );
+    const inserted = this.ctx.storage.sql
+      .exec<ClipRow>("SELECT * FROM clips WHERE clip_id = ?", clip.clipId)
+      .toArray()[0];
+    if (!inserted) throw new Error("clip insert failed");
+    const r2Key = `spaces/${actor.routingId}/clips/${inserted.seq}/${payloadId}`;
+    this.ctx.storage.sql.exec("UPDATE clips SET r2_key = ? WHERE seq = ?", r2Key, inserted.seq);
+    const row = this.ctx.storage.sql.exec<ClipRow>("SELECT * FROM clips WHERE seq = ?", inserted.seq).toArray()[0];
+    if (!row) throw new Error("clip insert failed");
+    return rowToClip(row);
+  }
+
+  async scheduleRetention(): Promise<{ ok: true }> {
+    this.initializeSchema();
+    await this.scheduleNextAlarm();
+    return { ok: true };
+  }
+
+  deleteClip(actor: Actor, seq: number, clipId: string): { deleted: number } {
+    this.initializeSchema();
+    const row = this.ctx.storage.sql
+      .exec<ClipRow>("SELECT * FROM clips WHERE seq = ? AND clip_id = ? LIMIT 1", seq, clipId)
+      .toArray()[0];
+    if (!row) return { deleted: 0 };
+    if (row.origin_device_id !== actor.deviceId) {
+      throw new Error("origin device mismatch");
+    }
+    this.ctx.storage.sql.exec("DELETE FROM clips WHERE seq = ? AND clip_id = ?", seq, clipId);
+    return { deleted: 1 };
   }
 
   getLatest(_actor: Actor): StoredClip | null {
@@ -147,18 +205,29 @@ export class ClipboardSpace extends DurableObject<Env> {
     return { ok: true };
   }
 
-  cleanupExpired(now = Date.now()): { deletedClips: number } {
+  async cleanupExpired(now = Date.now()): Promise<{ deletedClips: number; deletedObjects: number }> {
     this.initializeSchema();
-    const expired = this.ctx.storage.sql
-      .exec<{ count: number }>("SELECT COUNT(*) AS count FROM clips WHERE expires_at IS NOT NULL AND expires_at <= ?", now)
-      .toArray()[0]?.count ?? 0;
+    const expiredRows = this.ctx.storage.sql
+      .exec<ClipRow>("SELECT * FROM clips WHERE expires_at IS NOT NULL AND expires_at <= ?", now)
+      .toArray();
+    let deletedObjects = 0;
+    for (const row of expiredRows) {
+      if (row.r2_key) {
+        await this.env.BLOBS.delete(row.r2_key);
+        deletedObjects += 1;
+      }
+    }
     this.ctx.storage.sql.exec("DELETE FROM clips WHERE expires_at IS NOT NULL AND expires_at <= ?", now);
-    this.scheduleNextAlarm();
-    return { deletedClips: expired };
+    await this.scheduleNextAlarm();
+    return { deletedClips: expiredRows.length, deletedObjects };
   }
 
   async alarm(): Promise<void> {
-    this.cleanupExpired(Date.now());
+    await this.cleanupExpired(Date.now());
+  }
+
+  async runRetention(now = Date.now()): Promise<{ deletedClips: number; deletedObjects: number }> {
+    return this.cleanupExpired(now);
   }
 
   debugDump(): { clips: StoredClip[]; wrappedKeys: Array<Record<string, SqlStorageValue>> } {
@@ -188,7 +257,10 @@ export class ClipboardSpace extends DurableObject<Env> {
         nonce TEXT NOT NULL,
         aad_hash TEXT NOT NULL,
         inline_ciphertext TEXT NOT NULL,
-        r2_key TEXT
+        storage_kind TEXT NOT NULL DEFAULT 'inline',
+        payload_id TEXT,
+        r2_key TEXT,
+        finalized_at INTEGER
       );
       CREATE INDEX IF NOT EXISTS idx_clips_created_at ON clips(created_at);
       CREATE INDEX IF NOT EXISTS idx_clips_expires_at ON clips(expires_at);
@@ -201,24 +273,37 @@ export class ClipboardSpace extends DurableObject<Env> {
       );
       INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1');
     `);
+    this.addColumnIfMissing("clips", "storage_kind", "TEXT NOT NULL DEFAULT 'inline'");
+    this.addColumnIfMissing("clips", "payload_id", "TEXT");
+    this.addColumnIfMissing("clips", "r2_key", "TEXT");
+    this.addColumnIfMissing("clips", "finalized_at", "INTEGER");
   }
 
-  private scheduleNextAlarm(): void {
+  private addColumnIfMissing(table: string, column: string, definition: string): void {
+    try {
+      this.ctx.storage.sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    } catch {
+      // Column already exists.
+    }
+  }
+
+  private async scheduleNextAlarm(): Promise<void> {
     const nextExpiry = this.ctx.storage.sql
       .exec<{ expires_at: number }>(
         "SELECT expires_at FROM clips WHERE expires_at IS NOT NULL ORDER BY expires_at ASC LIMIT 1"
       )
       .toArray()[0]?.expires_at;
     if (nextExpiry) {
-      void this.ctx.storage.setAlarm(Math.max(nextExpiry, Date.now()));
+      const now = Date.now();
+      await this.ctx.storage.setAlarm(nextExpiry <= now ? now - 1 : nextExpiry);
     } else {
-      void this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.deleteAlarm();
     }
   }
 }
 
 function rowToClip(row: ClipRow): StoredClip {
-  return {
+  const clip: StoredClip = {
     seq: row.seq,
     clipId: row.clip_id,
     originDeviceId: row.origin_device_id,
@@ -230,6 +315,10 @@ function rowToClip(row: ClipRow): StoredClip {
     keyVersion: row.key_version,
     nonce: row.nonce,
     aadHash: row.aad_hash,
-    ciphertext: row.inline_ciphertext
+    ciphertext: row.inline_ciphertext,
+    storageKind: row.storage_kind === "r2" ? "r2" : "inline"
   };
+  if (row.payload_id !== null) clip.payloadId = row.payload_id;
+  if (row.r2_key !== null) clip.r2Key = row.r2_key;
+  return clip;
 }

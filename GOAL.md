@@ -1,7 +1,7 @@
 ---
 goal_id: "pasta"
 title: "Pasta MVP"
-status: "active"
+status: "done"
 confidence_floor: 90
 created: "2026-06-26"
 updated: "2026-06-26"
@@ -83,17 +83,19 @@ A new Codex agent can continue from this repository if it starts at the project 
 
 Current verified state:
 
-- Goals 01-05 are GDD-done with recorded evidence.
+- Goals 01-06 are GDD-done with recorded evidence.
 - Goal 05 Task 4 / DoD-4 uses live macOS smoke proof plus user-approved reasonable assumptions for Linux and Windows. Direct Linux/Windows smoke is not required for this checkpoint unless the proof standard changes.
-- Goal 06 is the active remaining goal. Binary payloads and hardening are explicitly post-text-MVP work.
+- Goal 06 completed binary payloads and hardening after the text MVP public distribution proof. Image clipboard smoke is live on macOS; Linux/Windows image clipboard behavior remains a documented platform assumption for this environment.
 
-The current next action is Goal 06, Task 1:
+The current next action is final release/ops follow-through, not another GDD implementation subgoal:
 
 ```bash
 python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/06-binary-payloads-and-hardening.md
+mise exec -- bun run test
+mise exec -- bunx tsc --noEmit
 ```
 
-Work Goal 06 only with recorded evidence. Binary payload support must preserve the end-to-end encryption boundary.
+Any future work should add a new goal file before changing scope. Binary payload support preserves the end-to-end encryption boundary.
 
 ## Completion Criteria
 
@@ -108,5 +110,4 @@ Work Goal 06 only with recorded evidence. Binary payload support must preserve t
 
 ## Current Blockers
 
-- None for the encrypted text MVP.
-- Goal 06 remains incomplete: images/files need R2 and streaming/chunking design after the text MVP distribution proof.
+- None.

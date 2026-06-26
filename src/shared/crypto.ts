@@ -43,6 +43,21 @@ export interface ClipEncryptionInput {
   nonce?: string;
 }
 
+export interface BytesClipEncryptionInput {
+  accountId: string;
+  routingId: string;
+  originDeviceId: string;
+  bytes: Uint8Array;
+  payloadKind: "image" | "file";
+  mime: string;
+  groupKey: string;
+  keyVersion?: number;
+  clipId?: string;
+  createdAt?: number;
+  expiresAt?: number | null;
+  nonce?: string;
+}
+
 export function generateGroupKey(): string {
   return toBase64Url(randomBytes(32));
 }
@@ -88,15 +103,36 @@ export function verifyCanonicalRequest(parts: SignedRequestParts, signature: str
 }
 
 export function encryptTextClip(input: ClipEncryptionInput): EncryptedClip {
-  const plaintext = utf8ToBytes(input.plaintext);
+  const bytesInput: Omit<BytesClipEncryptionInput, "payloadKind"> & { payloadKind: "text" | "image" | "file" } = {
+    accountId: input.accountId,
+    routingId: input.routingId,
+    originDeviceId: input.originDeviceId,
+    bytes: utf8ToBytes(input.plaintext),
+    payloadKind: "text",
+    mime: "text/plain; charset=utf-8",
+    groupKey: input.groupKey
+  };
+  if (input.keyVersion !== undefined) bytesInput.keyVersion = input.keyVersion;
+  if (input.clipId !== undefined) bytesInput.clipId = input.clipId;
+  if (input.createdAt !== undefined) bytesInput.createdAt = input.createdAt;
+  if (input.expiresAt !== undefined) bytesInput.expiresAt = input.expiresAt;
+  if (input.nonce !== undefined) bytesInput.nonce = input.nonce;
+  return encryptInlineClip(bytesInput);
+}
+
+export function encryptBytesClip(input: BytesClipEncryptionInput): EncryptedClip {
+  return encryptInlineClip(input);
+}
+
+function encryptInlineClip(input: Omit<BytesClipEncryptionInput, "payloadKind"> & { payloadKind: "text" | "image" | "file" }): EncryptedClip {
   const clip: EncryptedClip = {
     clipId: input.clipId ?? `clip_${randomBase64Url(16)}`,
     originDeviceId: input.originDeviceId,
     createdAt: input.createdAt ?? Date.now(),
     expiresAt: input.expiresAt ?? null,
-    payloadKind: "text",
-    mime: "text/plain; charset=utf-8",
-    byteLen: plaintext.length,
+    payloadKind: input.payloadKind,
+    mime: input.mime,
+    byteLen: input.bytes.length,
     keyVersion: input.keyVersion ?? 1,
     nonce: input.nonce ?? toBase64Url(randomBytes(24)),
     aadHash: "",
@@ -105,7 +141,7 @@ export function encryptTextClip(input: ClipEncryptionInput): EncryptedClip {
   const aad = aadForClip(input.accountId, input.routingId, clip);
   const aadBytes = utf8ToBytes(stableJson(aad));
   const cipher = xchacha20poly1305(fromBase64Url(input.groupKey), fromBase64Url(clip.nonce), aadBytes);
-  clip.ciphertext = toBase64Url(cipher.encrypt(plaintext));
+  clip.ciphertext = toBase64Url(cipher.encrypt(input.bytes));
   clip.aadHash = clipAadHash(aad);
   return clip;
 }
@@ -121,6 +157,16 @@ export function decryptTextClip(groupKey: string, accountId: string, routingId: 
   }
   const cipher = xchacha20poly1305(fromBase64Url(groupKey), fromBase64Url(clip.nonce), utf8ToBytes(stableJson(aad)));
   return bytesToUtf8(cipher.decrypt(fromBase64Url(clip.ciphertext)));
+}
+
+export function decryptBytesClip(groupKey: string, accountId: string, routingId: string, clip: EncryptedClip): Uint8Array {
+  const aad = aadForClip(accountId, routingId, clip);
+  const expectedAadHash = clipAadHash(aad);
+  if (expectedAadHash !== clip.aadHash) {
+    throw new Error("clip AAD hash mismatch");
+  }
+  const cipher = xchacha20poly1305(fromBase64Url(groupKey), fromBase64Url(clip.nonce), utf8ToBytes(stableJson(aad)));
+  return cipher.decrypt(fromBase64Url(clip.ciphertext));
 }
 
 export function wrapGroupKey(params: {
@@ -192,4 +238,3 @@ function deriveWrapKey(privateKey: string, ownPublicKey: string, peerPublicKey: 
     32
   );
 }
-

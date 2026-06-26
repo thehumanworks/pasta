@@ -8,7 +8,7 @@ import { readConfig, type PastaConfig, type Paths, writeConfig } from "../../src
 import { MemorySecretStore, SecretName } from "../../src/cli/secret-store";
 import { runCli } from "../../src/cli";
 import { encryptTextClip, generateDeviceKeyMaterial, generateGroupKey } from "../../src/shared/crypto";
-import type { StoredClip } from "../../src/shared/protocol";
+import { LARGE_PAYLOAD_MAX_BYTES, type StoredClip } from "../../src/shared/protocol";
 import { shellSnippet } from "../../src/cli/shell";
 
 describe("CLI", () => {
@@ -83,6 +83,84 @@ describe("CLI", () => {
     expect(JSON.parse(output.join("")).published).toBe(0);
   });
 
+  it("copies and pastes inline image clipboard bytes", async () => {
+    const paths = await tempPaths();
+    const secrets = new MemorySecretStore();
+    const groupKey = generateGroupKey();
+    await secrets.set(SecretName.groupKey, groupKey);
+    await secrets.set(SecretName.signingPrivateKey, generateDeviceKeyMaterial().signing.privateKey);
+    await secrets.set(SecretName.wrappingPrivateKey, generateDeviceKeyMaterial().wrapping.privateKey);
+    const config = sampleConfig();
+    await writeConfig(config, paths.configPath);
+    const clips: StoredClip[] = [];
+    const client = new MockApiClient(({ method, path, body }) => {
+      if (method === "POST" && path === "/v1/clips") {
+        const clip = { ...(body as StoredClip), seq: clips.length + 1 };
+        clips.push(clip);
+        return { clip };
+      }
+      if (path === "/v1/clips/latest") return { clip: clips.at(-1) ?? null };
+      throw new Error(`unexpected ${method} ${path}`);
+    });
+    const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
+    const clipboard = new MemoryClipboardAdapter("", { mime: "image/png", bytes: png });
+    const output: string[] = [];
+    const deps = { io: capture(output), paths, secrets, clipboard, clientFactory: () => client };
+
+    expect(await runCli(["copy-image"], deps)).toBe(0);
+    expect(clips[0]?.payloadKind).toBe("image");
+    expect(clips[0]?.ciphertext).not.toContain("PNG");
+    clipboard.image = null;
+    expect(await runCli(["paste-image"], deps)).toBe(0);
+    const pasted = clipboard.image as { mime: "image/png"; bytes: Uint8Array } | null;
+    expect(pasted?.mime).toBe("image/png");
+    expect(pasted?.bytes).toEqual(png);
+  });
+
+  it("sends and pastes bounded file payloads through the R2-backed API path", async () => {
+    const paths = await tempPaths();
+    const secrets = new MemorySecretStore();
+    const groupKey = generateGroupKey();
+    await secrets.set(SecretName.groupKey, groupKey);
+    await secrets.set(SecretName.signingPrivateKey, generateDeviceKeyMaterial().signing.privateKey);
+    await secrets.set(SecretName.wrappingPrivateKey, generateDeviceKeyMaterial().wrapping.privateKey);
+    const config = sampleConfig();
+    await writeConfig(config, paths.configPath);
+    const storedFiles: Array<{ clip: StoredClip; ciphertext: string }> = [];
+    const client = new MockApiClient(({ method, path, body }) => {
+      if (method === "POST" && path === "/v1/files") {
+        const source = body as StoredClip;
+        const stored = { ...source, seq: storedFiles.length + 1, ciphertext: "", storageKind: "r2" as const, r2Key: `spaces/test/${storedFiles.length + 1}/payload` };
+        storedFiles.push({ clip: stored, ciphertext: source.ciphertext });
+        return { clip: stored };
+      }
+      if (path === "/v1/clips/latest") return { clip: storedFiles.at(-1)?.clip ?? null };
+      if (method === "GET" && path.startsWith("/v1/files/")) return storedFiles[Number(path.split("/").at(-1)) - 1];
+      throw new Error(`unexpected ${method} ${path}`);
+    });
+    const small = join(paths.home, "small.bin");
+    const medium = join(paths.home, "medium.bin");
+    const out = join(paths.home, "out.bin");
+    await Bun.write(small, new Uint8Array([1, 2, 3, 4]));
+    await Bun.write(medium, new Uint8Array(64 * 1024).fill(7));
+    const output: string[] = [];
+    const deps = { io: capture(output), paths, secrets, clientFactory: () => client };
+
+    expect(await runCli(["send-file", small], deps)).toBe(0);
+    expect(await runCli(["send-file", medium, "--mime", "application/octet-stream"], deps)).toBe(0);
+    expect(storedFiles).toHaveLength(2);
+    expect(storedFiles[1]?.clip.storageKind).toBe("r2");
+    expect(storedFiles[1]?.clip.r2Key).toContain("spaces/");
+    expect(await runCli(["paste-file", "--seq", "2", "--out", out], deps)).toBe(0);
+    expect(new Uint8Array(await Bun.file(out).arrayBuffer())).toEqual(new Uint8Array(64 * 1024).fill(7));
+
+    const tooLarge = join(paths.home, "too-large.bin");
+    await Bun.spawn(["truncate", "-s", String(LARGE_PAYLOAD_MAX_BYTES + 1), tooLarge]).exited;
+    output.length = 0;
+    expect(await runCli(["send-file", tooLarge], deps)).not.toBe(0);
+    expect(output.join("")).toContain("exceeds max size");
+  });
+
   it("supports reversible shell integration snippets", async () => {
     const paths = await tempPaths();
     const output: string[] = [];
@@ -115,6 +193,21 @@ describe("CLI", () => {
     output.length = 0;
     expect(await runCli(["daemon", "--dry-run"], deps)).toBe(0);
     expect(JSON.parse(output.join("")).published).toBe(0);
+  });
+
+  it("reports the binary payload design boundaries", async () => {
+    const output: string[] = [];
+    expect(await runCli(["payload-plan"], { io: capture(output) })).toBe(0);
+    const plan = JSON.parse(output.join("")) as {
+      inlineThresholdBytes: number;
+      maxBytes: number;
+      r2KeyFormat: string;
+      finalizeSemantics: string;
+    };
+    expect(plan.inlineThresholdBytes).toBe(512 * 1024);
+    expect(plan.maxBytes).toBe(50 * 1024 * 1024);
+    expect(plan.r2KeyFormat).toBe("spaces/{routing_id}/clips/{seq}/{payload_id}");
+    expect(plan.finalizeSemantics).toContain("signed finalize");
   });
 });
 

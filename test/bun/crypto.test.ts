@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import {
+  decryptBytesClip,
   decryptTextClip,
+  encryptBytesClip,
   encryptTextClip,
   generateSigningKeyPair,
   generateWrappingKeyPair,
@@ -50,6 +52,26 @@ describe("protocol crypto", () => {
     const signature = signCanonicalRequest(parts, keys.privateKey);
     expect(verifyCanonicalRequest(parts, signature, keys.publicKey)).toBe(true);
     expect(verifyCanonicalRequest({ ...parts, pathWithQuery: "/v1/devices" }, signature, keys.publicKey)).toBe(false);
+  });
+
+  it("encrypts and decrypts inline image bytes without plaintext leakage", () => {
+    const key = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
+    const bytes = new Uint8Array([137, 80, 78, 71, 1, 2, 3, 4]);
+    const clip = encryptBytesClip({
+      accountId: "acct_img",
+      routingId: "space_img",
+      originDeviceId: "dev_img",
+      bytes,
+      payloadKind: "image",
+      mime: "image/png",
+      groupKey: key,
+      clipId: "clip_img",
+      createdAt: 1782475200000,
+      nonce: "GBcWFRQTEhEQDw4NDAsKCQgHBgUEAwIB"
+    });
+    expect(clip.payloadKind).toBe("image");
+    expect(clip.ciphertext).not.toContain("PNG");
+    expect(decryptBytesClip(key, "acct_img", "space_img", clip)).toEqual(bytes);
   });
 
   it("wraps a group key for a new device without exposing the raw key", () => {
