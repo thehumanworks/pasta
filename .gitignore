@@ -2,7 +2,8 @@ node_modules/
 .wrangler/
 .mf/
 coverage/
-dist/
+docs-site/dist/
+docs-site/node_modules/
 *.tsbuildinfo
 .DS_Store
 

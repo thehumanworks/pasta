@@ -1,0 +1,133 @@
+---
+title: Protocol & Crypto
+slug: protocol
+description: Wire format, signing, encryption, and API endpoints for Pasta v0.1.0.
+nav_order: 6
+---
+
+<!-- @human -->
+## Version
+
+Protocol version aligns with **`pasta 0.1.0`**. Run `pasta protocol` for the live endpoint map from your installed CLI.
+
+## Identifiers
+
+| Id | Purpose |
+| --- | --- |
+| `account_id` | Stable account row in D1 |
+| `routing_id` | Selects Durable Object instance (not secret) |
+| `device_id` | Per-device registry entry |
+| `clip_id` | Client-generated opaque clip id |
+| `seq` | DO-assigned append-only sequence |
+
+## Encryption
+
+**Clipboard payloads:** XChaCha20-Poly1305 with a 32-byte group key and 24-byte nonce.
+
+**Additional authenticated data (AAD)** is canonical JSON binding ciphertext to account, routing, clip metadata, payload kind, MIME, byte length, and key version. The server stores an `aadHash`; clients must match.
+
+**Device request signing:** Ed25519 over a canonical five-line string prefixed with `PASTA-SIGN-V1`.
+
+**Pairing grants:** X25519 ECDH → HKDF-SHA256 → XChaCha20-Poly1305 wrapped group key for the new device.
+
+**Short codes:** User-visible codes are hashed with account context before storage; raw codes never persist server-side.
+
+## Signed request headers
+
+| Header | Content |
+| --- | --- |
+| `pasta-account-id` | Account |
+| `pasta-device-id` | Device |
+| `pasta-timestamp` | Unix ms |
+| `pasta-nonce` | Random nonce |
+| `pasta-body-sha256` | Base64url SHA-256 of body |
+| `pasta-signature` | Ed25519 signature |
+
+Canonical signed string:
+
+```text
+PASTA-SIGN-V1
+<METHOD>
+<PATH_WITH_QUERY>
+<TIMESTAMP_MS>
+<NONCE>
+<BODY_SHA256_BASE64URL>
+```
+
+The Worker rejects requests outside a **5-minute** timestamp window, with bad body hashes, unknown/revoked devices, invalid signatures, or replayed nonces.
+
+## Endpoint summary
+
+| Operation | Method / Path | Auth |
+| --- | --- | --- |
+| Bootstrap | `POST /v1/accounts/bootstrap` | None |
+| Publish clip | `POST /v1/clips` | Signed |
+| Latest / by seq | `GET /v1/clips/latest`, `/v1/clips/:seq` | Signed |
+| History | `GET /v1/clips/history` | Signed |
+| Open pairing | `POST /v1/pairing/open` | None |
+| Approve pairing | `POST /v1/pairing/approve` | Signed |
+| Consume pairing | `POST /v1/pairing/consume` | None |
+| List devices | `GET /v1/devices` | Signed |
+| Revoke device | `POST /v1/devices/:id/revoke` | Signed |
+| Reset space | `POST /v1/reset` | Signed |
+| Upload file | `POST /v1/files` | Signed |
+| Download file | `GET /v1/files/:seq` | Signed |
+
+## Reset semantics
+
+`POST /v1/reset` with `{ confirm: "RESET", newRoutingId }` rotates the encrypted space. Old ciphertext may remain until retention cleanup but is unreachable under the new routing id and undecryptable without the old group key.
+
+<!-- @agent -->
+## Source of truth
+
+- Types & constants: `src/shared/protocol.ts`
+- Crypto primitives: `src/shared/crypto.ts`
+- Human spec mirror: `docs/protocol.md`
+
+## Key constants
+
+```typescript
+PASTA_VERSION = "0.1.0"
+SIGNING_VERSION = "PASTA-SIGN-V1"
+REQUEST_TOLERANCE_MS = 5 * 60 * 1000
+REQUEST_NONCE_TTL_MS = 10 * 60 * 1000
+TEXT_INLINE_LIMIT_BYTES = 512 * 1024
+LARGE_PAYLOAD_MAX_BYTES = 50 * 1024 * 1024
+MAX_OPEN_PAIRING_SESSIONS = 5
+DEFAULT_HISTORY_LIMIT = 20
+MAX_HISTORY_LIMIT = 100
+```
+
+## EncryptedClip shape
+
+Fields: `clipId`, `originDeviceId`, `createdAt`, `expiresAt`, `payloadKind` (`text`|`image`|`file`), `mime`, `byteLen`, `keyVersion`, `nonce`, `aadHash`, `ciphertext`, optional `storageKind`, `payloadId`, `r2Key`.
+
+`StoredClip` adds `seq`.
+
+## AAD construction
+
+`aadForClip(accountId, routingId, clip)` → stable JSON → `clipAadHash()`.
+
+Decrypt must verify AAD hash before releasing plaintext.
+
+## Crypto functions (shared/crypto.ts)
+
+| Function | Use |
+| --- | --- |
+| `generateDeviceKeyMaterial()` | Ed25519 + X25519 keypairs |
+| `generateGroupKey()` | 32-byte symmetric key |
+| `encryptTextClip` / `encryptBytesClip` | Publish |
+| `decryptTextClip` / `decryptBytesClip` | Pull |
+| `wrapGroupKey` / `unwrapGroupKey` | Pairing |
+| `makeShortCode` / `hashShortCode` | Pairing UX |
+
+Noble libraries: `@noble/ciphers`, `@noble/curves`, `@noble/hashes`.
+
+## Canonical request helper
+
+`canonicalRequest({ method, pathWithQuery, timestamp, nonce, bodyHash })` — must match client and Worker byte-for-byte.
+
+## Verification
+
+Deterministic crypto vectors: `test/bun/crypto.test.ts`
+Worker auth integration: `test/worker/backend.test.ts`

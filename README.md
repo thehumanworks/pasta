@@ -382,6 +382,7 @@ bun run pack:list
 
 ## Project Docs
 
+- **Documentation site:** https://thehumanworks.github.io/pasta/ (Human + Agent views; agent markdown at `/agent/{slug}.md`)
 - Delivery plan: `GOAL.md`
 - Execution runbook: `docs/ORCHESTRATION.md`
 - Protocol: `docs/protocol.md`

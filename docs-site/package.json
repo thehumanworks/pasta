@@ -1,0 +1,12 @@
+{
+  "name": "pasta-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run build.ts",
+    "dev": "bun run build.ts --watch && bun run serve.ts"
+  },
+  "devDependencies": {
+    "marked": "^15.0.7"
+  }
+}
