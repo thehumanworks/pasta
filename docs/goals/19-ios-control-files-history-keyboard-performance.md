@@ -17,6 +17,8 @@ updated: "2026-06-27"
 - Keyboard typing behavior remains KeyboardKit-native. Performance changes must
   not remove typing, delete, shift/case, punctuation, autocomplete, Paste, or
   Publish behavior.
+- The alphabetic keyboard must not include Pasta's custom top number row.
+  Number keys appear when the user taps the standard `123` mode switch.
 - Cloudflare never receives plaintext clipboard contents, file bytes, local
   paths, file names, or raw group keys.
 - `clipId` is stable identity for remote fetch/delete. `seq` is display
@@ -55,8 +57,9 @@ keyboard without the lag seen before this goal.
   through `DELETE /v1/clips/:clipId`, then refreshes app/keyboard caches. -
   *verify by:* Swift tests and live or mocked API smoke.
 - [x] **DoD-4** - Keyboard input hot paths are benchmarked before and after, with
-  improved scores and no removed keyboard functionality. - *verify by:*
-  committed benchmark/performance check and keyboard build/smoke.
+  improved scores, no removed keyboard functionality, and no Pasta-added
+  alphabetic top number row. - *verify by:* committed benchmark/performance
+  check, source review, and keyboard build/smoke.
 - [ ] **DoD-5** - Final release is merged to `main`, pushed to `origin/main`,
   CLI version/tag/release assets are published, and iOS is uploaded to
   TestFlight with App Store Connect proof. - *verify by:* git, release, IPA,
@@ -183,12 +186,13 @@ Verification Contract:
   --iterations 40000 --mode both` - exit 0; `baseline.layout_rebuild:
   290.265 ms`, `optimized.layout_cache: 228.299 ms`, same checksum
   `254720000`; source still rebuilt KeyboardKit layout and inserted Pasta's
-  number row on each `PastaKeyboardView.body` evaluation.
+  now-removed alphabetic number row on each `PastaKeyboardView.body`
+  evaluation.
 - 2026-06-27 - root cause discovery - KeyboardKit
   `KeyboardInputViewController.textDidChangeAsync` calls autocomplete after text
-  changes, while Pasta-owned code also rebuilt the augmented KeyboardKit layout
-  on SwiftUI body evaluation. Pasta's hot paths were the per-evaluation number
-  row/layout generation and per-autocomplete `UITextChecker` plus available
+  changes, while Pasta-owned code also rebuilt the structural KeyboardKit
+  layout on SwiftUI body evaluation. Pasta's hot paths were the per-evaluation
+  layout generation and per-autocomplete `UITextChecker` plus available
   language setup; KeyboardKit key handling, toolbar composition, autocomplete
   view, globe behavior, and publish/paste actions remain intact.
 - 2026-06-27 - optimized keyboard benchmark - `swift
@@ -201,7 +205,7 @@ Verification Contract:
   improvement `3051.264 ms` / `58.267% faster`; checksums matched
   (`254720000` layout, `691434` autocomplete).
 - 2026-06-27 - implementation - `ios/Keyboard/KeyboardViewController.swift`
-  now caches Pasta's structural KeyboardKit layout augmentation by keyboard
+  now caches Pasta's structural KeyboardKit layout by keyboard
   type, orientation, screen size, device class, input-mode-switch requirement,
   and locale, and reuses `UITextChecker` plus its available-language set for the
   autocomplete service instead of recreating them per request.
@@ -213,7 +217,7 @@ Verification Contract:
   CODE_SIGNING_ALLOWED=NO build` - exit 0; `PastaKeyboard.appex` compiled and
   embedded in `Pasta.app/PlugIns`.
 - 2026-06-27 - `git diff --check` - exit 0.
-- 2026-06-27 - final benchmark rerun - `swift
+- 2026-06-27 - post-optimization benchmark before number-row follow-up - `swift
   ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 40000 --mode both`
   - exit 0; `baseline.layout_rebuild: 289.455 ms`,
   `baseline.autocomplete_new_checker: 4947.205 ms`,
@@ -222,6 +226,51 @@ Verification Contract:
   `baseline.total: 5236.661 ms`, `optimized.total: 2185.396 ms`;
   improvement `3051.264 ms` / `58.267% faster`; checksums matched
   (`254720000` layout, `691434` autocomplete).
+
+### T4A - Remove Alphabetic Top Number Row - [x]
+
+- Remove Pasta's custom `1234567890` row from the alphabetic keyboard layout.
+- Keep KeyboardKit's numeric/symbol modes so users still get digits after
+  tapping `123`.
+- Preserve KeyboardKit toolbar, autocomplete, globe key, input handling, and the
+  structural layout cache.
+
+Verification Contract:
+
+- Source inspection shows no Pasta-owned number-row insertion for
+  `.alphabetic`.
+- Keyboard benchmark and iOS simulator build pass.
+
+**Confidence:** 90/100
+**Closes:** DoD-4
+**Evidence:**
+
+- 2026-06-27 - implementation - `PastaKeyboardLayoutCache` now caches
+  KeyboardKit's generated layout without inserting a Pasta-owned number row
+  when `keyboardType == .alphabetic`; number and symbol modes remain generated
+  by KeyboardKit.
+- 2026-06-27 - follow-up benchmark - `swift
+  ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 40000 --mode both`
+  - exit 0; `baseline.layout_rebuild: 231.427 ms`,
+  `baseline.autocomplete_new_checker: 4859.818 ms`,
+  `optimized.layout_cache: 183.145 ms`,
+  `optimized.autocomplete_reused_checker: 1992.038 ms`,
+  `baseline.total: 5091.245 ms`, `optimized.total: 2175.182 ms`;
+  improvement `2916.063 ms` / `57.276% faster`; checksums matched
+  (`234720000` layout, `691434` autocomplete).
+- 2026-06-27 - `swift test --package-path ios` - exit 0; 21 XCTest tests
+  executed, 1 gated live-relay smoke skipped without `PASTA_IOS_JOIN_TOKEN`.
+- 2026-06-27 - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta
+  -configuration Debug -sdk iphonesimulator -destination 'platform=iOS
+  Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData
+  CODE_SIGNING_ALLOWED=NO build` - exit 0; `PastaKeyboard.appex` compiled and
+  embedded in `Pasta.app/PlugIns`.
+- 2026-06-27 - `cd docs-site && bun install --frozen-lockfile && bun run build
+  -- --base /` - exit 0; existing docs stack built 15 pages after locked docs
+  dependency install in the isolated worktree.
+- 2026-06-27 - `git diff --check` plus `gdd_status.py --author
+  docs/goals/19-ios-control-files-history-keyboard-performance.md` - exit 0;
+  goal parsed with 4/5 DoD complete and T5 next.
 
 ### T5 - Integrate, Release, And Prove Distribution - [ ]
 
