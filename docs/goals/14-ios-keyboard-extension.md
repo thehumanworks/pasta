@@ -110,6 +110,8 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - Grammarly-style action shelf fix - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0; simulator install/launch plus `pluginkit -m -p com.apple.keyboard-service | rg 'com.thehumanworks.pasta.keyboard'` - exit 0 with `com.thehumanworks.pasta.keyboard(0.1.7)`.
 - 2026-06-27 - Grammarly-style action shelf fix - `swift test --package-path ios` - exit 0 with 14 tests passed and 1 live relay test skipped; `mise exec -- bun run test` - exit 0 with 30 Bun tests and 13 Vitest tests passed; `cd docs-site && bun run build -- --base /pasta/` - exit 0 with 15 pages built; `git diff --check` - exit 0; `gdd_status.py docs/goals/14-ios-keyboard-extension.md` - pass.
 - 2026-06-27 - TestFlight build 8 - archive/export/upload passed; `inspect_ipa.sh ios/build/export-local/Pasta.ipa` confirmed `CFBundleVersion=8`, `ITSAppUsesNonExemptEncryption=false`, distribution profile, `get-task-allow=false`, and embedded `PastaKeyboard.appex`; App Store Connect build `05246339-72ad-4189-ab42-7ba8fad527df` is `VALID` and internal beta group `internal` has access.
+- 2026-06-27 - native toolbar-slot composition - pass by 3-subagent review panel (KeyboardKit-correctness, adversarial device-chrome, native-UX/HIG) against pinned KeyboardKit 9.9.1 sources; `PastaKeyboardView` now returns `KeyboardView(... toolbar: { _ in Keyboard.Toolbar { PastaKeyboardToolbar(...) } })` with `keyboardViewStyle(background: .color(.keyboardBackground))`, no sibling strip / `EmptyView()` slot / zeroed autocomplete / `ignoresSafeArea`, `.id` no longer keyed on `keyboardCase`, and the unconditional `nextKeyboard` removal deleted so KeyboardKit owns the globe.
+- 2026-06-27 - native toolbar-slot composition - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,id=A5C6DC5D-CB65-4409-9CA8-3B0CD6709FE3' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0, `** BUILD SUCCEEDED **`; `PastaKeyboard.appex` built and embedded in `Pasta.app/PlugIns`. Final visual proof (single continuous surface, no strip above the action row) still pending a device/TestFlight screenshot, per this goal's own learning that simulator/previews under-prove extension chrome; status stays blocked and no DoD is ticked on simulator evidence alone.
 
 ---
 
@@ -219,6 +221,18 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - User comparison against Grammarly corrected the shelf style
   contract: the action shelf should feel like a native suggestion row, not a
   short clipped chip rail. Scope impact: toolbar presentation only.
+- 2026-06-27 - User feedback corrected the keyboard composition contract: Pasta
+  is additive and the keys/input must be as native as possible. The action row
+  now renders inside KeyboardKit's native `toolbar:` slot
+  (`Keyboard.Toolbar { PastaKeyboardToolbar(...) }`) on one continuous keyboard
+  surface; the sibling strip, `EmptyView()` slot, zero-height autocomplete, and
+  `ignoresSafeArea` workarounds were removed; opacity comes from an explicit
+  `keyboardViewStyle(background: .color(.keyboardBackground))`; and the
+  unconditional `nextKeyboard` (globe) removal was dropped so KeyboardKit owns the
+  keyboard-switch key. A 3-subagent review panel (KeyboardKit correctness,
+  adversarial device-chrome, native UX/HIG) approved the approach with these
+  corrections. Scope impact: keyboard composition and docs wording; no DoD/task
+  changes.
 
 ---
 
@@ -245,6 +259,21 @@ Scope changes stop execution and surface to the user.
   suggestion-row treatment: centered text/action segments, subtle dividers, and
   full-height hit targets. Avoid a 36pt clipped chip row because it makes labels
   look cramped and visually detached from stock iOS keys.
+- 2026-06-27 - The earlier "the `toolbar:` slot paints chrome above the controls"
+  learning was a misdiagnosis. In pinned KeyboardKit 9.9.1, `KeyboardView` is
+  already `VStack(spacing: 0) { toolbar; keyboardView }` (`KeyboardView.swift:176-179`),
+  the `toolbar:` slot adds no background of its own (`KeyboardView.swift:400-417`),
+  and the whole stack gets one background (`KeyboardView.swift:185`). The visible
+  strip came from Pasta's own sibling band, hand-painted background, and stacked
+  containers — not the slot. Correct pattern (matches `DemoKeyboardView.swift`):
+  return `Keyboard.Toolbar { actionRow }` from the slot, leave `renderBackground`
+  default, and set an explicit opaque `keyboardViewStyle` background because the
+  standard style service background is transparent (`Keyboard.Background.standard`
+  has all layers nil). Also: never key the `KeyboardView` `.id` on `keyboardCase`
+  (it rebuilds the keyboard mid-typing and cancels gestures), and do not strip
+  `nextKeyboard` — KeyboardKit's standard layout adds the globe conditionally on
+  iPhone (only when `needsInputModeSwitchKey` is true) and unconditionally on iPad,
+  so stripping it removes the user's only keyboard-switch affordance.
 
 ---
 

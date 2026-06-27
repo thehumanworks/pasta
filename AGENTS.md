@@ -34,6 +34,52 @@ These project-local instructions apply to this repository.
 - Keep implementation changes narrow to the active goal.
 - Do not store secrets in config files, logs, fixtures, or docs.
 
+## iOS Custom Keyboard (KeyboardKit)
+
+The Pasta keyboard is **additive**: KeyboardKit owns the keys and all input
+handling; Pasta only adds a top action row (refresh, publish, pull-history,
+paste/insert). Keep the keys and input as native as possible. The recurring bug
+here has been turning the action row into a bolt-on strip glued to the keyboard's
+top edge — do not repeat it. Source of truth: `ios/Keyboard/KeyboardViewController.swift`,
+ADR `docs/adrs/0002-keyboardkit-keyboard-rendering.md`, and
+`docs-site/content/native-ios.md`.
+
+Working pattern:
+
+- Put the Pasta row in KeyboardKit's **native `toolbar:` slot**:
+  `toolbar: { _ in Keyboard.Toolbar { PastaKeyboardToolbar(...) } }`. KeyboardKit
+  already composes the keyboard as `VStack { toolbar; keys }` on one surface — the
+  slot is the native QuickType band, and in 9.9.1 it paints no background of its own.
+- Set one explicit opaque surface:
+  `.keyboardViewStyle(.init(background: .color(.keyboardBackground)))`. Do **not**
+  rely on `renderBackground` for opacity — the standard style service's background
+  is transparent (`Keyboard.Background.standard` has all layers nil), so
+  `renderBackground` alone paints nothing.
+- Do **not**: render the row as a sibling above `KeyboardView`; pass `EmptyView()`
+  into the slot with a zero-height autocomplete toolbar; use `.ignoresSafeArea(.top)`;
+  or hand-paint a background behind a sibling band. That stack is exactly what
+  produces the cropped, detached strip.
+- Let KeyboardKit own the layout. Do **not** strip `.nextKeyboard`; on iPhone the
+  standard layout adds the globe only when `needsInputModeSwitchKey` is true, and on
+  iPad it adds it unconditionally — either way, removing it strands the user with no
+  keyboard switch (a HIG / App Review risk).
+- Observe `KeyboardContext` so the view re-evaluates; key `KeyboardView`'s `.id`
+  only on structural changes (keyboard type, orientation, size, device class).
+  **Never** key `.id` on `keyboardCase` — it tears the keyboard down on every
+  auto-capitalization flip mid-typing and cancels in-flight gestures.
+- Privacy stays intact: never publish ordinary keystrokes; read the pasteboard
+  only behind an explicit user-tapped action.
+
+Proof: a green `xcodebuild` simulator build and PluginKit registration prove it
+**compiles and installs**, not that the chrome looks right. Keyboard-extension
+chrome (top strip, safe area, globe, height) only renders correctly in the real
+extension host — the last strip survived a green simulator build and a TestFlight
+build and was caught only by a device screenshot. Require a device/TestFlight
+screenshot before claiming the visual is fixed. When unsure, read the pinned
+KeyboardKit sources in-repo (`ios/build/DerivedData/SourcePackages/checkouts/KeyboardKit/`,
+especially `_Keyboard/KeyboardView.swift`, `_Keyboard/Views/Keyboard+Toolbar.swift`,
+and `Demo/Keyboard/DemoKeyboardView.swift`).
+
 ## Delivery
 
 - Every task in this repository ends with the verified changes committed on `main` and pushed to `origin/main` unless the user explicitly asks not to publish.

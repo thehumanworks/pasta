@@ -36,11 +36,11 @@ File Provider integration is a later add-on for file and directory history in Fi
 The keyboard is intentionally close to the stock iOS keyboard in daily use:
 
 - normal typing remains the default interaction;
-- Pasta does not add a duplicate globe key when iOS already presents the input-mode switch control;
+- KeyboardKit renders the keyboard-switch (globe) key whenever iOS requires it, so users always have a way to switch keyboards; Pasta no longer strips it;
 - letter, number (`123`), and symbol (`#+=`) keyboard modes are present so the keyboard remains usable for ordinary iOS text entry;
 - letter keys follow iOS-style case behavior: lowercase in normal typing, single-shift uppercase, and caps lock only through the standard shift interaction;
-- Pasta controls use a high-contrast opaque compact history strip so action labels stay readable over iOS keyboard chrome;
-- Pasta controls live in a compact history strip and must not create a separate top bar, rounded cap, or spacer above the action buttons;
+- Pasta's actions live in KeyboardKit's native top toolbar slot (the band that normally holds QuickType suggestions), on one continuous keyboard surface with the keys below and no separate strip or spacer above them;
+- action labels stay readable over the keyboard surface and match the native suggestion-row height and centering;
 - tapping a text item inserts it into the active text field;
 - long-pressing a history item opens actions such as preview, copy to iPhone clipboard, delete, or open in Pasta;
 - Pasta never publishes ordinary keystrokes as clips.
@@ -113,9 +113,9 @@ Cloudflare still sees only the existing routing metadata: kind, MIME, byte lengt
 
 **Do not leak filenames or directory paths.** User-facing names and binary summaries belong in encrypted metadata, not Worker, Durable Object, R2, logs, or analytics.
 
-**Do not mount Pasta controls inside KeyboardKit autocomplete or toolbar chrome.** KeyboardKit's `toolbar:` slot is the autocomplete toolbar host, and `Keyboard.Toolbar` has its own minimum-height container. Pasta's action strip must be a sibling above `KeyboardView`, while KeyboardKit gets an empty zero-height toolbar. Otherwise iOS/SwiftUI host slack can appear as a strange strip above the action buttons.
+**Mount the Pasta action row inside KeyboardKit's `toolbar:` slot — do not build a sibling strip.** KeyboardKit already composes the keyboard as `VStack { toolbar; keys }` on one surface, and in 9.9.1 the `toolbar:` slot adds no background of its own. Return `Keyboard.Toolbar { PastaKeyboardToolbar(...) }` from the slot and let the keys render natively below it. Do not rebuild a sibling row above `KeyboardView`, do not pass `EmptyView()` with a zero-height autocomplete toolbar, and do not `.ignoresSafeArea(.top)` to pin a hand-painted band — those are what produced the cropped, detached strip. Opacity must come from an explicit `keyboardViewStyle` background (`.color(.keyboardBackground)`); the standard style service's background is transparent, so `renderBackground` alone paints nothing.
 
-**Do not treat a KeyboardKit layout as live after it is created.** Build the layout from the observed `KeyboardContext` and refresh identity when `keyboardCase`, `keyboardType`, orientation, size, or device class changes. A stale layout snapshot can keep uppercased character actions on screen and make the keyboard feel caps-locked even though KeyboardKit's shift state changed.
+**Observe `KeyboardContext` and let KeyboardKit react; do not key `.id` on case.** Build the layout from the observed `KeyboardContext` so the view re-evaluates on context changes, and refresh the `KeyboardView` `.id` only on structural changes (keyboard type, orientation, size, device class). Never key `.id` on `keyboardCase`: KeyboardKit updates shift/case reactively, and rebuilding on every auto-capitalization flip tears the whole keyboard down mid-typing and cancels in-flight gestures.
 
 **Do not use SwiftUI preview as keyboard chrome proof.** The visible top strip, safe-area slack, globe behavior, dictation key, and host keyboard height only show up correctly in the custom keyboard extension host. Verify with simulator/device install and PluginKit registration, and prefer a TestFlight device readback for final UX feedback.
 
@@ -144,15 +144,16 @@ The iOS work uses a native bundle with:
 Do not replace this with a background clipboard monitor, P2P sync path, LAN discovery, VPN/tailnet dependency, or a standalone "copy button" app. The custom keyboard is the UX anchor because it is the only public iOS surface that can insert into the active text document in another app.
 
 The keyboard structure uses KeyboardKit for stock keyboard layout, sizing,
-letters, number/symbol modes, callouts, and key action handling. Pasta code owns
-only the product-specific toolbar, privacy gates, cached history insertion, and
-the no-duplicate-input-mode-switch policy.
+letters, number/symbol modes, callouts, the keyboard-switch (globe) key, and key
+action handling. Pasta code owns only the product-specific action row (rendered
+in KeyboardKit's native toolbar slot), privacy gates, and cached history
+insertion. Pasta no longer edits the generated layout.
 
 ## Apple constraints to preserve
 
 - Custom keyboards insert strings through `UITextDocumentProxy.insertText`; they do not invoke the host app's Paste command.
 - Custom keyboards are unavailable in secure text fields, phone pads, and apps that reject third-party keyboards.
-- A custom keyboard is not the Apple keyboard plus a plugin slot. Pasta owns and maintains the keyboard UI and normal typing behavior while avoiding duplicate input-mode controls.
+- A custom keyboard is not the Apple keyboard plus a plugin slot. Pasta owns and maintains the keyboard UI and normal typing behavior; KeyboardKit provides the keyboard-switch (globe) key when iOS requires it.
 - Network access, shared app-group storage, and pasteboard access from the keyboard require `RequestsOpenAccess` plus user-granted Full Access.
 - App Review expects the keyboard to remain functional without Full Access. Keep cached text history available through the containing app sync path.
 - iOS has no public always-on clipboard daemon for third-party apps. Publish from iOS must be user-initiated.
@@ -287,10 +288,10 @@ Backfill metadata in a backwards-compatible way: unknown fields are ignored by o
 
 ## Issues encountered and fixes
 
-**Issue: a strange strip stayed above the Pasta action buttons after the first toolbar fix.**
-Why it happened: the first fix removed a nested `Keyboard.Toolbar`, but Pasta still rendered actions through `KeyboardView.toolbar`, which is KeyboardKit's autocomplete toolbar host. That host has its own wrapper/background and can reveal extension-host slack above fixed-height custom content.
-Fix: render `PastaKeyboardToolbar` as a sibling above `KeyboardView`, pass `EmptyView()` into KeyboardKit's toolbar slot, set `autocompleteToolbarStyle(height: 0, padding: 0)`, disable the KeyboardKit input toolbar display mode, and use the native keyboard background across the whole root.
-Agent warning: do not claim keyboard chrome bugs fixed from source review or archive success alone. The defect survived a successful TestFlight build and only the device screenshot exposed the remaining host strip.
+**Issue: the action row read as a cropped strip glued to the top of the keyboard, detached from the keys.**
+Why it happened: Pasta rendered the action row as a sibling *above* `KeyboardView` in an outer `VStack`, passed `EmptyView()` into KeyboardKit's `toolbar:` slot with a zero-height autocomplete toolbar, set `renderBackground: false`, hand-painted the surface, and pinned it with `.ignoresSafeArea(.top)`. The row shared the key background with no separation and butted against the keyboard's top edge, so its buttons looked cropped instead of seated in a toolbar. The earlier belief that the `toolbar:` slot itself paints chrome was a misdiagnosis: in KeyboardKit 9.9.1 the slot adds no background, and the visible band came from the hand-painted sibling and stacked containers.
+Fix: render the action row through KeyboardKit's `toolbar:` slot as `Keyboard.Toolbar { PastaKeyboardToolbar(...) }`; delete the outer `VStack`/sibling, the `EmptyView()` slot, the zeroed autocomplete toolbar, and the `.ignoresSafeArea` hand-painted band; and set one explicit opaque surface with `keyboardViewStyle(background: .color(.keyboardBackground))`. KeyboardKit then lays out `VStack { Pasta row; native keys }` on a single continuous surface, like the native QuickType band.
+Agent warning: do not claim this chrome is fixed from source review or a green simulator build alone. The previous strip survived a successful TestFlight build and only a device screenshot exposed it; a device/TestFlight readback is the final proof.
 
 **Issue: the Pasta shelf still looked blurry and clipped compared with Grammarly.**
 Why it happened: Pasta used a 36pt horizontally clipped scroll row with bordered white chips. The stock key rows are much taller, so the shelf read as compressed chrome instead of a native suggestion/action row.
@@ -299,7 +300,7 @@ Agent warning: compare against real third-party keyboards in the same host app. 
 
 **Issue: the keyboard looked permanently caps-locked and could not type lowercase.**
 Why it happened: a KeyboardKit layout is a snapshot. Pasta was allowing KeyboardKit to build one layout during setup, then wrapping it without observing enough live keyboard context for case/type changes. When the layout remains in an uppercased state, the displayed key labels and inserted character actions can both remain uppercase.
-Fix: observe `KeyboardContext`, pass an explicit layout generated from the current context, remove only the duplicate `nextKeyboard` item, and rebuild the KeyboardView identity when case, keyboard type, orientation, size, or device class changes.
+Fix: observe `KeyboardContext`, pass an explicit layout generated from the current context, keep KeyboardKit's conditional `nextKeyboard` (globe) item, and rebuild the KeyboardView identity only on structural changes (keyboard type, orientation, size, device class) — never on `keyboardCase`.
 Agent warning: case is behavior, not styling. Verify inserted lowercase text, single-shift uppercase, caps lock, `123`, and `#+=` in a real text field.
 
 **Issue: keyboard looked embedded but failed review risk because it required Full Access.**
@@ -333,8 +334,9 @@ Before claiming iOS parity:
 - cross-language crypto vectors pass in Swift and Bun;
 - iOS app can pair as a trusted device and decrypt existing text history;
 - keyboard inserts text history into a normal text field;
-- keyboard action strip is the only Pasta addition above the stock key rows, with no extra top strip above the action buttons;
-- keyboard action strip uses a full-height native suggestion-row style, with crisp unblurred labels and no vertical clipping;
+- the Pasta action row renders in KeyboardKit's native toolbar slot on one continuous keyboard surface, with no separate strip or spacer above it;
+- the Pasta action row uses a full-height native suggestion-row style, with crisp unblurred labels and no vertical clipping;
+- KeyboardKit's keyboard-switch (globe) key is present whenever iOS reports it is needed;
 - keyboard can type lowercase, single-shift uppercase, caps lock, delete, return, space, `123`, and `#+=` through KeyboardKit's native behavior;
 - keyboard gracefully disappears or is replaced in secure fields/phone pads as iOS dictates;
 - keyboard works without Full Access using cached text history;

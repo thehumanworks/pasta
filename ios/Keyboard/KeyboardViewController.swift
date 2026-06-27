@@ -24,7 +24,6 @@ final class KeyboardViewController: KeyboardInputViewController {
                 keyboardContext: state.keyboardContext,
                 repeatGestureTimer: services.repeatGestureTimer
             )
-            services.layoutService = PastaKeyboardLayoutService()
             setupPastaKeyboardView()
         }
     }
@@ -154,33 +153,35 @@ private struct PastaKeyboardView: View {
     @EnvironmentObject private var keyboardContext: KeyboardContext
 
     var body: some View {
-        VStack(spacing: 0) {
-            PastaKeyboardToolbar(
-                model: toolbarModel,
-                insertClip: insertClip,
-                refresh: refresh,
-                publish: publish,
-                toggleExpanded: toggleExpanded
-            )
-
-            KeyboardView(
-                layout: pastaLayout,
-                state: state,
-                services: services,
-                renderBackground: false,
-                buttonContent: { $0.view },
-                buttonView: { $0.view },
-                collapsedView: { $0.view },
-                emojiKeyboard: { $0.view },
-                toolbar: { _ in EmptyView() }
-            )
-            .autocompleteToolbarStyle(.init(height: 0, padding: 0))
-            .keyboardInputToolbarDisplayMode(.none)
-            .id(keyboardLayoutIdentifier)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(PastaToolbarAppearance.shelfBackground.ignoresSafeArea())
-        .ignoresSafeArea(.container, edges: [.top, .bottom])
+        // Pasta is additive: KeyboardKit owns the keys and input handling, and the
+        // Pasta action row lives in KeyboardKit's native toolbar slot (where the
+        // QuickType band normally sits). Opacity comes from an explicit keyboard
+        // surface, not `renderBackground` — the standard style service's background
+        // is transparent, so never set `renderBackground: false` and hand-paint a
+        // sibling strip again.
+        KeyboardView(
+            layout: pastaLayout,
+            state: state,
+            services: services,
+            buttonContent: { $0.view },
+            buttonView: { $0.view },
+            collapsedView: { $0.view },
+            emojiKeyboard: { $0.view },
+            toolbar: { _ in
+                Keyboard.Toolbar {
+                    PastaKeyboardToolbar(
+                        model: toolbarModel,
+                        insertClip: insertClip,
+                        refresh: refresh,
+                        publish: publish,
+                        toggleExpanded: toggleExpanded
+                    )
+                }
+            }
+        )
+        .keyboardViewStyle(.init(background: .color(.keyboardBackground)))
+        .keyboardInputToolbarDisplayMode(.none)
+        .id(keyboardLayoutIdentifier)
     }
 
     private var pastaLayout: KeyboardLayout {
@@ -188,9 +189,12 @@ private struct PastaKeyboardView: View {
     }
 
     private var keyboardLayoutIdentifier: String {
+        // Rebuild only on structural changes. `keyboardCase` is intentionally
+        // excluded: KeyboardKit updates shift/case reactively, and keying `.id` on
+        // it would tear down the whole keyboard on every auto-capitalization flip
+        // mid-typing, cancelling in-flight gestures.
         [
             "\(keyboardContext.keyboardType)",
-            keyboardContext.keyboardCase.rawValue,
             "\(keyboardContext.interfaceOrientation)",
             "\(keyboardContext.screenSize.width)x\(keyboardContext.screenSize.height)",
             "\(keyboardContext.deviceTypeForKeyboard)"
@@ -266,7 +270,6 @@ private struct PastaKeyboardToolbar: View {
         }
         .scrollClipDisabled()
         .frame(height: PastaToolbarAppearance.shelfHeight)
-        .background(PastaToolbarAppearance.shelfBackground)
     }
 }
 
@@ -307,7 +310,6 @@ private struct PastaToolbarDivider: View {
 }
 
 private enum PastaToolbarAppearance {
-    static let shelfBackground = Color.keyboardBackground
     static let foreground = Color.keyboardButtonForeground
     static let pressedSegmentBackground = Color.keyboardButtonForeground.opacity(0.08)
     static let separator = Color.keyboardButtonForeground.opacity(0.10)
@@ -324,16 +326,6 @@ private struct PastaKeyboardToolbarModel {
 
     var visibleClips: [PastaKeyboardClip] {
         Array(clips.prefix(showsExpandedHistory ? 30 : 12))
-    }
-}
-
-private final class PastaKeyboardLayoutService: KeyboardLayoutService {
-    private let baseService = KeyboardLayout.StandardLayoutService()
-
-    func keyboardLayout(for context: KeyboardContext) -> KeyboardLayout {
-        var layout = baseService.keyboardLayout(for: context)
-        layout.itemRows.remove(.nextKeyboard)
-        return layout
     }
 }
 
