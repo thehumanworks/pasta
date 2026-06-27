@@ -106,6 +106,10 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - native chrome/case fix - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0; simulator install/launch plus `pluginkit -m -p com.apple.keyboard-service | rg 'com.thehumanworks.pasta.keyboard'` - exit 0 with `com.thehumanworks.pasta.keyboard(0.1.7)`.
 - 2026-06-27 - native chrome/case fix - `swift test --package-path ios` - exit 0 with 14 tests passed and 1 live relay test skipped; `PASTA_IOS_JOIN_TOKEN=<redacted> swift test --package-path ios --filter PastaCoreLiveRelayTests` - exit 0 with live join/publish/history passed; `mise exec -- bun run test` - exit 0 with 30 Bun tests and 13 Vitest tests passed; `cd docs-site && bun run build -- --base /pasta/` - exit 0 with 15 pages built; `git diff --check` - exit 0.
 - 2026-06-27 - TestFlight build 7 - archive/export/upload passed; `inspect_ipa.sh ios/build/export-local/Pasta.ipa` confirmed `CFBundleVersion=7`, `ITSAppUsesNonExemptEncryption=false`, distribution profile, `get-task-allow=false`, and embedded `PastaKeyboard.appex`; App Store Connect build `36db846e-287b-4996-ae1d-c01c26ade0f0` is `VALID` and internal beta group `internal` has access.
+- 2026-06-27 - Grammarly-style action shelf fix - pass by visual comparison against attached Pasta and Grammarly screenshots; `PastaKeyboardToolbar` now uses a 48pt native suggestion-row height, full-height action/clip hit targets, plain text segments with subtle separators, pressed-only background feedback, and no vertical `.clipped()` so labels are not blurred, cramped, or cut off beside the stock key rows.
+- 2026-06-27 - Grammarly-style action shelf fix - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0; simulator install/launch plus `pluginkit -m -p com.apple.keyboard-service | rg 'com.thehumanworks.pasta.keyboard'` - exit 0 with `com.thehumanworks.pasta.keyboard(0.1.7)`.
+- 2026-06-27 - Grammarly-style action shelf fix - `swift test --package-path ios` - exit 0 with 14 tests passed and 1 live relay test skipped; `mise exec -- bun run test` - exit 0 with 30 Bun tests and 13 Vitest tests passed; `cd docs-site && bun run build -- --base /pasta/` - exit 0 with 15 pages built; `git diff --check` - exit 0; `gdd_status.py docs/goals/14-ios-keyboard-extension.md` - pass.
+- 2026-06-27 - TestFlight build 8 - archive/export/upload passed; `inspect_ipa.sh ios/build/export-local/Pasta.ipa` confirmed `CFBundleVersion=8`, `ITSAppUsesNonExemptEncryption=false`, distribution profile, `get-task-allow=false`, and embedded `PastaKeyboard.appex`; App Store Connect build `05246339-72ad-4189-ab42-7ba8fad527df` is `VALID` and internal beta group `internal` has access.
 
 ---
 
@@ -212,6 +216,9 @@ Scope changes stop execution and surface to the user.
   number/symbol modes, delete, return, space, and callouts; Pasta code only adds
   the action shelf and removes duplicate input-mode switching. Scope impact:
   keyboard layout observation and docs wording.
+- 2026-06-27 - User comparison against Grammarly corrected the shelf style
+  contract: the action shelf should feel like a native suggestion row, not a
+  short clipped chip rail. Scope impact: toolbar presentation only.
 
 ---
 
@@ -234,6 +241,10 @@ Scope changes stop execution and surface to the user.
   hosted keyboard surface, so final proof must include simulator/device
   extension install plus TestFlight readback when the user reports device
   screenshots.
+- 2026-06-27 - Grammarly-style third-party keyboards use a taller native
+  suggestion-row treatment: centered text/action segments, subtle dividers, and
+  full-height hit targets. Avoid a 36pt clipped chip row because it makes labels
+  look cramped and visually detached from stock iOS keys.
 
 ---
 

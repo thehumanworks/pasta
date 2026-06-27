@@ -207,17 +207,16 @@ private struct PastaKeyboardToolbar: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            HStack(spacing: 0) {
                 if let statusMessage = model.statusMessage {
                     Text(statusMessage)
                         .font(PastaToolbarAppearance.font)
                         .foregroundStyle(PastaToolbarAppearance.foreground)
                         .lineLimit(1)
-                        .padding(.horizontal, 10)
-                        .frame(height: PastaToolbarAppearance.chipHeight)
-                        .background(PastaToolbarAppearance.chipBackground)
-                        .overlay(PastaToolbarAppearance.chipBorder)
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                        .truncationMode(.tail)
+                        .padding(.horizontal, 14)
+                        .frame(height: PastaToolbarAppearance.shelfHeight)
+                    PastaToolbarDivider()
                 }
 
                 Button(action: refresh) {
@@ -226,11 +225,15 @@ private struct PastaKeyboardToolbar: View {
                 .allowsHitTesting(!model.isRunningLiveAction)
                 .buttonStyle(PastaToolbarButtonStyle())
 
+                PastaToolbarDivider()
+
                 Button(action: publish) {
                     Label("Publish", systemImage: "square.and.arrow.up")
                 }
                 .allowsHitTesting(!model.isRunningLiveAction)
                 .buttonStyle(PastaToolbarButtonStyle())
+
+                PastaToolbarDivider()
 
                 Button(action: toggleExpanded) {
                     Label(model.showsExpandedHistory ? "Less" : "All", systemImage: model.showsExpandedHistory ? "chevron.up" : "list.bullet")
@@ -238,32 +241,32 @@ private struct PastaKeyboardToolbar: View {
                 .buttonStyle(PastaToolbarButtonStyle())
 
                 if model.clips.isEmpty {
+                    PastaToolbarDivider()
                     Text("Open Pasta to sync")
                         .font(PastaToolbarAppearance.font)
                         .foregroundStyle(PastaToolbarAppearance.foreground)
                         .lineLimit(1)
-                        .padding(.horizontal, 12)
-                        .frame(height: PastaToolbarAppearance.chipHeight)
-                        .background(PastaToolbarAppearance.chipBackground)
-                        .overlay(PastaToolbarAppearance.chipBorder)
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                        .padding(.horizontal, 16)
+                        .frame(height: PastaToolbarAppearance.shelfHeight)
                 } else {
                     ForEach(model.visibleClips) { clip in
+                        PastaToolbarDivider()
                         Button {
                             insertClip(clip.text)
                         } label: {
                             Text(clip.title)
                                 .lineLimit(1)
+                                .truncationMode(.tail)
                         }
-                        .buttonStyle(PastaToolbarButtonStyle())
+                        .buttonStyle(PastaToolbarTextButtonStyle())
                     }
                 }
             }
-            .padding(.horizontal, 6)
+            .frame(height: PastaToolbarAppearance.shelfHeight)
         }
+        .scrollClipDisabled()
         .frame(height: PastaToolbarAppearance.shelfHeight)
         .background(PastaToolbarAppearance.shelfBackground)
-        .clipped()
     }
 }
 
@@ -274,28 +277,43 @@ private struct PastaToolbarButtonStyle: ButtonStyle {
             .foregroundStyle(PastaToolbarAppearance.foreground)
             .lineLimit(1)
             .labelStyle(.titleAndIcon)
-            .padding(.horizontal, 10)
-            .frame(height: PastaToolbarAppearance.chipHeight)
-            .background(configuration.isPressed ? PastaToolbarAppearance.pressedChipBackground : PastaToolbarAppearance.chipBackground)
-            .overlay(PastaToolbarAppearance.chipBorder)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
-            .contentShape(RoundedRectangle(cornerRadius: 7))
+            .padding(.horizontal, 13)
+            .frame(height: PastaToolbarAppearance.shelfHeight)
+            .background(configuration.isPressed ? PastaToolbarAppearance.pressedSegmentBackground : Color.clear)
+            .contentShape(Rectangle())
+    }
+}
+
+private struct PastaToolbarTextButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(PastaToolbarAppearance.font)
+            .foregroundStyle(PastaToolbarAppearance.foreground)
+            .lineLimit(1)
+            .padding(.horizontal, 16)
+            .frame(height: PastaToolbarAppearance.shelfHeight)
+            .frame(maxWidth: 220)
+            .background(configuration.isPressed ? PastaToolbarAppearance.pressedSegmentBackground : Color.clear)
+            .contentShape(Rectangle())
+    }
+}
+
+private struct PastaToolbarDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(PastaToolbarAppearance.separator)
+            .frame(width: 1, height: PastaToolbarAppearance.separatorHeight)
     }
 }
 
 private enum PastaToolbarAppearance {
     static let shelfBackground = Color.keyboardBackground
-    static let chipBackground = Color.keyboardButtonBackground
-    static let pressedChipBackground = Color.keyboardDarkButtonBackground
     static let foreground = Color.keyboardButtonForeground
-    static let border = Color.black.opacity(0.14)
-    static let font = Font.system(size: 15, weight: .semibold)
-    static let shelfHeight: CGFloat = 36
-    static let chipHeight: CGFloat = 31
-
-    static var chipBorder: some View {
-        RoundedRectangle(cornerRadius: 7).stroke(border, lineWidth: 1)
-    }
+    static let pressedSegmentBackground = Color.keyboardButtonForeground.opacity(0.08)
+    static let separator = Color.keyboardButtonForeground.opacity(0.10)
+    static let font = Font.system(size: 16, weight: .semibold)
+    static let shelfHeight: CGFloat = 48
+    static let separatorHeight: CGFloat = 31
 }
 
 private struct PastaKeyboardToolbarModel {

@@ -119,6 +119,8 @@ Cloudflare still sees only the existing routing metadata: kind, MIME, byte lengt
 
 **Do not use SwiftUI preview as keyboard chrome proof.** The visible top strip, safe-area slack, globe behavior, dictation key, and host keyboard height only show up correctly in the custom keyboard extension host. Verify with simulator/device install and PluginKit registration, and prefer a TestFlight device readback for final UX feedback.
 
+**Do not make the Pasta shelf a short clipped chip strip.** Native-looking iOS keyboard action rows, such as Grammarly's, use the full suggestion-row height with centered content, plain text segments, subtle separators, and full-height hit targets. A 36pt row with bordered chips and `.clipped()` makes text look blurred, cramped, and cut off beside the stock keys.
+
 ## Setup flow
 
 1. Install and open Pasta.
@@ -290,6 +292,11 @@ Why it happened: the first fix removed a nested `Keyboard.Toolbar`, but Pasta st
 Fix: render `PastaKeyboardToolbar` as a sibling above `KeyboardView`, pass `EmptyView()` into KeyboardKit's toolbar slot, set `autocompleteToolbarStyle(height: 0, padding: 0)`, disable the KeyboardKit input toolbar display mode, and use the native keyboard background across the whole root.
 Agent warning: do not claim keyboard chrome bugs fixed from source review or archive success alone. The defect survived a successful TestFlight build and only the device screenshot exposed the remaining host strip.
 
+**Issue: the Pasta shelf still looked blurry and clipped compared with Grammarly.**
+Why it happened: Pasta used a 36pt horizontally clipped scroll row with bordered white chips. The stock key rows are much taller, so the shelf read as compressed chrome instead of a native suggestion/action row.
+Fix: use a 48pt native-height shelf, remove vertical clipping, center all labels in full-height hit areas, use plain text action/suggestion segments with subtle dividers, and reserve chip-like backgrounds only for pressed feedback.
+Agent warning: compare against real third-party keyboards in the same host app. The action labels should be crisp, vertically centered, and never cut off by the next key row.
+
 **Issue: the keyboard looked permanently caps-locked and could not type lowercase.**
 Why it happened: a KeyboardKit layout is a snapshot. Pasta was allowing KeyboardKit to build one layout during setup, then wrapping it without observing enough live keyboard context for case/type changes. When the layout remains in an uppercased state, the displayed key labels and inserted character actions can both remain uppercase.
 Fix: observe `KeyboardContext`, pass an explicit layout generated from the current context, remove only the duplicate `nextKeyboard` item, and rebuild the KeyboardView identity when case, keyboard type, orientation, size, or device class changes.
@@ -327,6 +334,7 @@ Before claiming iOS parity:
 - iOS app can pair as a trusted device and decrypt existing text history;
 - keyboard inserts text history into a normal text field;
 - keyboard action strip is the only Pasta addition above the stock key rows, with no extra top strip above the action buttons;
+- keyboard action strip uses a full-height native suggestion-row style, with crisp unblurred labels and no vertical clipping;
 - keyboard can type lowercase, single-shift uppercase, caps lock, delete, return, space, `123`, and `#+=` through KeyboardKit's native behavior;
 - keyboard gracefully disappears or is replaced in secure fields/phone pads as iOS dictates;
 - keyboard works without Full Access using cached text history;
