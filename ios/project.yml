@@ -32,8 +32,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.thehumanworks.pasta
         PRODUCT_NAME: Pasta
         DISPLAY_NAME: Pasta
-        MARKETING_VERSION: 0.1.8
-        CURRENT_PROJECT_VERSION: 14
+        MARKETING_VERSION: 0.1.9
+        CURRENT_PROJECT_VERSION: 15
         SWIFT_VERSION: 6.0
         DEVELOPMENT_TEAM: 54MXM5JG3R
         CODE_SIGN_STYLE: Automatic
@@ -58,8 +58,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.thehumanworks.pasta.keyboard
         PRODUCT_NAME: PastaKeyboard
         DISPLAY_NAME: Pasta Keyboard
-        MARKETING_VERSION: 0.1.8
-        CURRENT_PROJECT_VERSION: 14
+        MARKETING_VERSION: 0.1.9
+        CURRENT_PROJECT_VERSION: 15
         SWIFT_VERSION: 6.0
         DEVELOPMENT_TEAM: 54MXM5JG3R
         CODE_SIGN_STYLE: Automatic
