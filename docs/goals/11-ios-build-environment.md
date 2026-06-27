@@ -1,7 +1,7 @@
 ---
 goal_id: "pasta-11-ios-build-environment"
 title: "Native iOS Build Environment"
-status: "active"
+status: "done"
 confidence_floor: 90
 created: "2026-06-27"
 updated: "2026-06-27"
@@ -47,19 +47,19 @@ skill; these rules hold even if that skill isn't loaded:
 Each item is atomic, tagged with a stable id that Tasks reference via
 **Closes:**, and carries a concrete `verify by:`.
 
-- [ ] **DoD-1** — A buildable native iOS Swift workspace seed exists under
+- [x] **DoD-1** — A buildable native iOS Swift workspace seed exists under
   `ios/` with a shared `PastaCore` package and tests. — *verify by:*
   `swift build --package-path ios && swift test --package-path ios`
-- [ ] **DoD-2** — The future bundle target plan is documented for app, keyboard
+- [x] **DoD-2** — The future bundle target plan is documented for app, keyboard
   extension, share extension, App Intents, App Group, Keychain access group, and
   optional File Provider. — *verify by:* review `ios/README.md` and this goal.
-- [ ] **DoD-3** — Native iOS goals 11-17 are present, dependency ordered,
+- [x] **DoD-3** — Native iOS goals 11-17 are present, dependency ordered,
   validator-clean, and referenced from root handoff docs. — *verify by:*
   `python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" --author docs/goals/11-ios-build-environment.md` plus the same command for goals 12-17.
-- [ ] **DoD-4** — The keyboard-centered architecture decision is recorded as a
+- [x] **DoD-4** — The keyboard-centered architecture decision is recorded as a
   durable ADR with alternatives and footguns. — *verify by:* review
   `docs/adrs/0001-native-ios-keyboard-centered.md`.
-- [ ] **DoD-5** — Local Apple toolchain availability and the Xcode Cloud build
+- [x] **DoD-5** — Local Apple toolchain availability and the Xcode Cloud build
   authority rule are recorded before app or extension target implementation
   starts. — *verify by:* rerun and record `swift --version`,
   `xcodebuild -version`, `xcrun simctl list runtimes`, and review
@@ -89,14 +89,14 @@ trailing `[ ]` only when the Verification Contract passes and Confidence ≥ flo
 
 ---
 
-### T1 · Confirm Native Toolchain And Surfaces · [ ]
+### T1 · Confirm Native Toolchain And Surfaces · [x]
 
 **Steps**
-- [ ] Check Swift, Xcode, and iOS simulator runtimes.
-- [ ] Record that local Xcode is non-authoritative for app/extension builds
+- [x] Check Swift, Xcode, and iOS simulator runtimes.
+- [x] Record that local Xcode is non-authoritative for app/extension builds
   because the host is macOS 27 beta 2.
-- [ ] Confirm no existing native iOS workspace is being overwritten.
-- [ ] Reconcile the documented UX surfaces with the future target plan.
+- [x] Confirm no existing native iOS workspace is being overwritten.
+- [x] Reconcile the documented UX surfaces with the future target plan.
 
 **Verification Contract**
 - *Check:* Local toolchain and target surfaces are known before implementation.
@@ -105,18 +105,22 @@ trailing `[ ]` only when the Verification Contract passes and Confidence ≥ flo
   Xcode Cloud is authoritative for app/extension build, test, archive, and
   release proof.
 
-**Confidence:** 0 / 90 · **Depends on:** none · **Closes:** DoD-2, DoD-5
+**Confidence:** 95 / 90 · **Depends on:** none · **Closes:** DoD-2, DoD-5
 
 **Evidence (required before tick; append-only)**
 
+- 2026-06-27 - `swift --version && xcodebuild -version && xcrun simctl list runtimes` - exit 0; local discovery found Apple Swift 6.4, Xcode 27.0 build 27A5194q, and iOS Simulator runtimes 26.0, 26.2, 26.4, 26.5, and 27.0.
+- 2026-06-27 - workspace inspection - pass; `find . -maxdepth 3 ...` found no existing `.xcodeproj` or `.xcworkspace`, so the SwiftPM seed under `ios/` is not overwriting a prior native app workspace.
+- 2026-06-27 - docs review - pass; `ios/README.md` documents the future app, keyboard extension, share extension, App Intents, App Group, Keychain access group, optional File Provider, and Xcode Cloud build authority rule.
+
 ---
 
-### T2 · Scaffold Shared Swift Package · [ ]
+### T2 · Scaffold Shared Swift Package · [x]
 
 **Steps**
-- [ ] Add `ios/Package.swift`.
-- [ ] Add a minimal `PastaCore` target for shared constants and surface modeling.
-- [ ] Add tests proving text clips are insertable and binary/directory clips use
+- [x] Add `ios/Package.swift`.
+- [x] Add a minimal `PastaCore` target for shared constants and surface modeling.
+- [x] Add tests proving text clips are insertable and binary/directory clips use
   handoff.
 
 **Verification Contract**
@@ -124,38 +128,43 @@ trailing `[ ]` only when the Verification Contract passes and Confidence ≥ flo
 - *Method:* `swift build --package-path ios && swift test --package-path ios`
 - *Expected:* Both commands exit 0.
 
-**Confidence:** 0 / 90 · **Depends on:** T1 · **Closes:** DoD-1
+**Confidence:** 95 / 90 · **Depends on:** T1 · **Closes:** DoD-1
 
 **Evidence (required before tick; append-only)**
 
+- 2026-06-27 - `swift build --package-path ios` - exit 0; `PastaCore` debug build completed.
+- 2026-06-27 - `swift test --package-path ios` - exit 0; 3 XCTest tests passed, covering bootstrap constants, explicit native surfaces, and keyboard text-only insertability.
+
 ---
 
-### T3 · Author Native iOS Goal Stack · [ ]
+### T3 · Author Native iOS Goal Stack · [x]
 
 **Steps**
-- [ ] Add goals 11-17 for environment, Swift core, app shell, keyboard, publish
+- [x] Add goals 11-17 for environment, Swift core, app shell, keyboard, publish
   surfaces, binary handoff, and integration readiness.
-- [ ] Update `GOAL.md` and `docs/ORCHESTRATION.md` so a fresh agent starts at the
+- [x] Update `GOAL.md` and `docs/ORCHESTRATION.md` so a fresh agent starts at the
   native iOS expansion.
-- [ ] Keep downstream goals blocked until prerequisite goals provide evidence.
+- [x] Keep downstream goals blocked until prerequisite goals provide evidence.
 
 **Verification Contract**
 - *Check:* All new goal docs pass author validation.
 - *Method:* run `gdd_status.py --author` on goals 11-17.
 - *Expected:* No author issues that would block user scope confirmation.
 
-**Confidence:** 0 / 90 · **Depends on:** T1 · **Closes:** DoD-3
+**Confidence:** 95 / 90 · **Depends on:** T1 · **Closes:** DoD-3
 
 **Evidence (required before tick; append-only)**
 
+- 2026-06-27 - `for f in docs/goals/11-ios-build-environment.md docs/goals/12-ios-shared-core.md docs/goals/13-ios-app-shell-pairing-history.md docs/goals/14-ios-keyboard-extension.md docs/goals/15-ios-publish-surfaces.md docs/goals/16-ios-binary-file-provider-handoff.md docs/goals/17-ios-integration-release-readiness.md; do python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" --author "$f" || exit $?; done` - exit 0; goals 11-17 are validator-clean and dependency ordered with goals 12-17 blocked until prerequisites land.
+
 ---
 
-### T4 · Record Durable Architecture Decision · [ ]
+### T4 · Record Durable Architecture Decision · [x]
 
 **Steps**
-- [ ] Add an ADR for the keyboard-centered iOS UX.
-- [ ] List the rejected alternatives and Apple constraint footguns.
-- [ ] Cross-link the ADR from setup documentation.
+- [x] Add an ADR for the keyboard-centered iOS UX.
+- [x] List the rejected alternatives and Apple constraint footguns.
+- [x] Cross-link the ADR from setup documentation.
 
 **Verification Contract**
 - *Check:* Future agents have a durable architecture decision outside transient
@@ -164,18 +173,21 @@ trailing `[ ]` only when the Verification Contract passes and Confidence ≥ flo
   `ios/README.md`.
 - *Expected:* The ADR names the chosen UX, consequences, and alternatives.
 
-**Confidence:** 0 / 90 · **Depends on:** T1 · **Closes:** DoD-4
+**Confidence:** 95 / 90 · **Depends on:** T1 · **Closes:** DoD-4
 
 **Evidence (required before tick; append-only)**
 
+- 2026-06-27 - ADR review - pass; `docs/adrs/0001-native-ios-keyboard-centered.md` records the accepted keyboard-centered UX, containing app role, share/App Intent surfaces, binary handoff constraint, consequences, and rejected alternatives.
+- 2026-06-27 - `ios/README.md` review - pass; setup docs cross-link the ADR and native iOS UX contract.
+
 ---
 
-### T5 · Verify Setup Slice · [ ]
+### T5 · Verify Setup Slice · [x]
 
 **Steps**
-- [ ] Run Swift build and tests.
-- [ ] Run GDD validation for the new goal stack.
-- [ ] Run diff hygiene before committing.
+- [x] Run Swift build and tests.
+- [x] Run GDD validation for the new goal stack.
+- [x] Run diff hygiene before committing.
 
 **Verification Contract**
 - *Check:* Setup is buildable, author-valid, and clean.
@@ -183,9 +195,12 @@ trailing `[ ]` only when the Verification Contract passes and Confidence ≥ flo
 - *Expected:* Commands exit 0; GDD status reports a valid active Goal 11 and
   blocked downstream goals.
 
-**Confidence:** 0 / 90 · **Depends on:** T2, T3, T4 · **Closes:** DoD-1, DoD-3
+**Confidence:** 95 / 90 · **Depends on:** T2, T3, T4 · **Closes:** DoD-1, DoD-3
 
 **Evidence (required before tick; append-only)**
+
+- 2026-06-27 - `swift test --package-path ios` - exit 0; 3 XCTest tests passed for the setup slice.
+- 2026-06-27 - `git diff --check` - exit 0; diff hygiene clean before continuing into app/keyboard implementation.
 
 ## 6. Decisions · LIVE (append-only)
 
@@ -206,10 +221,11 @@ trailing `[ ]` only when the Verification Contract passes and Confidence ≥ flo
 
 ## 7. Learnings · LIVE (append-only)
 
-*(none yet)*
+- 2026-06-27 - The local shell has `xcodegen` 2.45.4 available, and there is no checked-in Xcode project yet. This makes XcodeGen the least disruptive path for adding app and keyboard targets while preserving generated-project reproducibility.
 
 ---
 
 ## 8. Skills · LIVE (append-only)
 
-*(none yet)*
+- 2026-06-27 - Used `engineering-practices` for contract, inspection, and verification discipline.
+- 2026-06-27 - Used `apple-developer` for Apple release proof layering, credential hygiene, TestFlight upload requirements, and release footgun checks.
