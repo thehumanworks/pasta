@@ -112,6 +112,11 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - TestFlight build 8 - archive/export/upload passed; `inspect_ipa.sh ios/build/export-local/Pasta.ipa` confirmed `CFBundleVersion=8`, `ITSAppUsesNonExemptEncryption=false`, distribution profile, `get-task-allow=false`, and embedded `PastaKeyboard.appex`; App Store Connect build `05246339-72ad-4189-ab42-7ba8fad527df` is `VALID` and internal beta group `internal` has access.
 - 2026-06-27 - native toolbar-slot composition - pass by 3-subagent review panel (KeyboardKit-correctness, adversarial device-chrome, native-UX/HIG) against pinned KeyboardKit 9.9.1 sources; `PastaKeyboardView` now returns `KeyboardView(... toolbar: { _ in Keyboard.Toolbar { PastaKeyboardToolbar(...) } })` with `keyboardViewStyle(background: .color(.keyboardBackground))`, no sibling strip / `EmptyView()` slot / zeroed autocomplete / `ignoresSafeArea`, `.id` no longer keyed on `keyboardCase`, and the unconditional `nextKeyboard` removal deleted so KeyboardKit owns the globe.
 - 2026-06-27 - native toolbar-slot composition - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,id=A5C6DC5D-CB65-4409-9CA8-3B0CD6709FE3' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0, `** BUILD SUCCEEDED **`; `PastaKeyboard.appex` built and embedded in `Pasta.app/PlugIns`. Final visual proof (single continuous surface, no strip above the action row) still pending a device/TestFlight screenshot, per this goal's own learning that simulator/previews under-prove extension chrome; status stays blocked and no DoD is ticked on simulator evidence alone.
+- 2026-06-27 - frosted strip fix - `make run-ios` - exit 0; `PastaKeyboard.appex` compiled for physical iPhone Air `AA3189CF-63E4-5B5B-884D-A39454926E42`, `Pasta.app` installed, and `com.thehumanworks.pasta` launched. Implementation removes the custom UIKit toolbar representable, host-view repainting, explicit toolbar background/height overrides, and 60pt/top-bleed shelf so the action row is pure SwiftUI content in `Keyboard.Toolbar` over one `keyboardViewStyle` background. Final visual proof still requires a device screenshot of the hosted keyboard.
+- 2026-06-27 - toolbar surface cleanup - pass by code review against `keyboard_blur.jpg`, pinned KeyboardKit 9.9.1 sources, and local diagnosis; removed the custom opaque UIKit shelf, negative top bleed, forced hosting-controller backgrounds, explicit KeyboardKit toolbar background, and 60pt custom row height so Pasta controls render transparent in `Keyboard.Toolbar` over the single `keyboardViewStyle(background: .color(.keyboardBackground))` surface at KeyboardKit's native 48pt row height.
+- 2026-06-27 - toolbar surface cleanup - `make run-ios` - exit 0 on physical iPhone Air `AA3189CF-63E4-5B5B-884D-A39454926E42`; `xcodebuild` built `Pasta.app` with embedded `PastaKeyboard.appex`, `devicectl` installed `com.thehumanworks.pasta`, and `devicectl` launched the app. `xcrun devicectl device capture screenshot --device AA3189CF-63E4-5B5B-884D-A39454926E42 --destination ios/build/screenshots/pasta-device-after-toolbar-surface-fix.png` - exit 0, but captured the containing app rather than an active keyboard host, so final toolbar chrome proof remains pending a device screenshot with the Pasta keyboard visible.
+- 2026-06-27 - transparent button follow-up - pass by code review after user device feedback; Pasta toolbar content is now pure SwiftUI and uses `.buttonStyle(.plain)` plus explicit `Color.clear` backgrounds for the scroll container, buttons, labels, and separators. Removed the pressed-state background so toolbar buttons remain completely transparent in normal and pressed states.
+- 2026-06-27 - transparent button follow-up - `make run-ios` - exit 0 on physical iPhone Air `AA3189CF-63E4-5B5B-884D-A39454926E42`; `xcodebuild` built `Pasta.app` with embedded `PastaKeyboard.appex`, `devicectl` installed `com.thehumanworks.pasta`, and `devicectl` launched the app.
 
 ---
 
@@ -274,6 +279,16 @@ Scope changes stop execution and surface to the user.
   `nextKeyboard` — KeyboardKit's standard layout adds the globe conditionally on
   iPhone (only when `needsInputModeSwitchKey` is true) and unconditionally on iPad,
   so stripping it removes the user's only keyboard-switch affordance.
+- 2026-06-27 - A custom opaque toolbar row is still a separate surface even when it
+  uses `Color.keyboardBackground`. Do not force `UIInputViewController` or
+  KeyboardKit hosting-controller backgrounds, add a negative top bleed, set
+  `Keyboard.ToolbarStyle.backgroundColor`, or make a 60pt replacement shelf. The
+  toolbar content should be transparent over the one `KeyboardView` background,
+  with the standard 48pt toolbar height, so the action row reads as part of the
+  native keyboard toolbar instead of a frosted/detached strip.
+- 2026-06-27 - A pressed-state or plain-button background can still make Pasta's
+  controls read as separate widgets. Keep toolbar buttons backgroundless in all
+  states; use plain text/icons/separators over KeyboardKit's toolbar surface.
 
 ---
 

@@ -15,8 +15,6 @@ final class KeyboardViewController: KeyboardInputViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.isOpaque = true
-        view.backgroundColor = PastaToolbarAppearance.uiShelfBackground
         enableExperimentalKeyboardTypeChangeTracking()
         reloadClips()
         setup(for: .pasta) { [weak self] _ in
@@ -37,16 +35,6 @@ final class KeyboardViewController: KeyboardInputViewController {
 
     override func viewWillSetupKeyboardView() {
         setupPastaKeyboardView()
-    }
-
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        // KeyboardKit's hosting controller defaults to a clear root view, which lets the
-        // host app bleed through any unpainted SwiftUI pixels in the toolbar band.
-        for child in children {
-            child.view.isOpaque = true
-            child.view.backgroundColor = PastaToolbarAppearance.uiShelfBackground
-        }
     }
 
     private func reloadClips() {
@@ -180,7 +168,7 @@ private struct PastaKeyboardView: View {
             emojiKeyboard: { $0.view },
             toolbar: { _ in
                 Keyboard.Toolbar {
-                    PastaKeyboardToolbarRepresentable(
+                    PastaKeyboardToolbar(
                         model: toolbarModel,
                         insertClip: insertClip,
                         refresh: refresh,
@@ -191,12 +179,6 @@ private struct PastaKeyboardView: View {
             }
         )
         .keyboardViewStyle(.init(background: .color(.keyboardBackground)))
-        .autocompleteToolbarStyle(.init(height: PastaToolbarAppearance.shelfHeight, padding: 0))
-        .keyboardToolbarStyle(.init(
-            backgroundColor: PastaToolbarAppearance.shelfBackground,
-            height: PastaToolbarAppearance.shelfHeight,
-            minHeight: PastaToolbarAppearance.shelfHeight
-        ))
         .keyboardInputToolbarDisplayMode(.none)
         .id(keyboardLayoutIdentifier)
     }
@@ -219,269 +201,129 @@ private struct PastaKeyboardView: View {
     }
 }
 
-private struct PastaKeyboardToolbarRepresentable: UIViewRepresentable {
+private struct PastaKeyboardToolbar: View {
     let model: PastaKeyboardToolbarModel
     let insertClip: (String) -> Void
     let refresh: () -> Void
     let publish: () -> Void
     let toggleExpanded: () -> Void
 
-    func makeUIView(context: Context) -> PastaToolbarUIView {
-        let view = PastaToolbarUIView()
-        view.apply(
-            model: model,
-            actions: PastaToolbarUIView.Actions(
-                insertClip: insertClip,
-                refresh: refresh,
-                publish: publish,
-                toggleExpanded: toggleExpanded
-            )
-        )
-        return view
-    }
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 0) {
+                if let statusMessage = model.statusMessage {
+                    statusLabel(statusMessage)
+                    divider
+                }
 
-    func updateUIView(_ uiView: PastaToolbarUIView, context: Context) {
-        uiView.apply(
-            model: model,
-            actions: PastaToolbarUIView.Actions(
-                insertClip: insertClip,
-                refresh: refresh,
-                publish: publish,
-                toggleExpanded: toggleExpanded
-            )
-        )
-    }
-}
+                actionButton(
+                    title: "Refresh",
+                    systemImage: "arrow.clockwise",
+                    isEnabled: !model.isRunningLiveAction,
+                    action: refresh
+                )
+                divider
+                actionButton(
+                    title: "Publish",
+                    systemImage: "square.and.arrow.up",
+                    isEnabled: !model.isRunningLiveAction,
+                    action: publish
+                )
+                divider
+                actionButton(
+                    title: model.showsExpandedHistory ? "Less" : "All",
+                    systemImage: model.showsExpandedHistory ? "chevron.up" : "list.bullet",
+                    isEnabled: true,
+                    action: toggleExpanded
+                )
 
-@MainActor
-private final class PastaToolbarUIView: UIView {
-    struct Actions {
-        let insertClip: (String) -> Void
-        let refresh: () -> Void
-        let publish: () -> Void
-        let toggleExpanded: () -> Void
-    }
-
-    private let bleedView = UIView()
-    private let scrollView = UIScrollView()
-    private let stackView = UIStackView()
-    private var actions = Actions(
-        insertClip: { _ in },
-        refresh: {},
-        publish: {},
-        toggleExpanded: {}
-    )
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        isOpaque = true
-        backgroundColor = PastaToolbarAppearance.uiShelfBackground
-
-        bleedView.isOpaque = true
-        bleedView.backgroundColor = PastaToolbarAppearance.uiShelfBackground
-
-        scrollView.isOpaque = true
-        scrollView.backgroundColor = PastaToolbarAppearance.uiShelfBackground
-        scrollView.showsHorizontalScrollIndicator = false
-        scrollView.alwaysBounceHorizontal = true
-        scrollView.contentInsetAdjustmentBehavior = .never
-        scrollView.contentInset = .zero
-        scrollView.scrollIndicatorInsets = .zero
-
-        stackView.axis = .horizontal
-        stackView.alignment = .center
-        stackView.spacing = 0
-        stackView.isOpaque = true
-        stackView.backgroundColor = PastaToolbarAppearance.uiShelfBackground
-
-        addSubview(bleedView)
-        addSubview(scrollView)
-        scrollView.addSubview(stackView)
-
-        bleedView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-
-        NSLayoutConstraint.activate([
-            bleedView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            bleedView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            bleedView.topAnchor.constraint(equalTo: topAnchor, constant: -PastaToolbarAppearance.topBleed),
-            bleedView.heightAnchor.constraint(equalToConstant: PastaToolbarAppearance.shelfHeight + PastaToolbarAppearance.topBleed),
-
-            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            stackView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
-            stackView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
-            stackView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
-            stackView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
-            stackView.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor)
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    func apply(model: PastaKeyboardToolbarModel, actions: Actions) {
-        self.actions = actions
-        rebuild(model: model)
-    }
-
-    private func rebuild(model: PastaKeyboardToolbarModel) {
-        stackView.arrangedSubviews.forEach { view in
-            stackView.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
-
-        if let statusMessage = model.statusMessage {
-            stackView.addArrangedSubview(makeStatusLabel(statusMessage))
-            stackView.addArrangedSubview(makeDivider())
-        }
-
-        stackView.addArrangedSubview(makeActionButton(
-            title: "Refresh",
-            systemImage: "arrow.clockwise",
-            isEnabled: !model.isRunningLiveAction,
-            action: actions.refresh
-        ))
-        stackView.addArrangedSubview(makeDivider())
-        stackView.addArrangedSubview(makeActionButton(
-            title: "Publish",
-            systemImage: "square.and.arrow.up",
-            isEnabled: !model.isRunningLiveAction,
-            action: actions.publish
-        ))
-        stackView.addArrangedSubview(makeDivider())
-        stackView.addArrangedSubview(makeActionButton(
-            title: model.showsExpandedHistory ? "Less" : "All",
-            systemImage: model.showsExpandedHistory ? "chevron.up" : "list.bullet",
-            isEnabled: true,
-            action: actions.toggleExpanded
-        ))
-
-        if model.clips.isEmpty {
-            stackView.addArrangedSubview(makeDivider())
-            stackView.addArrangedSubview(makeStatusLabel("Open Pasta to sync"))
-        } else {
-            for clip in model.visibleClips {
-                stackView.addArrangedSubview(makeDivider())
-                stackView.addArrangedSubview(makeClipButton(clip: clip))
+                if model.clips.isEmpty {
+                    divider
+                    statusLabel("Open Pasta to sync")
+                } else {
+                    ForEach(model.visibleClips, id: \.sequence) { clip in
+                        divider
+                        clipButton(clip)
+                    }
+                }
             }
+            .frame(height: PastaToolbarAppearance.shelfHeight)
+            .background(Color.clear)
         }
+        .scrollIndicators(.hidden)
+        .frame(height: PastaToolbarAppearance.shelfHeight)
+        .background(Color.clear)
     }
 
-    private func makeStatusLabel(_ text: String) -> UIView {
-        let label = UILabel()
-        label.text = text
-        label.font = PastaToolbarAppearance.uiFont
-        label.textColor = PastaToolbarAppearance.uiForeground
-        label.lineBreakMode = .byTruncatingTail
-        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-        let container = UIView()
-        container.isOpaque = true
-        container.backgroundColor = PastaToolbarAppearance.uiShelfBackground
-        container.addSubview(label)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        container.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
-            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -14),
-            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            container.heightAnchor.constraint(equalToConstant: PastaToolbarAppearance.shelfHeight)
-        ])
-        return container
+    private func statusLabel(_ text: String) -> some View {
+        Text(text)
+            .font(PastaToolbarAppearance.font)
+            .foregroundStyle(PastaToolbarAppearance.foreground)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.horizontal, 14)
+            .frame(height: PastaToolbarAppearance.shelfHeight)
+            .background(Color.clear)
     }
 
-    private func makeDivider() -> UIView {
-        let divider = UIView()
-        divider.isOpaque = true
-        divider.backgroundColor = PastaToolbarAppearance.uiSeparator
-        divider.translatesAutoresizingMaskIntoConstraints = false
-        divider.widthAnchor.constraint(equalToConstant: 1).isActive = true
-        divider.heightAnchor.constraint(equalToConstant: PastaToolbarAppearance.separatorHeight).isActive = true
-        return divider
-    }
-
-    private func makeActionButton(
+    private func actionButton(
         title: String,
         systemImage: String,
         isEnabled: Bool,
         action: @escaping () -> Void
-    ) -> UIButton {
-        var configuration = UIButton.Configuration.plain()
-        configuration.title = title
-        configuration.image = UIImage(systemName: systemImage, withConfiguration: PastaToolbarAppearance.uiSymbolConfiguration)
-        configuration.imagePadding = 5
-        configuration.baseForegroundColor = PastaToolbarAppearance.uiForeground
-        configuration.background.backgroundColor = PastaToolbarAppearance.uiShelfBackground
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 13, bottom: 0, trailing: 13)
-        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-            var outgoing = incoming
-            outgoing.font = PastaToolbarAppearance.uiFont
-            return outgoing
+    ) -> some View {
+        Button(action: action) {
+            Label {
+                Text(title)
+            } icon: {
+                Image(systemName: systemImage)
+            }
+            .font(PastaToolbarAppearance.font)
+            .labelStyle(.titleAndIcon)
+            .padding(.horizontal, 13)
+            .frame(height: PastaToolbarAppearance.shelfHeight)
+            .contentShape(Rectangle())
         }
-
-        let button = UIButton(configuration: configuration)
-        button.isOpaque = true
-        button.backgroundColor = PastaToolbarAppearance.uiShelfBackground
-        button.isUserInteractionEnabled = isEnabled
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.heightAnchor.constraint(equalToConstant: PastaToolbarAppearance.shelfHeight).isActive = true
-        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
-        return button
+        .buttonStyle(.plain)
+        .foregroundStyle(PastaToolbarAppearance.foreground)
+        .allowsHitTesting(isEnabled)
+        .background(Color.clear)
     }
 
-    private func makeClipButton(clip: PastaKeyboardClip) -> UIButton {
-        var configuration = UIButton.Configuration.plain()
-        configuration.title = clip.title
-        configuration.baseForegroundColor = PastaToolbarAppearance.uiForeground
-        configuration.background.backgroundColor = PastaToolbarAppearance.uiShelfBackground
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16)
-        configuration.titleLineBreakMode = .byTruncatingTail
-        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-            var outgoing = incoming
-            outgoing.font = PastaToolbarAppearance.uiFont
-            return outgoing
+    private func clipButton(_ clip: PastaKeyboardClip) -> some View {
+        Button {
+            insertClip(clip.text)
+        } label: {
+            Text(clip.title)
+                .font(PastaToolbarAppearance.font)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: 220)
+                .frame(height: PastaToolbarAppearance.shelfHeight)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .foregroundStyle(PastaToolbarAppearance.foreground)
+        .background(Color.clear)
+    }
 
-        let button = UIButton(configuration: configuration)
-        button.isOpaque = true
-        button.backgroundColor = PastaToolbarAppearance.uiShelfBackground
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.heightAnchor.constraint(equalToConstant: PastaToolbarAppearance.shelfHeight).isActive = true
-        button.widthAnchor.constraint(lessThanOrEqualToConstant: 220).isActive = true
-        let clipText = clip.text
-        button.addAction(UIAction { [weak self] _ in
-            self?.actions.insertClip(clipText)
-        }, for: .touchUpInside)
-        return button
+    private var divider: some View {
+        PastaToolbarAppearance.separator
+            .frame(width: 1, height: PastaToolbarAppearance.separatorHeight)
+            .background(Color.clear)
     }
 }
 
 private enum PastaToolbarAppearance {
-    /// 60pt band (~25% taller than KeyboardKit's 48pt autocomplete default) for readable,
-    /// full-height action targets. Shelf and segments stay fully opaque so host content
-    /// cannot bleed through and make labels look blurred.
-    static let shelfBackground = Color.keyboardBackground
+    /// Match KeyboardKit's standard autocomplete row height so the Pasta actions
+    /// sit in the native toolbar slot instead of creating a taller custom band.
     static let foreground = Color.keyboardButtonForeground
     static let separator = Color.keyboardButtonForeground.opacity(0.20)
-    static let shelfHeight: CGFloat = 60
-    static let separatorHeight: CGFloat = 36
-    /// Paints the seam above the shelf where the extension host leaves a narrow strip.
-    static let topBleed: CGFloat = 10
+    static let shelfHeight: CGFloat = 48
+    static let separatorHeight: CGFloat = 30
 
-    static var uiShelfBackground: UIColor { UIColor(Color.keyboardBackground) }
-    static var uiForeground: UIColor { UIColor(Color.keyboardButtonForeground) }
-    static var uiSeparator: UIColor { uiForeground.withAlphaComponent(0.20) }
-    static var uiFont: UIFont { .systemFont(ofSize: 17, weight: .semibold) }
-    static var uiSymbolConfiguration: UIImage.SymbolConfiguration {
-        UIImage.SymbolConfiguration(font: uiFont, scale: .medium)
-    }
+    static var font: Font { .system(size: 17, weight: .semibold) }
 }
 
 private struct PastaKeyboardToolbarModel {
@@ -580,7 +422,7 @@ private struct PastaKeyboardPreviewHost: View {
 }
 
 #Preview("Pasta toolbar — row only") {
-    PastaKeyboardToolbarRepresentable(
+    PastaKeyboardToolbar(
         model: .preview,
         insertClip: { _ in },
         refresh: {},
