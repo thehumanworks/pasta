@@ -293,8 +293,11 @@ Verification Contract:
 **Evidence:**
 
 - 2026-06-27 - merge/release integration - feature branches were merged into
-  local `main`; release commit `43a0428 Prepare 0.1.8 release` bumped CLI and
-  iOS versions to `0.1.8` and iOS build number to `14`.
+  local `main`; `50458ab Merge iOS keyboard number row fix` kept the
+  KeyboardKit numeric mode while removing Pasta's alphabetic number row;
+  release commit `21ecdce Prepare 0.1.9 release` bumped CLI and iOS versions to
+  `0.1.9` and iOS build number to `15`; final evidence commit `205e635` was
+  pushed to `origin/main`.
 - 2026-06-27 - `mise exec -- bun run check` - exit 0; Worker types generated,
   30 Bun tests passed, and 14 Vitest Worker tests passed.
 - 2026-06-27 - `swift test --package-path ios` - exit 0; 21 XCTest tests
@@ -308,45 +311,44 @@ Verification Contract:
   build` - exit 0; app and embedded keyboard extension compiled.
 - 2026-06-27 - integrated keyboard benchmark - `swift
   ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 40000 --mode both`
-  - exit 0; `baseline.total: 5482.963 ms`, `optimized.total: 2267.078 ms`,
-  improvement `3215.885 ms` / `58.652% faster`; checksums matched
-  (`254720000` layout, `691434` autocomplete).
-- 2026-06-27 - local release asset proof - `PASTA_RELEASE_VERSION=v0.1.8 mise
-  exec -- bun run build:release` - exit 0; all macOS, Linux, and Windows
-  assets built; `shasum -a 256 -c checksums.txt` reported OK for all 8 binary
-  archives; extracted macOS arm64 binary reported `0.1.8`.
-- 2026-06-27 - `git push origin main` - exit 0; pushed `main` from `6b0478a`
-  to `43a0428`. `git tag v0.1.8 && git push origin v0.1.8` - exit 0; created
-  and pushed tag `v0.1.8`.
-- 2026-06-27 - GitHub release workflow `28301167526` for tag `v0.1.8` - exit
-  0; portable checks, release asset build, artifact upload, and GitHub release
+  - exit 0; `baseline.total: 5410.186 ms`, `optimized.total: 2243.177 ms`,
+  improvement `3167.009 ms` / `58.538% faster`; checksums matched
+  (`234720000` layout, `691434` autocomplete).
+- 2026-06-27 - `gh run watch 28301354707 --repo thehumanworks/pasta
+  --exit-status` - exit 0; final pushed `main` workflow completed portable
+  checks, release asset build, and latest artifact upload.
+- 2026-06-27 - release workflow `28301314347` for tag `v0.1.9` - success;
+  portable checks, release asset build, artifact upload, and GitHub release
   publish all succeeded.
-- 2026-06-27 - `gh release view v0.1.8 --repo thehumanworks/pasta` - exit 0;
-  release URL `https://github.com/thehumanworks/pasta/releases/tag/v0.1.8`
+- 2026-06-27 - `git ls-remote origin refs/heads/main refs/tags/v0.1.9` - exit
+  0; `origin/main` points at `205e635` and tag `v0.1.9` points at release
+  commit `21ecdce`.
+- 2026-06-27 - `gh release view v0.1.9 --repo thehumanworks/pasta` - exit 0;
+  release URL `https://github.com/thehumanworks/pasta/releases/tag/v0.1.9`
   published 9 assets: `checksums.txt` plus 8 platform archives.
 - 2026-06-27 - isolated release install proof from a temporary cwd - `mise exec
-  github:thehumanworks/pasta@v0.1.8 -- pasta --version` - exit 0; downloaded
-  `pasta-v0.1.8-macos-arm64.tar.gz`, verified checksum, attestations, and SLSA
-  provenance, extracted the binary, and printed `0.1.8`.
+  github:thehumanworks/pasta@v0.1.9 -- pasta --version` - exit 0; downloaded
+  `pasta-v0.1.9-macos-arm64.tar.gz`, verified checksum, attestations, and SLSA
+  provenance, extracted the binary, and printed `0.1.9`.
 - 2026-06-27 - iOS archive/export/upload - `archive_upload.sh` with
   `SCHEME=Pasta`, `CONFIGURATION=Release`, `DEVELOPMENT_TEAM=54MXM5JG3R`,
   `APP_STORE_CONNECT_API_PRIVATE_KEY_PATH=ios/build/asc/AuthKey.p8`,
   `EXPECT_NO_NON_EXEMPT_ENCRYPTION=1`, and
   `TESTFLIGHT_BETA_GROUP_NAME=internal` - exit 0; produced
-  `ios/build/export-0.1.8-14/Pasta.ipa`, uploaded to App Store Connect, and
+  `ios/build/export-0.1.9-15/Pasta.ipa`, uploaded to App Store Connect, and
   completed TestFlight group assignment.
 - 2026-06-27 - IPA inspection - `inspect_ipa.sh
-  ios/build/export-0.1.8-14/Pasta.ipa` - exit 0; bundle
-  `com.thehumanworks.pasta`, version `0.1.8`, build `14`, SDK `iphoneos27.0`,
+  ios/build/export-0.1.9-15/Pasta.ipa` - exit 0; bundle
+  `com.thehumanworks.pasta`, version `0.1.9`, build `15`, SDK `iphoneos27.0`,
   `ITSAppUsesNonExemptEncryption=false`, `get-task-allow=false`, and nested
-  `com.thehumanworks.pasta.keyboard` appex version `0.1.8`.
+  `com.thehumanworks.pasta.keyboard` appex version `0.1.9`.
 - 2026-06-27 - App Store Connect proof - `app_store_connect.py wait-build
-  --bundle-id com.thehumanworks.pasta --version 14 --json` - exit 0; app
-  `6785005536`, build `9729b60c-68c9-4e0b-b73f-1e3004b58f09`, version `14`,
+  --bundle-id com.thehumanworks.pasta --version 15 --json` - exit 0; app
+  `6785005536`, build `8083eab8-6cfd-42a7-b0be-960ab962a4a6`, version `15`,
   `processingState=VALID`, `expired=false`, `usesNonExemptEncryption=false`.
 - 2026-06-27 - TestFlight proof - `release-to-testflight` log shows group
   `internal` (`91ffd61d-626c-44e4-ab22-552d858c3d0b`) is an internal group
-  with `hasAccessToAllBuilds=True`; build `14` is visible in the group as
+  with `hasAccessToAllBuilds=True`; build `15` is visible in the group as
   `VALID`.
 
 ## 6. Decisions
