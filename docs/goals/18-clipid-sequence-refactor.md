@@ -1,7 +1,7 @@
 ---
 goal_id: "pasta-18-clipid-sequence-refactor"
 title: "ClipId Identity And Gap-Free Sequence Metadata"
-status: "active"
+status: "done"
 confidence_floor: 90
 created: "2026-06-27"
 updated: "2026-06-27"
@@ -40,7 +40,7 @@ updated: "2026-06-27"
 - [x] **DoD-3** — Swift/iOS models and history UI identify cached clips by `clipId`, not `seq`. — *verify by:* `swift test --package-path ios`
 - [x] **DoD-4** — Protocol and payload documentation describe the no-compat schema replacement, clipId routes, clipId R2 keys, and empty-history deployment implication. — *verify by:* docs review plus `cd docs-site && bun run build -- --base /pasta/`
 - [x] **DoD-5** — Changed Worker is deployed and a non-leaking remote smoke proves current remote API behavior. — *verify by:* `mise exec -- fnox exec -- wrangler deploy` plus signed CLI smoke against `https://pasta.nothuman.work`
-- [ ] **DoD-6** — Verified changes are committed on `main` and pushed to `origin/main`. — *verify by:* `git status --short --branch` after `git push origin main`
+- [x] **DoD-6** — Verified changes are committed on `main` and pushed to `origin/main`. — *verify by:* `git status --short --branch` after `git push origin main`
 
 ---
 
@@ -131,13 +131,13 @@ updated: "2026-06-27"
 - 2026-06-27 - `rg -n '/v1/clips/:seq|/v1/files/:seq|clips/\{seq\}|\{seq\}/\{payload_id\}|Latest / by seq|append-only sequence|sequence-based R2' src docs docs-site README.md --glob '!docs/goals/**'` - exit 1; no stale live numeric clip/file path or seq-key references remained.
 - 2026-06-27 - `cd docs-site && bun run build -- --base /pasta/` - exit 0; built 15 pages to `docs-site/dist`.
 
-### T5 · Final verification, deploy, review, commit, push · [ ]
+### T5 · Final verification, deploy, review, commit, push · [x]
 
 **Steps**
 - [x] Run broader project checks for TypeScript/Bun/Worker and Swift.
 - [x] Deploy Worker with secret injection and run a non-leaking remote smoke against `https://pasta.nothuman.work`.
-- [ ] Run an internal review-panel simulation for correctness, architecture, idiomaticity, tests, security/reliability, and performance.
-- [ ] Commit and push the verified change.
+- [x] Run an internal review-panel simulation for correctness, architecture, idiomaticity, tests, security/reliability, and performance.
+- [x] Commit and push the verified change.
 
 **Verification Contract**
 - *Check:* The verified implementation is live remotely and published to `origin/main`.
@@ -145,13 +145,15 @@ updated: "2026-06-27"
 - *Expected:* Exit 0 for relevant checks/deploy/push; remote smoke proves clipId routes and sequence renumbering.
 - *BDD scenarios covered:* remote publish/list/delete/list sequence after delete; no plaintext smoke values printed; final worktree contains only intended changes.
 
-**Confidence:** 80 / 90 · **Depends on:** T4 · **Closes:** DoD-5, DoD-6
+**Confidence:** 95 / 90 · **Depends on:** T4 · **Closes:** DoD-5, DoD-6
 
 **Evidence**
 - 2026-06-27 - `mise exec -- bun run check` - exit 0; generated Worker types, 30 Bun tests passed, and 14 Worker tests passed.
 - 2026-06-27 - `swift test --package-path ios` - exit 0; 14 tests passed, 1 live relay test skipped because `PASTA_IOS_JOIN_TOKEN` was unset.
 - 2026-06-27 - `mise exec -- fnox exec -- wrangler deploy` - exit 0; deployed `pasta.nothuman.work`, Version ID `53b7ae5b-888f-4db6-9ac4-520172220639`.
 - 2026-06-27 - remote signed CLI smoke against `https://pasta.nothuman.work` with a temporary `PASTA_HOME` - exit 0; published three tiny file payloads, deleted display seq 2, verified remaining history first-column sequence `2,1`, pasted by `--seq 2` through the new clipId file route, deleted remaining smoke history, and removed the temp local profile.
+- 2026-06-27 - internal review-panel simulation - pass; correctness, architecture, idiomaticity, testing, security/reliability, and performance roles found no blocking issues after tests, docs build, deploy, and remote smoke.
+- 2026-06-27 - `git push origin main && git status --short --branch` - exit 0; commit `e6ba845` pushed to `origin/main`, branch reported `## main...origin/main`.
 
 ---
 
