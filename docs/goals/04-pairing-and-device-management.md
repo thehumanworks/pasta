@@ -4,7 +4,7 @@ title: "Pairing and Device Management"
 status: "done"
 confidence_floor: 90
 created: "2026-06-26"
-updated: "2026-06-26"
+updated: "2026-06-27"
 ---
 
 # Goal: Pairing and Device Management
@@ -99,6 +99,7 @@ Verification Contract:
 **Evidence:**
 - 2026-06-26 - `mise exec -- bun run test` - exit 0; Worker pairing test approves wrapped group-key grant and consumes it once.
 - 2026-06-26 - live local smoke `devices approve <code>` then `pair consume` - exit 0; new device decrypted existing latest clip and cross-device paste worked.
+- 2026-06-27 - `mise exec -- bun run test` - exit 0; CLI/crypto/Worker tests cover CI join-grant token creation, sealed group-key redemption, one-use enforcement, grant revoke, default permanent devices, and optional device TTL.
 
 ### T4 - Device List and Revoke - [x]
 
@@ -116,6 +117,8 @@ Verification Contract:
 **Evidence:**
 - 2026-06-26 - live local smoke `devices revoke <dev2>` - exit 0; subsequent dev2 `paste` failed and Worker log returned `GET /v1/clips/latest 403 Forbidden`.
 - 2026-06-26 - `mise exec -- bun run test` - exit 0; Worker tests reject revoked device requests.
+- 2026-06-27 - local Worker smoke `bootstrap` -> `pair grant create --json` -> clean `pair join --token` -> joined `copy` -> trusted `paste` - exit 0; pasted `ci grant smoke`.
+- 2026-06-27 - `mise exec -- bunx vitest run test/worker/backend.test.ts` - exit 0; expired join-grant device is marked `revoked` and rejected with `expired_device` on its next signed request.
 
 ### T5 - Reset Flow - [x]
 

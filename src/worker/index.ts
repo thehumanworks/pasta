@@ -6,6 +6,9 @@ import {
   aadForClip,
   assertBase64Url,
   clampHistoryLimit,
+  JOIN_GRANT_DEVICE_TTL_MAX_MS,
+  JOIN_GRANT_MAX_USES,
+  JOIN_GRANT_TOKEN_TTL_MAX_MS,
   LARGE_PAYLOAD_MAX_BYTES,
   MAX_OPEN_PAIRING_SESSIONS,
   sha256Base64Url,
@@ -15,11 +18,13 @@ import {
   type EncryptedClip,
   type PairingApproveRequest,
   type PairingConsumeRequest,
+  type PairingGrantCreateRequest,
+  type PairingGrantRedeemRequest,
   type PairingOpenRequest,
   type ResetRequest
 } from "../shared/protocol";
 import { fromBase64Url, randomBase64Url, stableJson, toBase64Url } from "../shared/encoding";
-import { verifyCanonicalRequest } from "../shared/crypto";
+import { hashJoinGrantRedeemSecret, verifyCanonicalRequest } from "../shared/crypto";
 
 export { ClipboardSpace };
 
@@ -33,6 +38,7 @@ interface DeviceRow {
   created_at: number;
   last_seen_at: number | null;
   revoked_at: number | null;
+  device_expires_at: number | null;
   routing_id: string;
 }
 
@@ -73,6 +79,9 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === "POST" && url.pathname === "/v1/pairing/consume") {
     return pairingConsume(env, parseJson<PairingConsumeRequest>(bodyText));
   }
+  if (request.method === "POST" && url.pathname === "/v1/pairing/grants/redeem") {
+    return pairingGrantRedeem(env, parseJson<PairingGrantRedeemRequest>(bodyText));
+  }
 
   const auth = await authenticate(request, env, url, bodyText);
   if (auth instanceof Response) return auth;
@@ -111,12 +120,20 @@ async function route(request: Request, env: Env): Promise<Response> {
     const devices = await env.DB.prepare(
       `SELECT account_id AS accountId, device_id AS deviceId, device_name AS deviceName,
               verify_public_key AS verifyPublicKey, wrap_public_key AS wrapPublicKey,
-              status, created_at AS createdAt, last_seen_at AS lastSeenAt, revoked_at AS revokedAt
+              status, created_at AS createdAt, last_seen_at AS lastSeenAt, revoked_at AS revokedAt,
+              device_expires_at AS deviceExpiresAt
        FROM devices WHERE account_id = ? ORDER BY created_at ASC`
     )
       .bind(auth.accountId)
       .all<DeviceRecord>();
     return json({ devices: devices.results.map(deviceFromD1) });
+  }
+  if (request.method === "POST" && url.pathname === "/v1/pairing/grants") {
+    return pairingGrantCreate(env, auth, parseJson<PairingGrantCreateRequest>(bodyText));
+  }
+  const grantRevokeMatch = url.pathname.match(/^\/v1\/pairing\/grants\/([^/]+)\/revoke$/u);
+  if (request.method === "POST" && grantRevokeMatch?.[1]) {
+    return pairingGrantRevoke(env, auth, decodeURIComponent(grantRevokeMatch[1]));
   }
   const revokeMatch = url.pathname.match(/^\/v1\/devices\/([^/]+)\/revoke$/u);
   if (request.method === "POST" && revokeMatch?.[1]) {
@@ -147,8 +164,8 @@ async function bootstrap(env: Env, body: BootstrapRequest): Promise<Response> {
     .run();
   await env.DB.prepare(
     `INSERT INTO devices(
-      account_id, device_id, device_name, verify_public_key, wrap_public_key, status, created_at, last_seen_at
-    ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`
+      account_id, device_id, device_name, verify_public_key, wrap_public_key, status, created_at, last_seen_at, device_expires_at
+    ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, NULL)`
   )
     .bind(body.accountId, body.deviceId, body.deviceName, body.verifyPublicKey, body.wrapPublicKey, now, now)
     .run();
@@ -268,14 +285,15 @@ async function pairingApprove(env: Env, auth: AuthContext, body: PairingApproveR
   const now = Date.now();
   await env.DB.prepare(
     `INSERT INTO devices(
-      account_id, device_id, device_name, verify_public_key, wrap_public_key, status, created_at
-    ) VALUES (?, ?, ?, ?, ?, 'active', ?)
+      account_id, device_id, device_name, verify_public_key, wrap_public_key, status, created_at, device_expires_at
+    ) VALUES (?, ?, ?, ?, ?, 'active', ?, NULL)
     ON CONFLICT(account_id, device_id) DO UPDATE SET
       device_name = excluded.device_name,
       verify_public_key = excluded.verify_public_key,
       wrap_public_key = excluded.wrap_public_key,
       status = 'active',
-      revoked_at = NULL`
+      revoked_at = NULL,
+      device_expires_at = NULL`
   )
     .bind(auth.accountId, session.new_device_id, session.new_device_name, pubkeys.verifyPublicKey, pubkeys.wrapPublicKey, now)
     .run();
@@ -319,6 +337,116 @@ async function pairingConsume(env: Env, body: PairingConsumeRequest): Promise<Re
     keyVersion: session.key_version,
     consumedAt: now
   });
+}
+
+async function pairingGrantCreate(env: Env, auth: AuthContext, body: PairingGrantCreateRequest): Promise<Response> {
+  requireString(body.grantId, "grantId");
+  requireString(body.redeemSecretHash, "redeemSecretHash");
+  requireString(body.sealedGroupKey, "sealedGroupKey");
+  if (body.label !== undefined && typeof body.label !== "string") throw new Error("label must be string");
+  assertBase64Url(body.redeemSecretHash, "redeemSecretHash");
+  if (!Number.isSafeInteger(body.keyVersion) || body.keyVersion < 1) return json({ error: "bad_key_version" }, 400);
+  const boundsError = validateJoinGrantBounds(body.tokenExpiresAt, body.deviceTtlMs, body.maxUses);
+  if (boundsError) return json({ error: boundsError }, 400);
+  const now = Date.now();
+  if (body.tokenExpiresAt <= now) return json({ error: "expired_grant" }, 400);
+  await env.DB.prepare(
+    `INSERT INTO pairing_grants(
+      grant_id, account_id, label, redeem_secret_hash, sealed_group_key, key_version,
+      token_expires_at, device_ttl_ms, max_uses, use_count, created_by_device_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+  )
+    .bind(
+      body.grantId,
+      auth.accountId,
+      body.label ?? null,
+      body.redeemSecretHash,
+      body.sealedGroupKey,
+      body.keyVersion,
+      body.tokenExpiresAt,
+      body.deviceTtlMs,
+      body.maxUses,
+      auth.deviceId,
+      now
+    )
+    .run();
+  return json({
+    grantId: body.grantId,
+    tokenExpiresAt: body.tokenExpiresAt,
+    deviceTtlMs: body.deviceTtlMs,
+    maxUses: body.maxUses,
+    createdAt: now
+  }, 201);
+}
+
+async function pairingGrantRedeem(env: Env, body: PairingGrantRedeemRequest): Promise<Response> {
+  requireString(body.grantId, "grantId");
+  requireString(body.redeemSecret, "redeemSecret");
+  requireString(body.newDeviceId, "newDeviceId");
+  requireString(body.newDeviceName, "newDeviceName");
+  assertBase64Url(body.redeemSecret, "redeemSecret");
+  assertBase64Url(body.verifyPublicKey, "verifyPublicKey");
+  assertBase64Url(body.wrapPublicKey, "wrapPublicKey");
+  const grant = await env.DB.prepare(
+    `SELECT g.*, a.routing_id FROM pairing_grants g
+     JOIN accounts a ON a.account_id = g.account_id
+     WHERE g.grant_id = ? LIMIT 1`
+  )
+    .bind(body.grantId)
+    .first<Record<string, string | number | null>>();
+  if (!grant) return json({ error: "not_found" }, 404);
+  const now = Date.now();
+  if (grant.revoked_at !== null) return json({ error: "grant_revoked" }, 403);
+  if (Number(grant.token_expires_at) <= now) return json({ error: "expired_grant" }, 410);
+  if (Number(grant.use_count) >= Number(grant.max_uses)) return json({ error: "grant_consumed" }, 409);
+  const expectedHash = String(grant.redeem_secret_hash);
+  const actualHash = hashJoinGrantRedeemSecret(String(grant.account_id), body.grantId, body.redeemSecret);
+  if (!constantTimeEqual(expectedHash, actualHash)) return json({ error: "bad_grant" }, 401);
+  const existingDevice = await env.DB.prepare("SELECT 1 FROM devices WHERE account_id = ? AND device_id = ? LIMIT 1")
+    .bind(grant.account_id, body.newDeviceId)
+    .first();
+  if (existingDevice) return json({ error: "device_exists" }, 409);
+
+  const deviceTtl = grant.device_ttl_ms === null ? null : Number(grant.device_ttl_ms);
+  const deviceExpiresAt = deviceTtl === null ? null : now + deviceTtl;
+  const updated = await env.DB.prepare(
+    `UPDATE pairing_grants
+     SET use_count = use_count + 1, last_redeemed_at = ?
+     WHERE grant_id = ? AND revoked_at IS NULL AND token_expires_at > ? AND use_count < max_uses`
+  )
+    .bind(now, body.grantId, now)
+    .run();
+  if ((updated.meta?.changes ?? 0) === 0) return json({ error: "grant_consumed" }, 409);
+
+  await env.DB.prepare(
+    `INSERT INTO devices(
+      account_id, device_id, device_name, verify_public_key, wrap_public_key,
+      status, created_at, last_seen_at, revoked_at, device_expires_at
+    ) VALUES (?, ?, ?, ?, ?, 'active', ?, NULL, NULL, ?)`
+  )
+    .bind(grant.account_id, body.newDeviceId, body.newDeviceName, body.verifyPublicKey, body.wrapPublicKey, now, deviceExpiresAt)
+    .run();
+
+  return json({
+    accountId: grant.account_id,
+    routingId: grant.routing_id,
+    deviceId: body.newDeviceId,
+    sealedGroupKey: grant.sealed_group_key,
+    keyVersion: grant.key_version,
+    tokenExpiresAt: grant.token_expires_at,
+    deviceTtlMs: grant.device_ttl_ms,
+    deviceExpiresAt,
+    maxUses: grant.max_uses,
+    redeemedAt: now
+  });
+}
+
+async function pairingGrantRevoke(env: Env, auth: AuthContext, grantId: string): Promise<Response> {
+  const now = Date.now();
+  await env.DB.prepare("UPDATE pairing_grants SET revoked_at = ? WHERE account_id = ? AND grant_id = ? AND revoked_at IS NULL")
+    .bind(now, auth.accountId, grantId)
+    .run();
+  return json({ grantId, revokedAt: now });
 }
 
 async function revokeDevice(env: Env, auth: AuthContext, deviceId: string): Promise<Response> {
@@ -382,8 +510,16 @@ async function authenticate(request: Request, env: Env, url: URL, bodyText: stri
   if (!ok) return json({ error: "bad_signature" }, 401);
   const replay = await rememberNonce(env, accountId, deviceId, nonce);
   if (!replay) return json({ error: "replayed_nonce" }, 409);
+  const now = Date.now();
+  if (device.device_expires_at !== null && Number(device.device_expires_at) <= now) {
+    await env.DB.prepare("UPDATE devices SET status = 'revoked', revoked_at = ? WHERE account_id = ? AND device_id = ?")
+      .bind(now, accountId, deviceId)
+      .run();
+    await env.CLIPBOARD.getByName(device.routing_id).revokeDevice({ accountId, deviceId, routingId: device.routing_id }, deviceId, now);
+    return json({ error: "expired_device" }, 403);
+  }
   await env.DB.prepare("UPDATE devices SET last_seen_at = ? WHERE account_id = ? AND device_id = ?")
-    .bind(Date.now(), accountId, deviceId)
+    .bind(now, accountId, deviceId)
     .run();
   return {
     accountId,
@@ -475,6 +611,30 @@ function requireString(value: unknown, name: string): asserts value is string {
   }
 }
 
+function validateJoinGrantBounds(tokenExpiresAt: number, deviceTtlMs: number | null, maxUses: number): string | null {
+  const now = Date.now();
+  if (!Number.isSafeInteger(tokenExpiresAt)) return "bad_token_expiry";
+  if (tokenExpiresAt - now > JOIN_GRANT_TOKEN_TTL_MAX_MS) return "token_ttl_too_long";
+  if (deviceTtlMs !== null && (!Number.isSafeInteger(deviceTtlMs) || deviceTtlMs <= 0 || deviceTtlMs > JOIN_GRANT_DEVICE_TTL_MAX_MS)) {
+    return "bad_device_ttl";
+  }
+  if (!Number.isSafeInteger(maxUses) || maxUses < 1 || maxUses > JOIN_GRANT_MAX_USES) {
+    return "bad_max_uses";
+  }
+  return null;
+}
+
+function constantTimeEqual(left: string, right: string): boolean {
+  const leftBytes = new TextEncoder().encode(left);
+  const rightBytes = new TextEncoder().encode(right);
+  let diff = leftBytes.length ^ rightBytes.length;
+  const length = Math.max(leftBytes.length, rightBytes.length);
+  for (let index = 0; index < length; index += 1) {
+    diff |= (leftBytes[index] ?? 0) ^ (rightBytes[index] ?? 0);
+  }
+  return diff === 0;
+}
+
 function deviceFromD1(row: DeviceRecord): DeviceRecord {
   return {
     accountId: row.accountId,
@@ -485,7 +645,8 @@ function deviceFromD1(row: DeviceRecord): DeviceRecord {
     status: row.status,
     createdAt: row.createdAt,
     lastSeenAt: row.lastSeenAt,
-    revokedAt: row.revokedAt
+    revokedAt: row.revokedAt,
+    deviceExpiresAt: row.deviceExpiresAt ?? null
   };
 }
 

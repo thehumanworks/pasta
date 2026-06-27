@@ -11,7 +11,10 @@ import {
   encryptTextClip,
   generateDeviceKeyMaterial,
   generateGroupKey,
+  hashJoinGrantRedeemSecret,
   hashShortCode,
+  openJoinGrant,
+  sealJoinGrant,
   signCanonicalRequest,
   wrapGroupKey
 } from "../../src/shared/crypto";
@@ -251,6 +254,291 @@ describe("Worker backend", () => {
     expect(replay.status).toBe(409);
   });
 
+  it("creates and redeems default permanent CI join grants exactly once", async () => {
+    const existing = await bootstrap();
+    const groupKey = generateGroupKey();
+    const redeemSecret = randomBase64Url(32);
+    const sealSecret = randomBase64Url(32);
+    const grantId = `grant_${randomBase64Url(8)}`;
+    const tokenExpiresAt = Date.now() + 10 * 60_000;
+    const sealedGroupKey = sealJoinGrant({
+      groupKey,
+      accountId: existing.accountId,
+      grantId,
+      sealSecret,
+      keyVersion: 1,
+      tokenExpiresAt,
+      maxUses: 1,
+      deviceTtlMs: null
+    });
+    const create = await signedFetch(existing, "POST", "/v1/pairing/grants", {
+      grantId,
+      label: "ci",
+      redeemSecretHash: hashJoinGrantRedeemSecret(existing.accountId, grantId, redeemSecret),
+      sealedGroupKey,
+      keyVersion: 1,
+      tokenExpiresAt,
+      deviceTtlMs: null,
+      maxUses: 1
+    });
+    await expectStatus(create, 201);
+    expect(await create.json()).toMatchObject({ grantId, deviceTtlMs: null, maxUses: 1 });
+    const storedGrant = await env.DB.prepare("SELECT * FROM pairing_grants WHERE grant_id = ?")
+      .bind(grantId)
+      .first<Record<string, string | number | null>>();
+    expect(storedGrant?.device_ttl_ms).toBeNull();
+    expect(String(storedGrant?.sealed_group_key)).not.toContain(groupKey);
+    expect(String(storedGrant?.sealed_group_key)).not.toContain(sealSecret);
+    expect(JSON.stringify(storedGrant)).not.toContain(redeemSecret);
+
+    const joinedKeys = generateDeviceKeyMaterial();
+    const redeem = await SELF.fetch("https://pasta.test/v1/pairing/grants/redeem", {
+      method: "POST",
+      body: stableJson({
+        grantId,
+        redeemSecret,
+        newDeviceId: "dev_ci",
+        newDeviceName: "ci",
+        verifyPublicKey: joinedKeys.signing.publicKey,
+        wrapPublicKey: joinedKeys.wrapping.publicKey
+      })
+    });
+    await expectStatus(redeem, 200);
+    const redeemed = await redeem.json() as { accountId: string; sealedGroupKey: string; deviceExpiresAt: number | null };
+    expect(redeemed.sealedGroupKey).toBe(sealedGroupKey);
+    expect(redeemed.deviceExpiresAt).toBeNull();
+    expect(JSON.stringify(redeemed)).not.toContain(sealSecret);
+    expect(openJoinGrant({ sealedGroupKey: redeemed.sealedGroupKey, accountId: redeemed.accountId, grantId, sealSecret })).toBe(groupKey);
+    const joined: TestDevice = {
+      accountId: existing.accountId,
+      routingId: existing.routingId,
+      deviceId: "dev_ci",
+      verifyPublicKey: joinedKeys.signing.publicKey,
+      wrapPublicKey: joinedKeys.wrapping.publicKey,
+      signingPrivateKey: joinedKeys.signing.privateKey,
+      wrappingPrivateKey: joinedKeys.wrapping.privateKey
+    };
+    await expectStatus(await signedFetch(joined, "GET", "/v1/devices"), 200);
+
+    const replay = await SELF.fetch("https://pasta.test/v1/pairing/grants/redeem", {
+      method: "POST",
+      body: stableJson({
+        grantId,
+        redeemSecret,
+        newDeviceId: "dev_ci_replay",
+        newDeviceName: "ci-replay",
+        verifyPublicKey: generateDeviceKeyMaterial().signing.publicKey,
+        wrapPublicKey: generateDeviceKeyMaterial().wrapping.publicKey
+      })
+    });
+    expect(replay.status).toBe(409);
+  });
+
+  it("allows only one concurrent redemption for a one-use CI join grant", async () => {
+    const existing = await bootstrap();
+    const grant = joinGrantPayload(existing, generateGroupKey());
+    await expectStatus(await signedFetch(existing, "POST", "/v1/pairing/grants", grant.body), 201);
+    const requests = ["dev_race_a", "dev_race_b"].map((deviceId) => {
+      const keys = generateDeviceKeyMaterial();
+      return SELF.fetch("https://pasta.test/v1/pairing/grants/redeem", {
+        method: "POST",
+        body: stableJson({
+          grantId: grant.grantId,
+          redeemSecret: grant.redeemSecret,
+          newDeviceId: `${deviceId}_${randomBase64Url(4)}`,
+          newDeviceName: deviceId,
+          verifyPublicKey: keys.signing.publicKey,
+          wrapPublicKey: keys.wrapping.publicKey
+        })
+      });
+    });
+    const responses = await Promise.all(requests);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    const grantRow = await env.DB.prepare("SELECT use_count FROM pairing_grants WHERE grant_id = ?")
+      .bind(grant.grantId)
+      .first<{ use_count: number }>();
+    expect(grantRow?.use_count).toBe(1);
+  });
+
+  it("revokes unused grants and lazily revokes expired CI devices", async () => {
+    const existing = await bootstrap();
+    const groupKey = generateGroupKey();
+    const revokedGrantId = `grant_${randomBase64Url(8)}`;
+    const revokedRedeemSecret = randomBase64Url(32);
+    const revokedTokenExpiresAt = Date.now() + 10 * 60_000;
+    await expectStatus(await signedFetch(existing, "POST", "/v1/pairing/grants", {
+      grantId: revokedGrantId,
+      redeemSecretHash: hashJoinGrantRedeemSecret(existing.accountId, revokedGrantId, revokedRedeemSecret),
+      sealedGroupKey: sealJoinGrant({
+        groupKey,
+        accountId: existing.accountId,
+        grantId: revokedGrantId,
+        sealSecret: randomBase64Url(32),
+        keyVersion: 1,
+        tokenExpiresAt: revokedTokenExpiresAt,
+        maxUses: 1,
+        deviceTtlMs: null
+      }),
+      keyVersion: 1,
+      tokenExpiresAt: revokedTokenExpiresAt,
+      deviceTtlMs: null,
+      maxUses: 1
+    }), 201);
+    await expectStatus(await signedFetch(existing, "POST", `/v1/pairing/grants/${revokedGrantId}/revoke`, {}), 200);
+    const revokedRedeem = await SELF.fetch("https://pasta.test/v1/pairing/grants/redeem", {
+      method: "POST",
+      body: stableJson({
+        grantId: revokedGrantId,
+        redeemSecret: revokedRedeemSecret,
+        newDeviceId: "dev_revoked_grant",
+        newDeviceName: "revoked",
+        verifyPublicKey: generateDeviceKeyMaterial().signing.publicKey,
+        wrapPublicKey: generateDeviceKeyMaterial().wrapping.publicKey
+      })
+    });
+    expect(revokedRedeem.status).toBe(403);
+    expect(await revokedRedeem.json()).toMatchObject({ error: "grant_revoked" });
+
+    const expiringGrantId = `grant_${randomBase64Url(8)}`;
+    const expiringRedeemSecret = randomBase64Url(32);
+    const expiringSealSecret = randomBase64Url(32);
+    const expiringTokenExpiresAt = Date.now() + 10 * 60_000;
+    const expiringDeviceTtlMs = 24 * 60 * 60 * 1000;
+    await expectStatus(await signedFetch(existing, "POST", "/v1/pairing/grants", {
+      grantId: expiringGrantId,
+      redeemSecretHash: hashJoinGrantRedeemSecret(existing.accountId, expiringGrantId, expiringRedeemSecret),
+      sealedGroupKey: sealJoinGrant({
+        groupKey,
+        accountId: existing.accountId,
+        grantId: expiringGrantId,
+        sealSecret: expiringSealSecret,
+        keyVersion: 1,
+        tokenExpiresAt: expiringTokenExpiresAt,
+        maxUses: 1,
+        deviceTtlMs: expiringDeviceTtlMs
+      }),
+      keyVersion: 1,
+      tokenExpiresAt: expiringTokenExpiresAt,
+      deviceTtlMs: expiringDeviceTtlMs,
+      maxUses: 1
+    }), 201);
+    const expiringKeys = generateDeviceKeyMaterial();
+    const beforeRedeem = Date.now();
+    const expiringRedeem = await SELF.fetch("https://pasta.test/v1/pairing/grants/redeem", {
+      method: "POST",
+      body: stableJson({
+        grantId: expiringGrantId,
+        redeemSecret: expiringRedeemSecret,
+        newDeviceId: "dev_expiring",
+        newDeviceName: "expiring",
+        verifyPublicKey: expiringKeys.signing.publicKey,
+        wrapPublicKey: expiringKeys.wrapping.publicKey
+      })
+    });
+    await expectStatus(expiringRedeem, 200);
+    const expiringBody = await expiringRedeem.json() as { deviceExpiresAt: number };
+    expect(expiringBody.deviceExpiresAt).toBeGreaterThanOrEqual(beforeRedeem + expiringDeviceTtlMs);
+    expect(expiringBody.deviceExpiresAt).toBeLessThanOrEqual(Date.now() + expiringDeviceTtlMs);
+
+    const expiringDevice: TestDevice = {
+      accountId: existing.accountId,
+      routingId: existing.routingId,
+      deviceId: "dev_expiring",
+      verifyPublicKey: expiringKeys.signing.publicKey,
+      wrapPublicKey: expiringKeys.wrapping.publicKey,
+      signingPrivateKey: expiringKeys.signing.privateKey,
+      wrappingPrivateKey: expiringKeys.wrapping.privateKey
+    };
+    await expectStatus(await signedFetch(expiringDevice, "GET", "/v1/devices"), 200);
+    await env.DB.prepare("UPDATE devices SET device_expires_at = ? WHERE account_id = ? AND device_id = ?")
+      .bind(Date.now() - 1, existing.accountId, "dev_expiring")
+      .run();
+    expect((await signedFetch(expiringDevice, "GET", "/v1/devices", undefined, { signature: "bad" })).status).toBe(401);
+    const rowAfterBadSignature = await env.DB.prepare("SELECT status, revoked_at FROM devices WHERE account_id = ? AND device_id = ?")
+      .bind(existing.accountId, "dev_expiring")
+      .first<{ status: string; revoked_at: number | null }>();
+    expect(rowAfterBadSignature).toEqual({ status: "active", revoked_at: null });
+    const expired = await signedFetch(expiringDevice, "GET", "/v1/devices");
+    expect(expired.status).toBe(403);
+    expect(await expired.json()).toMatchObject({ error: "expired_device" });
+    const row = await env.DB.prepare("SELECT status, revoked_at FROM devices WHERE account_id = ? AND device_id = ?")
+      .bind(existing.accountId, "dev_expiring")
+      .first<{ status: string; revoked_at: number | null }>();
+    expect(row).toMatchObject({ status: "revoked" });
+    expect(row?.revoked_at).toBeGreaterThan(0);
+  });
+
+  it("rejects duplicate CI grant device ids, expired tokens, and server-side bound violations", async () => {
+    const existing = await bootstrap();
+    const duplicateGrant = joinGrantPayload(existing, generateGroupKey(), { maxUses: 2 });
+    await expectStatus(await signedFetch(existing, "POST", "/v1/pairing/grants", duplicateGrant.body), 201);
+    const duplicateKeys = generateDeviceKeyMaterial();
+    const duplicate = await SELF.fetch("https://pasta.test/v1/pairing/grants/redeem", {
+      method: "POST",
+      body: stableJson({
+        grantId: duplicateGrant.grantId,
+        redeemSecret: duplicateGrant.redeemSecret,
+        newDeviceId: existing.deviceId,
+        newDeviceName: "should-not-rekey",
+        verifyPublicKey: duplicateKeys.signing.publicKey,
+        wrapPublicKey: duplicateKeys.wrapping.publicKey
+      })
+    });
+    expect(duplicate.status).toBe(409);
+    expect(await duplicate.json()).toMatchObject({ error: "device_exists" });
+    const unchanged = await env.DB.prepare("SELECT verify_public_key, status FROM devices WHERE account_id = ? AND device_id = ?")
+      .bind(existing.accountId, existing.deviceId)
+      .first<{ verify_public_key: string; status: string }>();
+    expect(unchanged).toEqual({ verify_public_key: existing.verifyPublicKey, status: "active" });
+    const afterDuplicate = await env.DB.prepare("SELECT use_count FROM pairing_grants WHERE grant_id = ?")
+      .bind(duplicateGrant.grantId)
+      .first<{ use_count: number }>();
+    expect(afterDuplicate?.use_count).toBe(0);
+
+    const okKeys = generateDeviceKeyMaterial();
+    await expectStatus(await SELF.fetch("https://pasta.test/v1/pairing/grants/redeem", {
+      method: "POST",
+      body: stableJson({
+        grantId: duplicateGrant.grantId,
+        redeemSecret: duplicateGrant.redeemSecret,
+        newDeviceId: "dev_after_duplicate",
+        newDeviceName: "ok",
+        verifyPublicKey: okKeys.signing.publicKey,
+        wrapPublicKey: okKeys.wrapping.publicKey
+      })
+    }), 200);
+
+    const expiredGrant = joinGrantPayload(existing, generateGroupKey());
+    await expectStatus(await signedFetch(existing, "POST", "/v1/pairing/grants", expiredGrant.body), 201);
+    await env.DB.prepare("UPDATE pairing_grants SET token_expires_at = ? WHERE grant_id = ?")
+      .bind(Date.now() - 1, expiredGrant.grantId)
+      .run();
+    const expiredRedeem = await SELF.fetch("https://pasta.test/v1/pairing/grants/redeem", {
+      method: "POST",
+      body: stableJson({
+        grantId: expiredGrant.grantId,
+        redeemSecret: expiredGrant.redeemSecret,
+        newDeviceId: "dev_expired_grant",
+        newDeviceName: "expired",
+        verifyPublicKey: generateDeviceKeyMaterial().signing.publicKey,
+        wrapPublicKey: generateDeviceKeyMaterial().wrapping.publicKey
+      })
+    });
+    expect(expiredRedeem.status).toBe(410);
+    expect(await expiredRedeem.json()).toMatchObject({ error: "expired_grant" });
+
+    for (const [patch, error] of [
+      [{ tokenExpiresAt: Date.now() + 25 * 60 * 60 * 1000 }, "token_ttl_too_long"],
+      [{ deviceTtlMs: 31 * 24 * 60 * 60 * 1000 }, "bad_device_ttl"],
+      [{ maxUses: 11 }, "bad_max_uses"]
+    ] as Array<[Record<string, number>, string]>) {
+      const bad = joinGrantPayload(existing, generateGroupKey(), patch);
+      const response = await signedFetch(existing, "POST", "/v1/pairing/grants", bad.body);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error });
+    }
+  });
+
   it("rate-limits excessive open pairing sessions per account", async () => {
     const existing = await bootstrap();
     for (let index = 0; index < MAX_OPEN_PAIRING_SESSIONS; index += 1) {
@@ -344,6 +632,62 @@ async function bootstrap(): Promise<TestDevice> {
     ...body,
     signingPrivateKey: keys.signing.privateKey,
     wrappingPrivateKey: keys.wrapping.privateKey
+  };
+}
+
+function joinGrantPayload(
+  device: TestDevice,
+  groupKey: string,
+  overrides: Partial<{
+    grantId: string;
+    redeemSecret: string;
+    sealSecret: string;
+    tokenExpiresAt: number;
+    deviceTtlMs: number | null;
+    maxUses: number;
+  }> = {}
+): {
+  grantId: string;
+  redeemSecret: string;
+  sealSecret: string;
+  body: {
+    grantId: string;
+    redeemSecretHash: string;
+    sealedGroupKey: string;
+    keyVersion: number;
+    tokenExpiresAt: number;
+    deviceTtlMs: number | null;
+    maxUses: number;
+  };
+} {
+  const grantId = overrides.grantId ?? `grant_${randomBase64Url(8)}`;
+  const redeemSecret = overrides.redeemSecret ?? randomBase64Url(32);
+  const sealSecret = overrides.sealSecret ?? randomBase64Url(32);
+  const tokenExpiresAt = overrides.tokenExpiresAt ?? Date.now() + 10 * 60_000;
+  const deviceTtlMs = overrides.deviceTtlMs ?? null;
+  const maxUses = overrides.maxUses ?? 1;
+  return {
+    grantId,
+    redeemSecret,
+    sealSecret,
+    body: {
+      grantId,
+      redeemSecretHash: hashJoinGrantRedeemSecret(device.accountId, grantId, redeemSecret),
+      sealedGroupKey: sealJoinGrant({
+        groupKey,
+        accountId: device.accountId,
+        grantId,
+        sealSecret,
+        keyVersion: 1,
+        tokenExpiresAt,
+        maxUses,
+        deviceTtlMs
+      }),
+      keyVersion: 1,
+      tokenExpiresAt,
+      deviceTtlMs,
+      maxUses
+    }
   };
 }
 

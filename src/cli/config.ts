@@ -24,6 +24,7 @@ export interface PastaConfig {
   verifyPublicKey: string;
   wrapPublicKey: string;
   keyVersion: number;
+  deviceExpiresAt?: number | null;
   lastRemotePasteHash?: string;
   pendingPairing?: PendingPairing;
 }
@@ -83,4 +84,3 @@ export function newDeviceId(): string {
 export function defaultDeviceName(): string {
   return `${process.platform}-${process.env.USER ?? "desktop"}`;
 }
-

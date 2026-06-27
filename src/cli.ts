@@ -7,14 +7,23 @@ import {
   decryptTextClip,
   encryptBytesClip,
   encryptTextClip,
+  createJoinGrantToken,
   generateDeviceKeyMaterial,
   generateGroupKey,
+  hashJoinGrantRedeemSecret,
   hashShortCode,
   makeShortCode,
+  openJoinGrant,
+  parseJoinGrantToken,
+  sealJoinGrant,
   unwrapGroupKey,
   wrapGroupKey
 } from "./shared/crypto";
 import {
+  JOIN_GRANT_DEVICE_TTL_MAX_MS,
+  JOIN_GRANT_MAX_USES,
+  JOIN_GRANT_TOKEN_TTL_MAX_MS,
+  JOIN_GRANT_TOKEN_TTL_MS,
   LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES,
   LARGE_PAYLOAD_MAX_BYTES,
   PASTA_VERSION,
@@ -23,6 +32,8 @@ import {
   type ClipMetadata,
   type EncryptedClip,
   type PairingConsumeRequest,
+  type PairingGrantCreateRequest,
+  type PairingGrantRedeemResponse,
   type PairingOpenRequest,
   sha256Base64Url,
   type StoredClip
@@ -683,7 +694,130 @@ async function pairCommand(
     io.stdout(`paired ${response.deviceId}\n`);
     return ExitCode.ok;
   }
-  io.stdout("pair commands: ticket, request, consume\n");
+  if (subcommand === "grant") {
+    const action = argv[1] ?? "";
+    if (action === "create") {
+      const config = await readConfig(paths.configPath);
+      const tokenTtlOption = option(argv, "--token-ttl");
+      const deviceTtlOption = option(argv, "--device-ttl");
+      const tokenTtlMs = tokenTtlOption ? parseDurationMs(tokenTtlOption, "--token-ttl") : JOIN_GRANT_TOKEN_TTL_MS;
+      const deviceTtlMs = deviceTtlOption ? parseDurationMs(deviceTtlOption, "--device-ttl") : null;
+      const maxUses = parseUses(option(argv, "--uses") ?? "1");
+      validateGrantOptions(tokenTtlMs, deviceTtlMs, maxUses);
+      const grantId = `grant_${randomBase64Url(16)}`;
+      const redeemSecret = randomBase64Url(32);
+      const sealSecret = randomBase64Url(32);
+      const tokenExpiresAt = Date.now() + tokenTtlMs;
+      const sealedGroupKey = sealJoinGrant({
+        groupKey: await requireSecret(secrets, SecretName.groupKey),
+        accountId: config.accountId,
+        grantId,
+        sealSecret,
+        keyVersion: config.keyVersion,
+        tokenExpiresAt,
+        maxUses,
+        deviceTtlMs
+      });
+      const joinToken = createJoinGrantToken({ endpoint: config.endpoint, accountId: config.accountId, grantId, redeemSecret, sealSecret });
+      const label = option(argv, "--label");
+      const bodyBase = {
+        grantId,
+        redeemSecretHash: hashJoinGrantRedeemSecret(config.accountId, grantId, redeemSecret),
+        sealedGroupKey,
+        keyVersion: config.keyVersion,
+        tokenExpiresAt,
+        deviceTtlMs,
+        maxUses
+      };
+      const body: PairingGrantCreateRequest = label ? { ...bodyBase, label } : bodyBase;
+      const response = await clientFor(config, secrets, deps).request<{
+        grantId: string;
+        tokenExpiresAt: number;
+        deviceTtlMs: number | null;
+        maxUses: number;
+        createdAt: number;
+      }>("POST", "/v1/pairing/grants", body);
+      if (argv.includes("--json")) {
+        io.stdout(JSON.stringify({ ...response, joinToken }, null, 2) + "\n");
+      } else {
+        io.stdout(`grant ${response.grantId}\n`);
+        io.stdout(`token expires ${new Date(response.tokenExpiresAt).toISOString()}\n`);
+        if (response.deviceTtlMs !== null) io.stdout(`device ttl ${response.deviceTtlMs}ms\n`);
+        io.stdout(`join token ${joinToken}\n`);
+      }
+      return ExitCode.ok;
+    }
+    if (action === "revoke") {
+      const grantId = argv[2];
+      if (!grantId) return ExitCode.usage;
+      const config = await readConfig(paths.configPath);
+      await clientFor(config, secrets, deps).request("POST", `/v1/pairing/grants/${encodeURIComponent(grantId)}/revoke`, {});
+      io.stdout(`revoked ${grantId}\n`);
+      return ExitCode.ok;
+    }
+  }
+  if (subcommand === "join") {
+    const token = option(argv, "--token") ?? Bun.env.PASTA_JOIN_TOKEN;
+    if (!token) {
+      io.stderr("pair join needs --token or PASTA_JOIN_TOKEN\n");
+      return ExitCode.usage;
+    }
+    const parsed = parseJoinGrantToken(token);
+    const deviceName = option(argv, "--device-name") ?? defaultDeviceName();
+    const deviceId = newDeviceId();
+    const keyMaterial = generateDeviceKeyMaterial();
+    const joinConfig: PastaConfig = {
+      endpoint: parsed.endpoint,
+      accountId: parsed.accountId,
+      routingId: "",
+      deviceId,
+      deviceName,
+      verifyPublicKey: keyMaterial.signing.publicKey,
+      wrapPublicKey: keyMaterial.wrapping.publicKey,
+      keyVersion: 1
+    };
+    const response = await clientFor(joinConfig, secrets, deps).request<PairingGrantRedeemResponse>(
+      "POST",
+      "/v1/pairing/grants/redeem",
+      {
+        grantId: parsed.grantId,
+        redeemSecret: parsed.redeemSecret,
+        newDeviceId: deviceId,
+        newDeviceName: deviceName,
+        verifyPublicKey: keyMaterial.signing.publicKey,
+        wrapPublicKey: keyMaterial.wrapping.publicKey
+      },
+      false
+    );
+    if (response.accountId !== parsed.accountId || response.deviceId !== deviceId) {
+      throw new Error("join response mismatch");
+    }
+    const groupKey = openJoinGrant({
+      sealedGroupKey: response.sealedGroupKey,
+      accountId: response.accountId,
+      grantId: parsed.grantId,
+      sealSecret: parsed.sealSecret
+    });
+    await secrets.set(SecretName.groupKey, groupKey);
+    await secrets.set(SecretName.signingPrivateKey, keyMaterial.signing.privateKey);
+    await secrets.set(SecretName.wrappingPrivateKey, keyMaterial.wrapping.privateKey);
+    const next: PastaConfig = {
+      endpoint: parsed.endpoint,
+      accountId: response.accountId,
+      routingId: response.routingId,
+      deviceId: response.deviceId,
+      deviceName,
+      verifyPublicKey: keyMaterial.signing.publicKey,
+      wrapPublicKey: keyMaterial.wrapping.publicKey,
+      keyVersion: response.keyVersion
+    };
+    if (response.deviceExpiresAt !== null) next.deviceExpiresAt = response.deviceExpiresAt;
+    await writeConfig(next, paths.configPath);
+    io.stdout(`joined ${response.deviceId}\n`);
+    if (response.deviceExpiresAt !== null) io.stdout(`expires ${new Date(response.deviceExpiresAt).toISOString()}\n`);
+    return ExitCode.ok;
+  }
+  io.stdout("pair commands: ticket, request, consume, grant create, grant revoke, join\n");
   return ExitCode.usage;
 }
 
@@ -747,7 +881,24 @@ function option(argv: string[], name: string): string | undefined {
 }
 
 function firstPositional(argv: string[]): string | undefined {
-  const valueOptions = new Set(["--endpoint", "--device-name", "--ticket", "--account-id", "--routing-id", "--seq", "--out", "--mime", "--path", "--command", "--interval-ms"]);
+  const valueOptions = new Set([
+    "--endpoint",
+    "--device-name",
+    "--ticket",
+    "--account-id",
+    "--routing-id",
+    "--seq",
+    "--out",
+    "--mime",
+    "--path",
+    "--command",
+    "--interval-ms",
+    "--token",
+    "--token-ttl",
+    "--device-ttl",
+    "--uses",
+    "--label"
+  ]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (!arg) continue;
@@ -759,6 +910,48 @@ function firstPositional(argv: string[]): string | undefined {
     if (!arg.startsWith("-")) return arg;
   }
   return undefined;
+}
+
+function parseDurationMs(value: string | undefined, label: string): number {
+  if (!value) throw new Error(`${label} requires a duration`);
+  const match = value.match(/^([1-9][0-9]*)([smhd])$/u);
+  if (!match?.[1] || !match[2]) {
+    throw new Error(`${label} must use s, m, h, or d`);
+  }
+  const count = Number.parseInt(match[1], 10);
+  const unitMs: Record<string, number> = {
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000
+  };
+  const factor = unitMs[match[2]];
+  if (factor === undefined) throw new Error(`${label} must use s, m, h, or d`);
+  const ms = count * factor;
+  if (!Number.isSafeInteger(ms) || ms <= 0) {
+    throw new Error(`${label} is too large`);
+  }
+  return ms;
+}
+
+function parseUses(value: string): number {
+  const uses = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(uses) || String(uses) !== value || uses < 1) {
+    throw new Error("--uses must be a positive integer");
+  }
+  return uses;
+}
+
+function validateGrantOptions(tokenTtlMs: number, deviceTtlMs: number | null, maxUses: number): void {
+  if (tokenTtlMs > JOIN_GRANT_TOKEN_TTL_MAX_MS) {
+    throw new Error("--token-ttl must be no greater than 24h");
+  }
+  if (deviceTtlMs !== null && deviceTtlMs > JOIN_GRANT_DEVICE_TTL_MAX_MS) {
+    throw new Error("--device-ttl must be no greater than 30d");
+  }
+  if (maxUses > JOIN_GRANT_MAX_USES) {
+    throw new Error(`--uses must be no greater than ${JOIN_GRANT_MAX_USES}`);
+  }
 }
 
 function parsePairTicket(ticket: string): { endpoint: string; accountId: string; routingId: string } {
@@ -945,13 +1138,22 @@ Examples:
   pasta daemon --interval-ms 2000
 `,
     pair: `usage: pasta pair ticket | pasta pair request --ticket <payload> | pasta pair consume
+       pasta pair grant create [--token-ttl <duration>] [--device-ttl <duration>] [--uses <n>] [--label <text>] [--json]
+       pasta pair grant revoke <grantId>
+       pasta pair join --token <joinToken> [--device-name <name>]
 
-Creates, requests, or consumes a trusted-device pairing flow.
+Creates, requests, consumes, or grants a trusted-device pairing flow.
+Grant tokens default to a 10 minute redemption TTL, no device auto-revocation, and one use.
 
 Examples:
   pasta pair ticket
   pasta pair request --ticket 'pasta://pair?...' --device-name "$(hostname)"
   pasta pair consume
+  pasta pair grant create --token-ttl 10m --json
+  pasta pair grant create --device-ttl 24h --label modal-smoke --json
+  pasta pair join --token "$PASTA_JOIN_TOKEN" --device-name modal-sandbox
+  PASTA_JOIN_TOKEN="$token" pasta pair join --device-name modal-sandbox
+  pasta pair grant revoke grant_example
 `,
     devices: `usage: pasta devices list | pasta devices approve <code> | pasta devices revoke <device>
 
@@ -1009,6 +1211,7 @@ function helpText(): string {
     "Commands:",
     "  bootstrap --endpoint <url> [--device-name <name>]",
     "  pair ticket | pair request --ticket <payload> | pair consume",
+    "  pair grant create [--json] | pair grant revoke <grantId> | pair join --token <token>",
     "  devices list | devices approve <code> | devices revoke <device>",
     "  copy [path] [--image|--file] [--mime <type>]",
     "  paste [--clipboard] [--seq <n>] [--out <path>]",

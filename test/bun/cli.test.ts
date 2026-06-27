@@ -7,8 +7,8 @@ import { FetchApiClient, MockApiClient } from "../../src/cli/client";
 import { readConfig, type PastaConfig, type Paths, writeConfig } from "../../src/cli/config";
 import { authFileForHome, defaultSecretStoreForHome, FileSecretStore, MemorySecretStore, ResilientSecretStore, SecretName, type SecretStore } from "../../src/cli/secret-store";
 import { runCli } from "../../src/cli";
-import { encryptTextClip, generateDeviceKeyMaterial, generateGroupKey } from "../../src/shared/crypto";
-import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, SIGNATURE_HEADERS, type StoredClip } from "../../src/shared/protocol";
+import { encryptTextClip, generateDeviceKeyMaterial, generateGroupKey, parseJoinGrantToken } from "../../src/shared/crypto";
+import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, SIGNATURE_HEADERS, type PairingGrantCreateRequest, type StoredClip } from "../../src/shared/protocol";
 import { shellSnippet } from "../../src/cli/shell";
 
 describe("CLI", () => {
@@ -134,6 +134,109 @@ describe("CLI", () => {
       server.stop(true);
       await fileStore.delete(SecretName.signingPrivateKey);
     }
+  });
+
+  it("creates CI join grants and joins a clean noninteractive profile", async () => {
+    const trustedPaths = await tempPaths();
+    const trustedSecrets = new MemorySecretStore();
+    const groupKey = generateGroupKey();
+    await trustedSecrets.set(SecretName.groupKey, groupKey);
+    const trustedConfig = sampleConfig();
+    await writeConfig(trustedConfig, trustedPaths.configPath);
+    const createBodies: PairingGrantCreateRequest[] = [];
+    const createClient = new MockApiClient(({ method, path, body, signed }) => {
+      expect(method).toBe("POST");
+      expect(path).toBe("/v1/pairing/grants");
+      expect(signed).toBe(true);
+      const createBody = body as PairingGrantCreateRequest;
+      createBodies.push(createBody);
+      return {
+        grantId: createBody.grantId,
+        tokenExpiresAt: createBody.tokenExpiresAt,
+        deviceTtlMs: createBody.deviceTtlMs,
+        maxUses: createBody.maxUses,
+        createdAt: 1782475200000
+      };
+    });
+    const output: string[] = [];
+    expect(await runCli(["pair", "grant", "create", "--json"], {
+      io: capture(output),
+      paths: trustedPaths,
+      secrets: trustedSecrets,
+      clientFactory: () => createClient
+    })).toBe(0);
+    const defaultCreateBody = createBodies[0]!;
+    expect(defaultCreateBody.deviceTtlMs).toBeNull();
+    expect(defaultCreateBody.maxUses).toBe(1);
+    expect(defaultCreateBody.label).toBeUndefined();
+    expect(defaultCreateBody.tokenExpiresAt - Date.now()).toBeGreaterThan(9 * 60 * 1000);
+    expect(JSON.stringify(defaultCreateBody)).not.toContain(groupKey);
+    const grantOutput = JSON.parse(output.join("")) as { joinToken: string; grantId: string };
+    const firstSealedGroupKey = defaultCreateBody.sealedGroupKey;
+    const firstTokenExpiresAt = defaultCreateBody.tokenExpiresAt;
+    const firstDeviceTtlMs = defaultCreateBody.deviceTtlMs;
+    const firstMaxUses = defaultCreateBody.maxUses;
+    const parsed = parseJoinGrantToken(grantOutput.joinToken);
+    expect(grantOutput.joinToken.startsWith("pasta_join_v1.")).toBe(true);
+    expect(parsed.grantId).toBe(grantOutput.grantId);
+    expect(JSON.stringify(defaultCreateBody)).not.toContain(parsed.redeemSecret);
+    expect(JSON.stringify(defaultCreateBody)).not.toContain(parsed.sealSecret);
+    expect(await Bun.file(trustedPaths.configPath).text()).not.toContain(grantOutput.joinToken);
+
+    output.length = 0;
+    expect(await runCli(["pair", "grant", "create", "--token-ttl", "1h", "--device-ttl", "24h", "--uses", "2", "--label", "modal-smoke", "--json"], {
+      io: capture(output),
+      paths: trustedPaths,
+      secrets: trustedSecrets,
+      clientFactory: () => createClient
+    })).toBe(0);
+    const leasedCreateBody = createBodies[1]!;
+    expect(leasedCreateBody.tokenExpiresAt - Date.now()).toBeGreaterThan(59 * 60 * 1000);
+    expect(leasedCreateBody.deviceTtlMs).toBe(24 * 60 * 60 * 1000);
+    expect(leasedCreateBody.maxUses).toBe(2);
+    expect(leasedCreateBody.label).toBe("modal-smoke");
+
+    const joinPaths = await tempPaths();
+    const joinSecrets = new MemorySecretStore();
+    const joinClient = new MockApiClient(({ method, path, body, signed }) => {
+      expect(method).toBe("POST");
+      expect(path).toBe("/v1/pairing/grants/redeem");
+      expect(signed).toBe(false);
+      expect((body as { grantId: string; redeemSecret: string }).grantId).toBe(parsed.grantId);
+      expect((body as { grantId: string; redeemSecret: string }).redeemSecret).toBe(parsed.redeemSecret);
+      expect(JSON.stringify(body)).not.toContain(parsed.sealSecret);
+      return {
+        accountId: trustedConfig.accountId,
+        routingId: trustedConfig.routingId,
+        deviceId: (body as { newDeviceId: string }).newDeviceId,
+        sealedGroupKey: firstSealedGroupKey,
+        keyVersion: trustedConfig.keyVersion,
+        tokenExpiresAt: firstTokenExpiresAt,
+        deviceTtlMs: firstDeviceTtlMs,
+        deviceExpiresAt: null,
+        maxUses: firstMaxUses,
+        redeemedAt: 1782475200000
+      };
+    });
+    output.length = 0;
+    expect(await runCli(["pair", "join", "--token", grantOutput.joinToken, "--device-name", "ci"], {
+      io: capture(output),
+      paths: joinPaths,
+      secrets: joinSecrets,
+      clientFactory: () => joinClient
+    })).toBe(0);
+    const joined = await readConfig(joinPaths.configPath);
+    expect(joined.accountId).toBe(trustedConfig.accountId);
+    expect(joined.routingId).toBe(trustedConfig.routingId);
+    expect(joined.deviceName).toBe("ci");
+    expect(joined.pendingPairing).toBeUndefined();
+    expect(joined.deviceExpiresAt).toBeUndefined();
+    expect(await joinSecrets.get(SecretName.groupKey)).toBe(groupKey);
+    expect(await joinSecrets.get(SecretName.signingPrivateKey)).toBeTruthy();
+    expect(await Bun.file(joinPaths.configPath).text()).not.toContain(grantOutput.joinToken);
+    expect(await Bun.file(joinPaths.configPath).text()).not.toContain(parsed.redeemSecret);
+    expect(await Bun.file(joinPaths.configPath).text()).not.toContain(parsed.sealSecret);
+    expect(output.join("")).not.toContain(grantOutput.joinToken);
   });
 
   it("copies, pastes, lists history, and avoids daemon publish loops", async () => {

@@ -81,6 +81,8 @@ export PASTA_HOME="${RUNNER_TEMP:-/tmp}/pasta"
 pasta pair join --token "$PASTA_JOIN_TOKEN" --device-name "modal-${MODAL_TASK_ID:-sandbox}"
 ```
 
+If `PASTA_JOIN_TOKEN` is set in the environment, `pair join --device-name ...` can omit the `--token` flag.
+
 `pair join` generates fresh device keys, redeems the token, decrypts the sealed group-key grant locally, writes `$PASTA_HOME/config.json`, and writes `$PASTA_HOME/auth.json` with owner-only permissions.
 
 After that, the sandbox uses normal commands:
@@ -175,7 +177,7 @@ redeemSecretHash = SHA256("pasta-join-redeem-v1\0" + accountId + "\0" + grantId 
 Seal key:
 
 ```text
-sealKey = HKDF-SHA256(sealSecret, salt = accountId || grantId, info = "pasta-join-seal-v1")
+sealKey = HKDF-SHA256(sealSecret, salt = "pasta-join-seal-salt-v1\0" + accountId + "\0" + grantId, info = "pasta-join-seal-v1")
 ```
 
 The sealed grant uses XChaCha20-Poly1305 with AAD:
@@ -191,7 +193,7 @@ The sealed grant uses XChaCha20-Poly1305 with AAD:
 }
 ```
 
-Plaintext is the base64url group key bytes. Cloudflare stores `sealedGroupKey` as opaque JSON with `v`, `alg`, `nonce`, and `ciphertext`.
+Plaintext is the raw group key bytes. Cloudflare stores `sealedGroupKey` as opaque JSON with `v`, `alg`, `aad`, `nonce`, and `ciphertext`. The `aad` metadata is not secret; it is authenticated during decryption so the joining CLI can reconstruct the seal context without trusting separate Worker fields.
 
 ## D1 schema
 
@@ -289,7 +291,10 @@ Response:
   "deviceId": "dev_...",
   "sealedGroupKey": "{\"v\":1,...}",
   "keyVersion": 1,
+  "tokenExpiresAt": 1782475200000,
+  "deviceTtlMs": null,
   "deviceExpiresAt": null,
+  "maxUses": 1,
   "redeemedAt": 1782475200000
 }
 ```

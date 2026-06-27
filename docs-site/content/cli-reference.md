@@ -37,7 +37,7 @@ pasta --version
 | `devices revoke <deviceId>` | Revoke a device |
 
 Pairing ticket contains **endpoint, account, routing** — not the group key.
-Join grants default to a 10-minute token TTL, no device TTL, and one use. Use `--device-ttl 24h` when a temporary sandbox device should auto-revoke.
+Join grants default to a 10-minute token TTL, no device TTL, and one use. Use `--device-ttl 24h` when a temporary sandbox device should auto-revoke. `pair join` reads `--token` or `PASTA_JOIN_TOKEN`.
 
 ## Text clipboard
 

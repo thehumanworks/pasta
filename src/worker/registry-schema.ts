@@ -16,12 +16,16 @@ CREATE TABLE IF NOT EXISTS devices (
   created_at INTEGER NOT NULL,
   last_seen_at INTEGER,
   revoked_at INTEGER,
+  device_expires_at INTEGER,
   PRIMARY KEY (account_id, device_id),
   FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_devices_account_status
   ON devices(account_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_devices_account_expiry
+  ON devices(account_id, device_expires_at);
 
 CREATE TABLE IF NOT EXISTS pairing_sessions (
   session_id TEXT PRIMARY KEY,
@@ -45,6 +49,27 @@ CREATE INDEX IF NOT EXISTS idx_pairing_account_expiry
 CREATE INDEX IF NOT EXISTS idx_pairing_short_code_hash
   ON pairing_sessions(short_code_hash);
 
+CREATE TABLE IF NOT EXISTS pairing_grants (
+  grant_id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  label TEXT,
+  redeem_secret_hash TEXT NOT NULL UNIQUE,
+  sealed_group_key TEXT NOT NULL,
+  key_version INTEGER NOT NULL,
+  token_expires_at INTEGER NOT NULL,
+  device_ttl_ms INTEGER,
+  max_uses INTEGER NOT NULL,
+  use_count INTEGER NOT NULL DEFAULT 0,
+  created_by_device_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER,
+  last_redeemed_at INTEGER,
+  FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_pairing_grants_account_expiry
+  ON pairing_grants(account_id, token_expires_at);
+
 CREATE TABLE IF NOT EXISTS request_nonces (
   account_id TEXT NOT NULL,
   device_id TEXT NOT NULL,
@@ -56,4 +81,3 @@ CREATE TABLE IF NOT EXISTS request_nonces (
 CREATE INDEX IF NOT EXISTS idx_request_nonces_expiry
   ON request_nonces(expires_at);
 `;
-

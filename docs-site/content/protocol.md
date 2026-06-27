@@ -172,7 +172,7 @@ interface PairingGrantRedeemRequest extends DevicePublicKeys {
 }
 ```
 
-`PairingGrantRedeemResponse` includes `accountId`, `routingId`, `deviceId`, `sealedGroupKey`, `keyVersion`, nullable `deviceExpiresAt`, and `redeemedAt`.
+`PairingGrantRedeemResponse` includes `accountId`, `routingId`, `deviceId`, `sealedGroupKey`, `keyVersion`, `tokenExpiresAt`, nullable `deviceTtlMs`, nullable `deviceExpiresAt`, `maxUses`, and `redeemedAt`.
 
 Worker redemption must atomically check expiry/use count/hash and insert the device with `device_expires_at = NULL` when `device_ttl_ms` is null, otherwise `now + device_ttl_ms`.
 

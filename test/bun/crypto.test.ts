@@ -1,11 +1,16 @@
 import { describe, expect, it } from "bun:test";
 import {
+  createJoinGrantToken,
   decryptBytesClip,
   decryptTextClip,
   encryptBytesClip,
   encryptTextClip,
   generateSigningKeyPair,
   generateWrappingKeyPair,
+  hashJoinGrantRedeemSecret,
+  openJoinGrant,
+  parseJoinGrantToken,
+  sealJoinGrant,
   signCanonicalRequest,
   unwrapGroupKey,
   verifyCanonicalRequest,
@@ -87,5 +92,54 @@ describe("protocol crypto", () => {
     });
     expect(wrapped).not.toContain(groupKey);
     expect(unwrapGroupKey({ wrappedGroupKey: wrapped, recipientPrivateKey: recipient.privateKey, recipientPublicKey: recipient.publicKey })).toBe(groupKey);
+  });
+
+  it("creates, seals, opens, and rejects tampered CI join grants", () => {
+    const groupKey = toBase64Url(new Uint8Array(32).fill(4));
+    const redeemSecret = toBase64Url(new Uint8Array(32).fill(5));
+    const sealSecret = toBase64Url(new Uint8Array(32).fill(6));
+    const token = createJoinGrantToken({
+      endpoint: "https://relay.example",
+      accountId: "acct_ci",
+      grantId: "grant_ci",
+      redeemSecret,
+      sealSecret
+    });
+    expect(parseJoinGrantToken(token)).toEqual({
+      endpoint: "https://relay.example",
+      accountId: "acct_ci",
+      grantId: "grant_ci",
+      redeemSecret,
+      sealSecret
+    });
+    expect(hashJoinGrantRedeemSecret("acct_ci", "grant_ci", redeemSecret)).toBe("7LijF_pz-QgUdWq3B_rnYFsbrO29ksbRnjsoxiU3MoI");
+
+    const sealed = sealJoinGrant({
+      groupKey,
+      accountId: "acct_ci",
+      grantId: "grant_ci",
+      sealSecret,
+      keyVersion: 1,
+      tokenExpiresAt: 1782475200000,
+      maxUses: 1,
+      deviceTtlMs: null,
+      nonce: toBase64Url(new Uint8Array(24).fill(7))
+    });
+    expect(sealed).not.toContain(groupKey);
+    expect(sealed).not.toContain(sealSecret);
+    expect(openJoinGrant({ sealedGroupKey: sealed, accountId: "acct_ci", grantId: "grant_ci", sealSecret })).toBe(groupKey);
+
+    const wrongSecret = toBase64Url(new Uint8Array(32).fill(8));
+    expect(() => openJoinGrant({ sealedGroupKey: sealed, accountId: "acct_ci", grantId: "grant_ci", sealSecret: wrongSecret })).toThrow();
+    expect(() => openJoinGrant({ sealedGroupKey: sealed, accountId: "acct_ci", grantId: "grant_other", sealSecret })).toThrow("AAD");
+
+    const tampered = JSON.parse(sealed) as { aad: { maxUses: number } };
+    tampered.aad.maxUses = 2;
+    expect(() => openJoinGrant({
+      sealedGroupKey: JSON.stringify(tampered),
+      accountId: "acct_ci",
+      grantId: "grant_ci",
+      sealSecret
+    })).toThrow();
   });
 });

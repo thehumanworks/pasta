@@ -32,6 +32,23 @@ export interface DeviceKeyMaterial {
   wrapping: KeyPair;
 }
 
+export interface JoinGrantToken {
+  endpoint: string;
+  accountId: string;
+  grantId: string;
+  redeemSecret: string;
+  sealSecret: string;
+}
+
+export interface JoinGrantSealAad {
+  accountId: string;
+  grantId: string;
+  keyVersion: number;
+  tokenExpiresAt: number;
+  maxUses: number;
+  deviceTtlMs: number | null;
+}
+
 export interface ClipEncryptionInput {
   accountId: string;
   routingId: string;
@@ -227,6 +244,80 @@ export function hashShortCode(code: string, accountId: string): string {
   return toBase64Url(sha256(utf8ToBytes(`pasta-short-code-v1\0${accountId}\0${code.trim().toUpperCase()}`)));
 }
 
+export function createJoinGrantToken(input: JoinGrantToken): string {
+  return [
+    "pasta_join_v1",
+    toBase64Url(utf8ToBytes(input.endpoint)),
+    input.accountId,
+    input.grantId,
+    input.redeemSecret,
+    input.sealSecret
+  ].join(".");
+}
+
+export function parseJoinGrantToken(token: string): JoinGrantToken {
+  const [version, endpointText, accountId, grantId, redeemSecret, sealSecret, ...extra] = token.split(".");
+  if (version !== "pasta_join_v1" || !endpointText || !accountId || !grantId || !redeemSecret || !sealSecret || extra.length > 0) {
+    throw new Error("invalid join token");
+  }
+  assertSecretBytes(redeemSecret, "redeemSecret");
+  assertSecretBytes(sealSecret, "sealSecret");
+  return {
+    endpoint: bytesToUtf8(fromBase64Url(endpointText)),
+    accountId,
+    grantId,
+    redeemSecret,
+    sealSecret
+  };
+}
+
+export function hashJoinGrantRedeemSecret(accountId: string, grantId: string, redeemSecret: string): string {
+  return toBase64Url(sha256(utf8ToBytes(`pasta-join-redeem-v1\0${accountId}\0${grantId}\0${redeemSecret}`)));
+}
+
+export function sealJoinGrant(params: {
+  groupKey: string;
+  accountId: string;
+  grantId: string;
+  sealSecret: string;
+  keyVersion: number;
+  tokenExpiresAt: number;
+  maxUses: number;
+  deviceTtlMs: number | null;
+  nonce?: string;
+}): string {
+  const nonce = params.nonce ? fromBase64Url(params.nonce) : randomBytes(24);
+  const aad = joinGrantSealAad(params);
+  const cipher = xchacha20poly1305(deriveJoinGrantSealKey(params.accountId, params.grantId, params.sealSecret), nonce, joinGrantAad(aad));
+  return stableJson({
+    v: 1,
+    alg: "HKDF-SHA256-XChaCha20-Poly1305",
+    aad,
+    nonce: toBase64Url(nonce),
+    ciphertext: toBase64Url(cipher.encrypt(fromBase64Url(params.groupKey)))
+  });
+}
+
+export function openJoinGrant(params: {
+  sealedGroupKey: string;
+  accountId: string;
+  grantId: string;
+  sealSecret: string;
+}): string {
+  const parsed = JSON.parse(params.sealedGroupKey) as {
+    v: number;
+    aad: JoinGrantSealAad;
+    nonce: string;
+    ciphertext: string;
+  };
+  if (parsed.v !== 1) throw new Error("unsupported join grant");
+  if (parsed.aad.accountId !== params.accountId || parsed.aad.grantId !== params.grantId) {
+    throw new Error("join grant AAD mismatch");
+  }
+  const cipher = xchacha20poly1305(deriveJoinGrantSealKey(params.accountId, params.grantId, params.sealSecret), fromBase64Url(parsed.nonce), joinGrantAad(parsed.aad));
+  return toBase64Url(cipher.decrypt(fromBase64Url(parsed.ciphertext)));
+}
+
 export function makeShortCode(bytes = 4): string {
   return toBase64Url(randomBytes(bytes)).replace(/[^A-Z0-9]/giu, "").slice(0, 8).toUpperCase().padEnd(8, "X");
 }
@@ -257,6 +348,51 @@ function deriveWrapKey(privateKey: string, ownPublicKey: string, peerPublicKey: 
     new Uint8Array([...utf8ToBytes("pasta.wrap.info.v1"), ...first, ...second]),
     32
   );
+}
+
+function deriveJoinGrantSealKey(accountId: string, grantId: string, sealSecret: string): Uint8Array {
+  return hkdf(
+    sha256,
+    fromBase64Url(sealSecret),
+    utf8ToBytes(`pasta-join-seal-salt-v1\0${accountId}\0${grantId}`),
+    utf8ToBytes("pasta-join-seal-v1"),
+    32
+  );
+}
+
+function joinGrantSealAad(input: JoinGrantSealAad): JoinGrantSealAad {
+  return {
+    accountId: input.accountId,
+    grantId: input.grantId,
+    keyVersion: input.keyVersion,
+    deviceTtlMs: input.deviceTtlMs,
+    tokenExpiresAt: input.tokenExpiresAt,
+    maxUses: input.maxUses
+  };
+}
+
+function joinGrantAad(input: {
+  accountId: string;
+  grantId: string;
+  keyVersion: number;
+  tokenExpiresAt: number;
+  maxUses: number;
+  deviceTtlMs: number | null;
+}): Uint8Array {
+  return utf8ToBytes(stableJson({
+    accountId: input.accountId,
+    grantId: input.grantId,
+    keyVersion: input.keyVersion,
+    deviceTtlMs: input.deviceTtlMs,
+    tokenExpiresAt: input.tokenExpiresAt,
+    maxUses: input.maxUses
+  }));
+}
+
+function assertSecretBytes(value: string, label: string): void {
+  if (fromBase64Url(value).length !== 32) {
+    throw new Error(`${label} must be 32 bytes`);
+  }
 }
 
 function encryptClipMetadata(

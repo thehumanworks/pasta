@@ -11,6 +11,10 @@ export const TEXT_INLINE_LIMIT_BYTES = 512 * 1024;
 export const LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES = 512 * 1024;
 export const LARGE_PAYLOAD_MAX_BYTES = 50 * 1024 * 1024;
 export const MAX_OPEN_PAIRING_SESSIONS = 5;
+export const JOIN_GRANT_TOKEN_TTL_MS = 10 * 60 * 1000;
+export const JOIN_GRANT_TOKEN_TTL_MAX_MS = 24 * 60 * 60 * 1000;
+export const JOIN_GRANT_DEVICE_TTL_MAX_MS = 30 * 24 * 60 * 60 * 1000;
+export const JOIN_GRANT_MAX_USES = 10;
 
 export const SIGNATURE_HEADERS = {
   accountId: "pasta-account-id",
@@ -33,7 +37,7 @@ export interface ProtocolEndpoint {
   command: string;
   method: string;
   path: string;
-  auth: "none" | "device-signature";
+  auth: "none" | "device-signature" | "grant-proof";
   request: string;
   response: string;
   mutation: string;
@@ -102,6 +106,33 @@ export const PROTOCOL_ENDPOINTS: ProtocolEndpoint[] = [
     request: "short-code hash and wrapped group-key grant",
     response: "new device registered",
     mutation: "D1 devices insert, pairing approval update, DO wrapped_keys insert"
+  },
+  {
+    command: "pair grant create",
+    method: "POST",
+    path: "/v1/pairing/grants",
+    auth: "device-signature",
+    request: "join grant verifier, sealed group-key grant, token TTL, optional device TTL, use limit",
+    response: "join token grant metadata",
+    mutation: "D1 pairing_grants insert"
+  },
+  {
+    command: "pair join",
+    method: "POST",
+    path: "/v1/pairing/grants/redeem",
+    auth: "grant-proof",
+    request: "grant id, redeem secret, new-device public keys",
+    response: "registered leased or permanent device and sealed group-key grant",
+    mutation: "D1 devices insert, pairing_grants use count update"
+  },
+  {
+    command: "pair grant revoke",
+    method: "POST",
+    path: "/v1/pairing/grants/:grantId/revoke",
+    auth: "device-signature",
+    request: "target grant id",
+    response: "grant revocation metadata",
+    mutation: "D1 pairing_grants revoked_at update"
   },
   {
     command: "devices list",
@@ -210,6 +241,37 @@ export interface PairingConsumeRequest {
   shortCodeHash: string;
 }
 
+export interface PairingGrantCreateRequest {
+  grantId: string;
+  label?: string;
+  redeemSecretHash: string;
+  sealedGroupKey: string;
+  keyVersion: number;
+  tokenExpiresAt: number;
+  deviceTtlMs: number | null;
+  maxUses: number;
+}
+
+export interface PairingGrantRedeemRequest extends DevicePublicKeys {
+  grantId: string;
+  redeemSecret: string;
+  newDeviceId: string;
+  newDeviceName: string;
+}
+
+export interface PairingGrantRedeemResponse {
+  accountId: string;
+  routingId: string;
+  deviceId: string;
+  sealedGroupKey: string;
+  keyVersion: number;
+  tokenExpiresAt: number;
+  deviceTtlMs: number | null;
+  deviceExpiresAt: number | null;
+  maxUses: number;
+  redeemedAt: number;
+}
+
 export interface DeviceRecord {
   accountId: string;
   deviceId: string;
@@ -220,6 +282,7 @@ export interface DeviceRecord {
   createdAt: number;
   lastSeenAt: number | null;
   revokedAt: number | null;
+  deviceExpiresAt?: number | null;
 }
 
 export interface ResetRequest {
