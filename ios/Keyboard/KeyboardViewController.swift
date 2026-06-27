@@ -181,7 +181,11 @@ private struct PastaKeyboardView: View {
         )
         .keyboardViewStyle(.init(background: .color(.keyboardBackground)))
         .autocompleteToolbarStyle(.init(height: PastaToolbarAppearance.shelfHeight, padding: 0))
-        .keyboardToolbarStyle(.init(backgroundColor: .clear, minHeight: PastaToolbarAppearance.shelfHeight))
+        .keyboardToolbarStyle(.init(
+            backgroundColor: PastaToolbarAppearance.shelfBackground,
+            height: PastaToolbarAppearance.shelfHeight,
+            minHeight: PastaToolbarAppearance.shelfHeight
+        ))
         .keyboardInputToolbarDisplayMode(.none)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .id(keyboardLayoutIdentifier)
@@ -218,7 +222,7 @@ private struct PastaKeyboardToolbar: View {
                 if let statusMessage = model.statusMessage {
                     Text(statusMessage)
                         .font(PastaToolbarAppearance.font)
-                        .foregroundStyle(PastaToolbarAppearance.foreground)
+                        .foregroundColor(PastaToolbarAppearance.foreground)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .padding(.horizontal, 14)
@@ -251,7 +255,7 @@ private struct PastaKeyboardToolbar: View {
                     PastaToolbarDivider()
                     Text("Open Pasta to sync")
                         .font(PastaToolbarAppearance.font)
-                        .foregroundStyle(PastaToolbarAppearance.foreground)
+                        .foregroundColor(PastaToolbarAppearance.foreground)
                         .lineLimit(1)
                         .padding(.horizontal, 16)
                         .frame(height: PastaToolbarAppearance.shelfHeight)
@@ -274,6 +278,7 @@ private struct PastaKeyboardToolbar: View {
         .scrollClipDisabled()
         .frame(height: PastaToolbarAppearance.shelfHeight)
         .frame(maxWidth: .infinity)
+        .background(PastaToolbarAppearance.shelfBackground)
     }
 }
 
@@ -281,12 +286,17 @@ private struct PastaToolbarButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(PastaToolbarAppearance.font)
-            .foregroundStyle(PastaToolbarAppearance.foreground)
+            .foregroundColor(PastaToolbarAppearance.foreground)
             .lineLimit(1)
             .labelStyle(.titleAndIcon)
             .padding(.horizontal, 13)
             .frame(height: PastaToolbarAppearance.shelfHeight)
-            .background(configuration.isPressed ? PastaToolbarAppearance.pressedSegmentBackground : Color.clear)
+            .frame(maxHeight: .infinity)
+            .background(
+                configuration.isPressed
+                    ? PastaToolbarAppearance.pressedSegmentBackground
+                    : PastaToolbarAppearance.shelfBackground
+            )
             .contentShape(Rectangle())
     }
 }
@@ -295,12 +305,16 @@ private struct PastaToolbarTextButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(PastaToolbarAppearance.font)
-            .foregroundStyle(PastaToolbarAppearance.foreground)
+            .foregroundColor(PastaToolbarAppearance.foreground)
             .lineLimit(1)
             .padding(.horizontal, 16)
             .frame(height: PastaToolbarAppearance.shelfHeight)
             .frame(maxWidth: 220)
-            .background(configuration.isPressed ? PastaToolbarAppearance.pressedSegmentBackground : Color.clear)
+            .background(
+                configuration.isPressed
+                    ? PastaToolbarAppearance.pressedSegmentBackground
+                    : PastaToolbarAppearance.shelfBackground
+            )
             .contentShape(Rectangle())
     }
 }
@@ -314,15 +328,16 @@ private struct PastaToolbarDivider: View {
 }
 
 private enum PastaToolbarAppearance {
-    /// Matches KeyboardKit 9.9.1 `Autocomplete.ToolbarStyle` and `Keyboard.ToolbarStyle`
-    /// defaults (48pt). Not `DeviceConfiguration.inputToolbarHeight` (54pt), which sizes
-    /// Pro input-toolbar rows and key rows — a different subsystem.
+    /// 60pt band (~25% taller than KeyboardKit's 48pt autocomplete default) for readable,
+    /// full-height action targets. Shelf and segments stay fully opaque so host content
+    /// cannot bleed through and make labels look blurred.
+    static let shelfBackground = Color.keyboardBackground
     static let foreground = Color.keyboardButtonForeground
     static let pressedSegmentBackground = Color.keyboardButtonForeground.opacity(0.08)
     static let separator = Color.keyboardButtonForeground.opacity(0.20)
-    static let font = Font.system(size: 16, weight: .semibold)
-    static let shelfHeight: CGFloat = 48
-    static let separatorHeight: CGFloat = 28
+    static let font = Font.system(size: 17, weight: .semibold)
+    static let shelfHeight: CGFloat = 60
+    static let separatorHeight: CGFloat = 36
 }
 
 private struct PastaKeyboardToolbarModel {
@@ -428,7 +443,7 @@ private struct PastaKeyboardPreviewHost: View {
         publish: {},
         toggleExpanded: {}
     )
-    .frame(width: 393, height: 48)
+    .frame(width: 393, height: 60)
     .background(Color.keyboardBackground)
 }
 #endif
