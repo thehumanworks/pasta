@@ -185,6 +185,7 @@ private struct PastaKeyboardView: View {
     let publish: () -> Void
 
     @EnvironmentObject private var keyboardContext: KeyboardContext
+    @StateObject private var layoutCache = PastaKeyboardLayoutCache()
 
     var body: some View {
         // Pasta is additive: KeyboardKit owns the keyboard, autocomplete band,
@@ -213,15 +214,7 @@ private struct PastaKeyboardView: View {
     }
 
     private var pastaLayout: KeyboardLayout {
-        var layout = services.layoutService.keyboardLayout(for: keyboardContext)
-        guard keyboardContext.keyboardType == .alphabetic else { return layout }
-
-        let config = layout.deviceConfiguration ?? .standard(for: keyboardContext)
-        let numberRow = KeyboardAction.Row(characters: "1234567890").map {
-            $0.standardLayoutItem(for: config)
-        }
-        layout.itemRows.insert(numberRow, at: 0)
-        return layout
+        layoutCache.layout(for: keyboardContext, service: services.layoutService)
     }
 
     private var keyboardLayoutIdentifier: String {
@@ -233,8 +226,56 @@ private struct PastaKeyboardView: View {
             "\(keyboardContext.keyboardType)",
             "\(keyboardContext.interfaceOrientation)",
             "\(keyboardContext.screenSize.width)x\(keyboardContext.screenSize.height)",
-            "\(keyboardContext.deviceTypeForKeyboard)"
+            "\(keyboardContext.deviceTypeForKeyboard)",
+            "\(keyboardContext.needsInputModeSwitchKey)",
+            keyboardContext.locale.identifier
         ].joined(separator: "|")
+    }
+}
+
+@MainActor
+private final class PastaKeyboardLayoutCache: ObservableObject {
+    private var cachedKey: PastaKeyboardLayoutKey?
+    private var cachedLayout: KeyboardLayout?
+
+    func layout(for keyboardContext: KeyboardContext, service: KeyboardLayoutService) -> KeyboardLayout {
+        let key = PastaKeyboardLayoutKey(context: keyboardContext)
+        if cachedKey == key, let cachedLayout {
+            return cachedLayout
+        }
+
+        var layout = service.keyboardLayout(for: keyboardContext)
+        if keyboardContext.keyboardType == .alphabetic {
+            let config = layout.deviceConfiguration ?? .standard(for: keyboardContext)
+            let numberRow = KeyboardAction.Row(characters: "1234567890").map {
+                $0.standardLayoutItem(for: config)
+            }
+            layout.itemRows.insert(numberRow, at: 0)
+        }
+
+        cachedKey = key
+        cachedLayout = layout
+        return layout
+    }
+}
+
+private struct PastaKeyboardLayoutKey: Equatable {
+    let keyboardType: String
+    let interfaceOrientation: String
+    let screenWidth: Int
+    let screenHeight: Int
+    let deviceType: String
+    let needsInputModeSwitchKey: Bool
+    let localeIdentifier: String
+
+    init(context: KeyboardContext) {
+        keyboardType = "\(context.keyboardType)"
+        interfaceOrientation = "\(context.interfaceOrientation)"
+        screenWidth = Int(context.screenSize.width.rounded())
+        screenHeight = Int(context.screenSize.height.rounded())
+        deviceType = "\(context.deviceTypeForKeyboard)"
+        needsInputModeSwitchKey = context.needsInputModeSwitchKey
+        localeIdentifier = context.locale.identifier
     }
 }
 
@@ -429,7 +470,7 @@ private final class PastaAutocompleteService: AutocompleteService {
         let word = nsText.substring(with: range)
         guard !word.isEmpty else { return Self.idleSuggestions }
 
-        let checker = UITextChecker()
+        let checker = Self.checker
         let language = checkerLanguage(candidates: languageCandidates)
         var suggestions: [Autocomplete.Suggestion] = []
         var seen = Set<String>()
@@ -569,8 +610,7 @@ private final class PastaAutocompleteService: AutocompleteService {
 
     @MainActor
     private static func checkerLanguage(candidates: [String]) -> String {
-        let available = UITextChecker.availableLanguages
-        return candidates.first { available.contains($0) } ?? "en_US"
+        candidates.first { availableCheckerLanguages.contains($0) } ?? "en_US"
     }
 
     private static func languageCandidates(for locale: Locale) -> [String] {
@@ -588,6 +628,8 @@ private final class PastaAutocompleteService: AutocompleteService {
     }
 
     private static let wordCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "'"))
+    @MainActor private static let checker = UITextChecker()
+    @MainActor private static let availableCheckerLanguages = Set(UITextChecker.availableLanguages)
     private static let commonWords = [
         "I", "the", "to", "and", "you", "that", "it", "in", "is", "for",
         "of", "on", "with", "this", "we", "are", "be", "have", "not", "can",
