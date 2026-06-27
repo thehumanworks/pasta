@@ -235,20 +235,45 @@ async function buildSite(): Promise<void> {
   await writeFile(join(DIST_DIR, "index.html"), homeHtml);
 
   await mkdir(join(DIST_DIR, ".well-known"), { recursive: true });
-  await writeFile(
-    join(DIST_DIR, ".well-known", "pasta-docs.json"),
-    JSON.stringify(
-      {
-        name: "Pasta Documentation",
-        version: "0.1.7",
-        accept_markdown: "Request /agent/{slug}.md with Accept: text/markdown, text/plain, or */*",
-        accept_json: "Request /api/{slug}.json with Accept: application/json",
-        pages: agentManifest
-      },
-      null,
-      2
-    ) + "\n"
-  );
+  const agentIndex = {
+    name: "Pasta Documentation",
+    version: "0.1.7",
+    generated_at: "2026-06-27",
+    schema_version: "hindsight-agents-v1",
+    base_url_assumption: normalizedBase,
+    accept_markdown: "Request /agent/{slug}.md with Accept: text/markdown, text/plain, or */*",
+    accept_json: "Request /api/{slug}.json with Accept: application/json",
+    source_material: [
+      "AGENTS.md",
+      "GOAL.md",
+      "docs/ORCHESTRATION.md",
+      "docs/goals/*.md",
+      "docs-site/content/*.md",
+      "ios/App",
+      "ios/Keyboard",
+      "ios/Sources/PastaCore",
+      "src/shared",
+      "src/worker"
+    ],
+    verification_commands: [
+      "cd docs-site && bun run build -- --base /",
+      "cd docs-site && PORT=4173 bun run serve.ts",
+      "curl http://localhost:4173/.well-known/agents.json",
+      "curl -H 'Accept: text/markdown' http://localhost:4173/native-ios/"
+    ],
+    pages: agentManifest.map((page) => ({
+      slug: page.slug,
+      title: page.title,
+      purpose: purposeForPage(page.slug),
+      html_url: page.url,
+      content_negotiated_url: page.url,
+      markdown_url: page.markdown_url,
+      api_url: page.api_url
+    }))
+  };
+
+  await writeFile(join(DIST_DIR, ".well-known", "pasta-docs.json"), JSON.stringify(agentIndex, null, 2) + "\n");
+  await writeFile(join(DIST_DIR, ".well-known", "agents.json"), JSON.stringify(agentIndex, null, 2) + "\n");
 
   await writeFile(join(DIST_DIR, "agent", "index.json"), JSON.stringify({ pages: agentManifest }, null, 2) + "\n");
 
@@ -258,3 +283,23 @@ async function buildSite(): Promise<void> {
 }
 
 await buildSite();
+
+function purposeForPage(slug: string): string {
+  switch (slug) {
+    case "overview":
+    case "quick-start":
+      return "Outcome: product promise, supported users, non-goals, and success criteria.";
+    case "native-ios":
+      return "Experience and implementation contract for iOS app, keyboard, file, history, and release work.";
+    case "architecture":
+    case "protocol":
+    case "payloads":
+    case "security":
+      return "Architecture: modules, data boundaries, relay contracts, metadata limits, and security invariants.";
+    case "development":
+    case "agent-handbook":
+      return "Implementation and quality: agent rules, verification commands, release gates, and footguns.";
+    default:
+      return "Reference page for Pasta operators and implementation agents.";
+  }
+}

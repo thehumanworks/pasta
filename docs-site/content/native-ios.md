@@ -31,6 +31,16 @@ The iOS bundle has four surfaces:
 
 File Provider integration is a later add-on for file and directory history in Files. It is not the core paste-anywhere mechanism.
 
+## Current iOS delivery contract
+
+The current iOS release adds three user-visible capabilities without changing the keyboard privacy model:
+
+- the Pasta app can import files from iCloud Drive, On My iPhone, or another document provider and publish them into Pasta remote storage;
+- the Pasta app can export remote file, image, and directory clips back to iCloud Drive, On My iPhone, or another app-supported destination;
+- the Pasta app can show history entries and delete a selected remote clip through the existing trusted-device delete API.
+
+These controls live in the containing app, not in the custom keyboard. The keyboard remains focused on normal typing, text history insertion, and explicit publish/paste actions.
+
 ## Keyboard behavior
 
 The keyboard is intentionally close to the stock iOS keyboard in daily use:
@@ -43,6 +53,8 @@ The keyboard is intentionally close to the stock iOS keyboard in daily use:
 - compact side action icons stay transparent and match the native suggestion-row height and centering;
 - Paste opens a history menu; selecting a text item inserts it into the active text field;
 - Pasta never publishes ordinary keystrokes as clips.
+
+Typing latency is a release blocker when the Pasta keyboard is perceptibly slower than the same KeyboardKit surface without Pasta additions. Performance work must preserve all keyboard behavior above, identify hot paths with repeatable measurements, and report before/after scores for representative typing input.
 
 The keyboard has two operating levels:
 
@@ -77,6 +89,10 @@ Direct keyboard insertion is text-only. Non-text history remains available, but 
 | Directory bundle | Open in Pasta, export zip/directory representation, later Files integration | Publish from Files as a Pasta directory bundle where iOS grants access |
 
 Directory clips keep Pasta's existing bundle contract: a directory is zipped locally, encrypted locally, uploaded as a file payload with the Pasta directory MIME, and extracted locally by trusted devices. Normal `.zip` files remain normal files.
+
+The containing app is the control plane for file movement. Import uses a document picker or share source that hands Pasta a security-scoped file URL; Pasta reads only after user selection, encrypts locally, and uploads with `POST /v1/files`. Export downloads ciphertext with `GET /v1/files/:clipId`, decrypts to a temporary file, presents a document exporter/share surface, and removes temporary plaintext after handoff.
+
+History deletion is destructive and remote. The app must present the selected clip, require an explicit delete tap, call `DELETE /v1/clips/:clipId`, then refresh local history/cache after the relay confirms deletion.
 
 ## Metadata and smart restrictions
 
@@ -149,6 +165,49 @@ letters, number/symbol modes, callouts, the keyboard-switch (globe) key, and key
 action handling. Pasta code owns only the product-specific action row (rendered
 in KeyboardKit's native toolbar slot), privacy gates, and cached history
 insertion. Pasta no longer edits the generated layout.
+
+## Hindsight contract for the current release
+
+Observable finished state:
+
+- The containing app has a file import/export surface separate from the keyboard. Importing a user-selected document publishes an encrypted `file` clip through `/v1/files`; exporting a remote non-text clip downloads and decrypts into a temporary file, then hands the result to the iOS document/share UI.
+- The containing app has a history list backed by live Pasta history. Each row shows safe local display text derived from decrypted text or encrypted metadata; no plaintext filename or path is exposed to Worker-visible metadata.
+- Deleting a history row calls `DELETE /v1/clips/:clipId`, confirms the remote result, removes any associated R2 object server-side, and refreshes the app and keyboard caches.
+- The keyboard typing path keeps KeyboardKit as the input owner. Pasta does not remove features, reintroduce sibling toolbar strips, publish ordinary keystrokes, silently read pasteboard, or change layout behavior to gain speed.
+- Keyboard latency has a committed benchmark or XCTest performance check that exercises representative insert/delete/shift/punctuation paths. The final report includes baseline and optimized numbers from the same command on the same machine.
+
+Non-goals:
+
+- No background iOS clipboard monitor.
+- No File Provider extension unless it is proven necessary; document picker/share export is acceptable for this release.
+- No server-visible plaintext names, paths, or file contents.
+- No CLI aliases or protocol compatibility shims beyond the existing command/API surface.
+
+Quality gates:
+
+- `cd docs-site && bun run build -- --base /`
+- `swift test --package-path ios`
+- `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build`
+- `mise exec -- bun run test`
+- remote Worker smoke for any changed API behavior, otherwise direct proof that the existing Worker API is unchanged and already deployed
+- archive/export/IPA inspection/upload plus App Store Connect `VALID` and internal TestFlight group access for the final release
+
+Source material for agents:
+
+- `AGENTS.md` - product boundaries, KeyboardKit rules, deploy and release proof requirements
+- `docs/goals/14-ios-keyboard-extension.md` - keyboard behavior, visual proof, and privacy evidence history
+- `docs/goals/16-ios-binary-file-provider-handoff.md` - non-text handoff contract
+- `docs/goals/17-ios-integration-release-readiness.md` - release proof layers
+- `docs/goals/18-clipid-sequence-refactor.md` - `clipId` identity and `seq` display metadata
+- `src/shared/protocol.ts`, `src/worker/index.ts`, `src/worker/clipboard-space.ts` - existing file/history/delete API
+- `ios/App/PastaRootView.swift`, `ios/Keyboard/KeyboardViewController.swift`, `ios/Sources/PastaCore` - native iOS implementation surfaces
+
+Footguns:
+
+- Symptom: import/export appears to work locally but file names are visible in Worker/R2 metadata. Cause: putting display names into public metadata. Mitigation: encrypted metadata only; inspect payload and R2 metadata tests. Proof: hardening tests and code review.
+- Symptom: history delete deletes the wrong item after a refresh. Cause: treating `seq` as identity. Mitigation: display `seq` but call delete by stable `clipId`. Proof: Swift tests cover a delete using `clipId` while displaying sequence.
+- Symptom: typing optimization breaks autocorrect, case, or gestures. Cause: bypassing KeyboardKit or keying view identity on transient state. Mitigation: keep KeyboardKit input handling authoritative and benchmark pure helper paths separately from UI composition. Proof: keyboard build plus behavior/perf tests.
+- Symptom: export leaves decrypted files in the app container. Cause: document handoff writes permanent plaintext cache. Mitigation: use temporary files scoped to the share/export operation and remove them after completion when the system callback returns. Proof: code review and simulator/device storage smoke.
 
 ## Keyboard chrome incident notes for agents
 
