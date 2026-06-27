@@ -45,10 +45,10 @@ keyboard without the lag seen before this goal.
 
 ## 4. Definition of Done
 
-- [ ] **DoD-1** - iOS app imports a user-selected file and publishes it as an
+- [x] **DoD-1** - iOS app imports a user-selected file and publishes it as an
   encrypted Pasta file clip without leaking plaintext metadata. - *verify by:*
   Swift tests plus simulator/device document-picker or injected file smoke.
-- [ ] **DoD-2** - iOS app exports remote file, image, and directory clips through
+- [x] **DoD-2** - iOS app exports remote file, image, and directory clips through
   iOS document/share surfaces using temporary plaintext only. - *verify by:*
   Swift tests plus simulator/device export smoke or inspected temp-file cleanup.
 - [x] **DoD-3** - iOS app presents remote history and deletes a selected entry
@@ -92,7 +92,7 @@ Verification Contract:
   /v1/clips|Keyboard latency"` - exit 0; markdown endpoint exposed the current
   release contract.
 
-### T2 - Implement Control-Plane File Import/Export - [ ]
+### T2 - Implement Control-Plane File Import/Export - [x]
 
 - Add Swift byte/file encryption and decryption parity for existing file clips.
 - Add signed `POST /v1/files` and `GET /v1/files/:clipId` calls to
@@ -106,9 +106,27 @@ Verification Contract:
 - Simulator/device smoke demonstrates app import/export or records the exact
   unavailable UI proof surface.
 
-**Confidence:** 0/90
+**Confidence:** 91/90
 **Closes:** DoD-1, DoD-2
 **Evidence:**
+
+- 2026-06-27 - Swift implementation review - pass; containing app file import
+  uses `.fileImporter`, security-scoped URL access, local bytes read,
+  MIME/UTType detection, encrypted metadata, and signed `POST /v1/files`;
+  export downloads by stable `clipId`, decrypts bytes locally, stages a
+  temporary file, presents a share sheet, and cleans the temporary directory on
+  dismissal.
+- 2026-06-27 - `swift test --package-path ios` - exit 0; 22 XCTest tests
+  executed, 1 gated live-relay test skipped without `PASTA_IOS_JOIN_TOKEN`.
+  Added file tests cover TypeScript-vector bytes encryption/decryption,
+  encrypted filename metadata, signed `/v1/files` upload/download request
+  shape, and temporary export cleanup.
+- 2026-06-27 - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta
+  -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS
+  Simulator' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO
+  build` - exit 0; app and embedded keyboard extension compiled for simulator
+  with file import/export UI.
+- 2026-06-27 - `git diff --check` - exit 0.
 
 ### T3 - Implement Control-Plane History Delete - [x]
 

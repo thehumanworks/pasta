@@ -11,6 +11,7 @@ public enum PastaCore {
     public static let minimumSupportedIOSMajorVersion = 17
     public static let textMime = "text/plain; charset=utf-8"
     public static let defaultHistoryLimit = 20
+    public static let largePayloadMaxBytes = 50 * 1024 * 1024
 }
 
 public enum PastaIOSSurface: String, CaseIterable, Sendable {
@@ -81,6 +82,7 @@ public struct PastaHistoryEntry: Codable, Equatable, Identifiable, Sendable {
     public let sequence: Int
     public let payloadKind: String
     public let mime: String
+    public let byteLen: Int
     public let title: String
     public let preview: String
     public let text: String?
@@ -107,6 +109,15 @@ public struct PastaHistoryEntry: Codable, Equatable, Identifiable, Sendable {
         text != nil && resolvedKind == .text
     }
 
+    public var isExportable: Bool {
+        switch resolvedKind {
+        case .image, .file, .directoryBundle:
+            return true
+        case .text:
+            return false
+        }
+    }
+
     public var keyboardClip: PastaKeyboardClip? {
         guard let text, isKeyboardInsertable else { return nil }
         return PastaKeyboardClip(
@@ -123,6 +134,7 @@ public struct PastaHistoryEntry: Codable, Equatable, Identifiable, Sendable {
         sequence: Int,
         payloadKind: String,
         mime: String,
+        byteLen: Int,
         title: String,
         preview: String,
         text: String?,
@@ -132,21 +144,24 @@ public struct PastaHistoryEntry: Codable, Equatable, Identifiable, Sendable {
         self.sequence = sequence
         self.payloadKind = payloadKind
         self.mime = mime
+        self.byteLen = byteLen
         self.title = title
         self.preview = preview
         self.text = text
         self.createdAt = createdAt
     }
 
-    public init(clip: StoredClip, decryptedText: String?) {
+    public init(clip: StoredClip, decryptedText: String?, metadataName: String? = nil) {
         let resolvedKind = PastaResolvedClipKind.resolve(payloadKind: clip.payloadKind, mime: clip.mime)
         let textPreview = decryptedText?.pastaSingleLinePreview(maxLength: 96)
+        let fileName = metadataName.map { PastaFileNames.exportName(metadataName: $0, payloadKind: clip.payloadKind, mime: clip.mime) }
         self.init(
             clipId: clip.clipId,
             sequence: clip.seq,
             payloadKind: clip.payloadKind,
             mime: clip.mime,
-            title: decryptedText?.pastaSingleLineTitle(maxLength: 48) ?? Self.title(for: resolvedKind, sequence: clip.seq),
+            byteLen: clip.byteLen,
+            title: decryptedText?.pastaSingleLineTitle(maxLength: 48) ?? fileName ?? Self.title(for: resolvedKind, sequence: clip.seq),
             preview: textPreview ?? Self.preview(for: resolvedKind, mime: clip.mime, byteLen: clip.byteLen),
             text: resolvedKind == .text ? decryptedText : nil,
             createdAt: clip.createdAt

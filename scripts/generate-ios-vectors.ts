@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   createJoinGrantToken,
+  encryptBytesClip,
   encryptTextClip,
   generateSigningKeyPair,
   generateWrappingKeyPair,
@@ -66,6 +67,20 @@ const clip = encryptTextClip({
   expiresAt: null,
   nonce: toBase64Url(new Uint8Array(24).fill(3))
 });
+const bytesClip = encryptBytesClip({
+  accountId: "acct_vector",
+  routingId: "space_vector",
+  originDeviceId: "dev_vector",
+  bytes: new Uint8Array([80, 65, 83, 84, 65, 0, 1, 2, 255]),
+  payloadKind: "file",
+  mime: "application/octet-stream",
+  groupKey,
+  keyVersion: 1,
+  clipId: "clip_vector_file",
+  createdAt: 1782475200001,
+  expiresAt: null,
+  nonce: toBase64Url(new Uint8Array(24).fill(8))
+});
 
 const vectors = {
   base64Url: {
@@ -97,6 +112,13 @@ const vectors = {
     groupKey,
     plaintext: "Hello from Pasta iOS",
     clip
+  },
+  bytesClip: {
+    accountId: "acct_vector",
+    routingId: "space_vector",
+    groupKey,
+    bytes: [80, 65, 83, 84, 65, 0, 1, 2, 255],
+    clip: bytesClip
   },
   wrappedGroupKey: {
     groupKey,

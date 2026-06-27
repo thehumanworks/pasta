@@ -1,8 +1,11 @@
 import PastaCore
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 struct PastaRootView: View {
     @EnvironmentObject private var model: PastaAppModel
+    @State private var isImportingFile = false
 
     var body: some View {
         NavigationStack {
@@ -51,6 +54,43 @@ struct PastaRootView: View {
                             Label("Publish", systemImage: "arrow.up.circle")
                         }
                         .disabled(model.publishText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isBusy)
+                    }
+                }
+
+                Section("Files") {
+                    Button {
+                        isImportingFile = true
+                    } label: {
+                        Label("Import File", systemImage: "doc.badge.plus")
+                    }
+                    .disabled(model.configuration == nil || model.isBusy)
+
+                    if model.historyEntries.contains(where: \.isExportable) {
+                        ForEach(model.historyEntries.filter(\.isExportable)) { entry in
+                            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(entry.title)
+                                        .font(.headline)
+                                        .lineLimit(1)
+                                    Text("\(entry.payloadKind) - \(entry.mime) - \(entry.byteLen) bytes")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                Button {
+                                    Task { await model.prepareExport(entry) }
+                                } label: {
+                                    Label("Export", systemImage: "square.and.arrow.up")
+                                        .labelStyle(.iconOnly)
+                                }
+                                .disabled(model.isBusy)
+                            }
+                        }
+                    } else {
+                        Text("No remote file clips.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -113,6 +153,20 @@ struct PastaRootView: View {
                 }
             }
             .navigationTitle("Pasta")
+            .fileImporter(
+                isPresented: $isImportingFile,
+                allowedContentTypes: [.item],
+                allowsMultipleSelection: false
+            ) { result in
+                guard case .success(let urls) = result, let url = urls.first else { return }
+                Task { await model.publishSelectedFile(url) }
+            }
+            .sheet(item: $model.preparedExport, onDismiss: {
+                model.cleanupPreparedExport()
+            }) { export in
+                PastaShareSheet(activityItems: [export.url])
+                    .ignoresSafeArea()
+            }
             .toolbar {
                 ToolbarItem(placement: .bottomBar) {
                     Text(model.status)
@@ -122,4 +176,14 @@ struct PastaRootView: View {
             }
         }
     }
+}
+
+private struct PastaShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

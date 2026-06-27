@@ -2,6 +2,7 @@ import KeyboardKit
 import PastaCore
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 @main
 struct PastaApp: App {
@@ -27,10 +28,12 @@ final class PastaAppModel: ObservableObject {
     @Published var status = "Not paired"
     @Published var isBusy = false
     @Published var deletingClipId: String?
+    @Published var preparedExport: PastaPreparedExport?
 
     private let client = PastaAPIClient()
     private let keychain = PastaKeychainStore()
     private let store: PastaAppGroupStore?
+    private var exportStore: PastaTemporaryFileStore?
 
     init() {
         store = try? PastaAppGroupStore()
@@ -85,8 +88,72 @@ final class PastaAppModel: ObservableObject {
             historyEntries = [entry] + historyEntries.filter { $0.clipId != clip.clipId }
             clips = PastaHistoryEntry.keyboardClips(from: historyEntries)
             try store?.saveKeyboardClips(clips)
+            try await performRefreshHistory()
             status = "Published clip \(clip.seq)"
         }
+    }
+
+    func publishSelectedFile(_ url: URL) async {
+        await run("Publishing \(url.lastPathComponent)...") {
+            let configuration = try requireConfiguration()
+            let didStartAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if didStartAccess {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey, .contentTypeKey])
+            if resourceValues.isDirectory == true {
+                throw PastaAppError.directoryImportNotSupported
+            }
+            let data = try Data(contentsOf: url)
+            let contentType = resourceValues.contentType ?? UTType(filenameExtension: url.pathExtension)
+            let mime = contentType?.preferredMIMEType ?? "application/octet-stream"
+            let payloadKind = mime.hasPrefix("image/") ? "image" : "file"
+            let clip = try await client.publishFile(
+                bytes: Array(data),
+                fileName: url.lastPathComponent,
+                mime: mime,
+                payloadKind: payloadKind,
+                configuration: configuration,
+                groupKey: try keychain.get(.groupKey),
+                signingPrivateKey: try keychain.get(.signingPrivateKey)
+            )
+            try await performRefreshHistory()
+            status = clip.payloadKind == "image" ? "Published image \(clip.seq)" : "Published file \(clip.seq)"
+        }
+    }
+
+    func prepareExport(_ entry: PastaHistoryEntry) async {
+        guard entry.isExportable else {
+            status = "Text clips copy to the iPhone clipboard."
+            return
+        }
+        await run("Preparing \(entry.title)...") {
+            let configuration = try requireConfiguration()
+            let downloaded = try await client.downloadFile(
+                clipId: entry.clipId,
+                configuration: configuration,
+                groupKey: try keychain.get(.groupKey),
+                signingPrivateKey: try keychain.get(.signingPrivateKey)
+            )
+            try? exportStore?.cleanup()
+            let tempStore = try PastaTemporaryFileStore()
+            let url = try tempStore.stageFile(
+                bytes: downloaded.bytes,
+                suggestedName: downloaded.suggestedFileName,
+                fallbackName: PastaFileNames.defaultOutputName(payloadKind: downloaded.clip.payloadKind, mime: downloaded.clip.mime)
+            )
+            exportStore = tempStore
+            preparedExport = PastaPreparedExport(clipId: entry.clipId, title: downloaded.suggestedFileName, url: url)
+            status = "Ready to export \(downloaded.suggestedFileName)"
+        }
+    }
+
+    func cleanupPreparedExport() {
+        try? exportStore?.cleanup()
+        exportStore = nil
+        preparedExport = nil
     }
 
     func importClipboardText() {
@@ -217,6 +284,14 @@ final class PastaAppModel: ObservableObject {
 
 enum PastaAppError: Error {
     case notPaired
+    case directoryImportNotSupported
+}
+
+struct PastaPreparedExport: Identifiable {
+    let id = UUID()
+    let clipId: String
+    let title: String
+    let url: URL
 }
 
 private extension String {

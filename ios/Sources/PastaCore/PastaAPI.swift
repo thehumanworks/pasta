@@ -70,6 +70,93 @@ public struct PastaAPIClient: Sendable {
         return response.clip
     }
 
+    public func publishFile(
+        bytes: [UInt8],
+        fileName: String?,
+        mime: String,
+        payloadKind: String = "file",
+        configuration: PastaDeviceConfiguration,
+        groupKey: String,
+        signingPrivateKey: String
+    ) async throws -> StoredClip {
+        let metadata = fileName.map { ClipMetadata(name: PastaFileNames.sanitized($0, fallback: "file")) }
+        let clip = try PastaCrypto.encryptBytesClip(BytesClipEncryptionInput(
+            accountId: configuration.accountId,
+            routingId: configuration.routingId,
+            originDeviceId: configuration.deviceId,
+            bytes: bytes,
+            payloadKind: payloadKind,
+            mime: mime,
+            groupKey: groupKey,
+            keyVersion: configuration.keyVersion,
+            metadata: metadata
+        ))
+        let response: ClipResponse = try await request(
+            endpoint: configuration.endpoint,
+            method: "POST",
+            path: "/v1/files",
+            body: clip,
+            configuration: configuration,
+            signingPrivateKey: signingPrivateKey
+        )
+        return response.clip
+    }
+
+    public func downloadFile(
+        clipId: String,
+        configuration: PastaDeviceConfiguration,
+        groupKey: String,
+        signingPrivateKey: String
+    ) async throws -> PastaDownloadedFileClip {
+        let response: FileClipResponse = try await request(
+            endpoint: configuration.endpoint,
+            method: "GET",
+            path: "/v1/files/\(Self.escapePathComponent(clipId))",
+            body: Optional<EmptyBody>.none,
+            configuration: configuration,
+            signingPrivateKey: signingPrivateKey
+        )
+        let encryptedClip = EncryptedClip(
+            clipId: response.clip.clipId,
+            originDeviceId: response.clip.originDeviceId,
+            createdAt: response.clip.createdAt,
+            expiresAt: response.clip.expiresAt,
+            payloadKind: response.clip.payloadKind,
+            mime: response.clip.mime,
+            byteLen: response.clip.byteLen,
+            keyVersion: response.clip.keyVersion,
+            nonce: response.clip.nonce,
+            aadHash: response.clip.aadHash,
+            ciphertext: response.ciphertext,
+            storageKind: response.clip.storageKind,
+            payloadId: response.clip.payloadId,
+            r2Key: response.clip.r2Key,
+            metadata: response.clip.metadata
+        )
+        let bytes = try PastaCrypto.decryptBytesClip(
+            groupKey: groupKey,
+            accountId: configuration.accountId,
+            routingId: configuration.routingId,
+            clip: encryptedClip
+        )
+        let metadata = try PastaCrypto.decryptClipMetadata(
+            groupKey: groupKey,
+            accountId: configuration.accountId,
+            routingId: configuration.routingId,
+            clip: encryptedClip
+        )
+        return PastaDownloadedFileClip(
+            clip: response.clip,
+            bytes: bytes,
+            metadata: metadata,
+            suggestedFileName: PastaFileNames.exportName(
+                metadataName: metadata?.name,
+                payloadKind: response.clip.payloadKind,
+                mime: response.clip.mime
+            )
+        )
+    }
+
     public func history(configuration: PastaDeviceConfiguration, groupKey: String, signingPrivateKey: String, limit: Int = PastaCore.defaultHistoryLimit) async throws -> [PastaKeyboardClip] {
         let entries = try await historyEntries(
             configuration: configuration,
@@ -91,6 +178,7 @@ public struct PastaAPIClient: Sendable {
         )
         return try response.clips.map { clip in
             let text: String?
+            let metadataName: String?
             if clip.payloadKind == "text" {
                 text = try PastaCrypto.decryptTextClip(
                     groupKey: groupKey,
@@ -98,10 +186,17 @@ public struct PastaAPIClient: Sendable {
                     routingId: configuration.routingId,
                     clip: clip.encryptedClip
                 )
+                metadataName = nil
             } else {
                 text = nil
+                metadataName = try PastaCrypto.decryptClipMetadata(
+                    groupKey: groupKey,
+                    accountId: configuration.accountId,
+                    routingId: configuration.routingId,
+                    clip: clip.encryptedClip
+                )?.name
             }
-            return PastaHistoryEntry(clip: clip, decryptedText: text)
+            return PastaHistoryEntry(clip: clip, decryptedText: text, metadataName: metadataName)
         }
     }
 
@@ -183,6 +278,11 @@ private struct ClipResponse: Codable {
 
 private struct ClipsResponse: Codable {
     let clips: [StoredClip]
+}
+
+private struct FileClipResponse: Codable {
+    let clip: StoredClip
+    let ciphertext: String
 }
 
 private struct EmptyBody: Codable {}
