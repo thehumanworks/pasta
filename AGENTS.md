@@ -38,3 +38,4 @@ These project-local instructions apply to this repository.
 
 - Every task in this repository ends with the verified changes committed on `main` and pushed to `origin/main` unless the user explicitly asks not to publish.
 - Before committing, run the strongest practical verification for the touched surface and include any blocker in the final response.
+- If a task changes Worker routes, Durable Object behavior, D1 schema, migrations, or documented remote API behavior, publishing code or creating a tag is not enough. Apply required remote D1 migrations with `mise exec -- fnox exec -- wrangler d1 migrations apply DB --remote`, deploy with `mise exec -- fnox exec -- wrangler deploy`, and run a non-leaking remote smoke against `https://pasta.nothuman.work` for the changed path unless the user explicitly says not to deploy. Record the migration/deploy/smoke evidence before finalizing.
