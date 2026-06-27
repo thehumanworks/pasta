@@ -123,6 +123,10 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - simplified transparent toolbar follow-up - `make run-ios` - exit 0 on physical iPhone Air `AA3189CF-63E4-5B5B-884D-A39454926E42`; `xcodebuild` built and signed `Pasta.app` with embedded `PastaKeyboard.appex`, `devicectl` installed `com.thehumanworks.pasta`, and `devicectl` launched the app.
 - 2026-06-27 - simplified transparent toolbar follow-up - `xcrun devicectl device process launch --device AA3189CF-63E4-5B5B-884D-A39454926E42 com.apple.MobileSMS` - exit 0; `xcrun devicectl device capture screenshot --device AA3189CF-63E4-5B5B-884D-A39454926E42 --destination ios/build/screenshots/pasta-device-transparent-toolbar.png` - exit 0 with 1260x2736 screenshot showing the Pasta keyboard row as fixed `Publish`/`Paste` controls with clear button backgrounds in the live Messages keyboard host.
 - 2026-06-27 - simplified transparent toolbar follow-up - `git diff --check` - exit 0.
+- 2026-06-27 - native autocomplete/background correction - pass by code review against attached Grammarly/Pasta comparison and pinned KeyboardKit 9.9.1 sources; `KeyboardView` now preserves `params.view` in the `toolbar:` slot, registers a local `UITextChecker` autocomplete service, removes `.keyboardViewStyle(background: .color(.keyboardBackground))`, clears UIKit host backgrounds instead of repainting them, uses compact transparent side icons for Publish/Paste, and adds a KeyboardKit-generated number row.
+- 2026-06-27 - native autocomplete/background correction - `swift test --package-path ios` - exit 0 with 14 tests passed and 1 live relay test skipped because `PASTA_IOS_JOIN_TOKEN` is unset.
+- 2026-06-27 - native autocomplete/background correction - `make run-ios` - exit 0 on physical iPhone Air `AA3189CF-63E4-5B5B-884D-A39454926E42`; `xcodebuild` built and signed `Pasta.app` with embedded `PastaKeyboard.appex`, `devicectl` installed `com.thehumanworks.pasta`, and `devicectl` launched the app.
+- 2026-06-27 - native autocomplete/background correction - `xcrun devicectl device process launch --device AA3189CF-63E4-5B5B-884D-A39454926E42 com.apple.MobileSMS` - exit 0; `xcrun devicectl device capture screenshot --device AA3189CF-63E4-5B5B-884D-A39454926E42 --destination ios/build/screenshots/pasta-device-native-autocomplete-toolbar.png` - exit 0 with 1260x2736 screenshot showing the live Messages keyboard host with compact Pasta side icons, native autocomplete suggestions (`I'm`, `It's`, `It`), a number row, and no app-painted full-keyboard background path in code.
 
 ---
 
@@ -249,6 +253,13 @@ Scope changes stop execution and surface to the user.
   fixed to `Publish` and `Paste`; expose history through the `Paste` menu rather
   than a horizontally scrollable shelf. Scope impact: toolbar presentation and
   docs wording; no DoD/task changes.
+- 2026-06-27 - User comparison against Grammarly corrected the root cause:
+  Pasta was replacing the native autocomplete toolbar and painting an explicit
+  full-keyboard surface. The corrected contract is to preserve KeyboardKit's
+  `params.view` autocomplete toolbar, provide a local autocomplete service, keep
+  Pasta actions as compact transparent side icons, and leave UIKit host
+  backgrounds clear. Scope impact: toolbar composition and docs wording; no
+  DoD/task changes.
 
 ---
 
@@ -304,6 +315,13 @@ Scope changes stop execution and surface to the user.
   paints a slightly different gray. Keep the row background clear, use
   KeyboardKit's `Color.keyboardBackground` as the single SwiftUI surface, and
   mirror the same KeyboardKit color asset only for UIKit host-view opacity.
+- 2026-06-27 - The earlier "use `Color.keyboardBackground` as the single SwiftUI
+  surface" learning was still too app-owned. It removed one toolbar mismatch but
+  left the whole keyboard looking unlike Grammarly because Pasta was painting the
+  extension host. Correct pattern: do not set `keyboardViewStyle` for a full
+  background, clear `view`/`inputView`/hosting-controller backgrounds, preserve
+  KeyboardKit's autocomplete `params.view`, and restrict Pasta to compact
+  transparent side actions. impact: 5/5.
 
 ---
 

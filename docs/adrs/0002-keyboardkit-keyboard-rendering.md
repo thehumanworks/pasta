@@ -24,13 +24,15 @@ XChaCha20-Poly1305, and @noble packages on the TypeScript side.
 
 Use KeyboardKit as the native iOS keyboard rendering and layout engine. Pasta is
 purely additive: KeyboardKit owns the keys, input handling, sizing, modes,
-callouts, and the keyboard-switch (globe) key, while Pasta keeps only its
-product-specific action row, clip insertion actions, and Full Access gates. The
-action row renders inside KeyboardKit's native `toolbar:` slot (the band that
-normally holds QuickType suggestions); Pasta does not edit the generated layout
-and does not stack its own chrome around `KeyboardView`. The row is a fixed
-native-height `Publish` plus `Paste` menu surface; live history refresh happens
-automatically when Full Access and pairing state allow it.
+callouts, autocomplete band, keyboard surface, and the keyboard-switch (globe)
+key, while Pasta keeps only its product-specific side actions, clip insertion
+actions, and Full Access gates. The action row renders inside KeyboardKit's
+native `toolbar:` slot (the band that normally holds QuickType suggestions) and
+preserves `params.view` so suggestions and autocorrect stay visible. Pasta does
+not stack its own chrome around `KeyboardView`. The row is a fixed native-height
+surface with compact Publish and Paste side icons around the native suggestions;
+live history refresh happens automatically when Full Access and pairing state
+allow it.
 
 KeyboardKit is pinned through XcodeGen as an exact Swift Package dependency.
 
@@ -45,18 +47,17 @@ Pasta-specific code still owns privacy-sensitive behavior: no ordinary keystroke
 publishing, no silent pasteboard read, and no plaintext secret storage.
 
 Pasta's action row is mounted directly inside KeyboardKit's `toolbar:` slot. In
-KeyboardKit 9.9.1 that slot adds no background of its own; the framework already
-composes the keyboard as `VStack { toolbar; keys }` and paints one surface behind
-both. An earlier revision wrongly concluded the slot itself painted a strip and
-moved the row to a sibling above `KeyboardView` with a zero-height toolbar,
-`renderBackground: false`, a hand-painted background, and
-`.ignoresSafeArea(.top)`. That stack is what produced the cropped, detached
-strip. Later attempts also showed that a hand-picked row fill, chip background,
-or horizontally scrollable shelf creates a visible tone mismatch. The corrected
-rule: use the slot, keep the Pasta row/buttons transparent, delete the sibling/
-zeroed-toolbar/ignoresSafeArea workarounds, and supply opacity with an explicit
-`keyboardViewStyle(background: .color(.keyboardBackground))` because the standard
-style service's background is transparent.
+KeyboardKit 9.9.1 that slot adds no background of its own; the framework composes
+the keyboard as `VStack { toolbar; keys }`. An earlier revision wrongly concluded
+the slot itself painted a strip and moved the row to a sibling above
+`KeyboardView` with a zero-height toolbar, `renderBackground: false`, a
+hand-painted background, and `.ignoresSafeArea(.top)`. That stack is what
+produced the cropped, detached strip. Later attempts also showed that a
+hand-picked row fill, chip background, horizontally scrollable shelf, or explicit
+full-keyboard `.keyboardBackground` repaint creates a visible tone mismatch. The
+corrected rule: use the slot, render KeyboardKit's `params.view`, keep Pasta side
+actions transparent, keep UIKit host views clear, and do not supply an app-owned
+full-keyboard background.
 
 KeyboardKit layouts are generated from a `KeyboardContext` snapshot. Pasta
 observes that context so its view re-evaluates, and refreshes the `KeyboardView`

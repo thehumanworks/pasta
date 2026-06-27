@@ -12,14 +12,19 @@ final class KeyboardViewController: KeyboardInputViewController {
     private let client = PastaAPIClient()
     private let keychain = PastaKeychainStore()
     private let store = try? PastaAppGroupStore()
+    private let autocompleteService = PastaAutocompleteService()
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        applyKeyboardSurfaceBackground()
+        deferKeyboardSurfaceToHost()
         enableExperimentalKeyboardTypeChangeTracking()
         reloadClips()
         setup(for: .pasta) { [weak self] _ in
             guard let self else { return }
+            services.autocompleteService = autocompleteService
+            if state.autocompleteContext.suggestionsFromService.isEmpty {
+                state.autocompleteContext.suggestionsFromService = PastaAutocompleteService.idleSuggestions
+            }
             services.keyboardBehavior = PastaKeyboardBehavior(
                 keyboardContext: state.keyboardContext,
                 repeatGestureTimer: services.repeatGestureTimer
@@ -30,7 +35,7 @@ final class KeyboardViewController: KeyboardInputViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        applyKeyboardSurfaceBackground()
+        deferKeyboardSurfaceToHost()
         reloadClips()
         setupPastaKeyboardView()
         autoRefreshHistoryIfPossible()
@@ -42,18 +47,17 @@ final class KeyboardViewController: KeyboardInputViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        applyKeyboardSurfaceBackground()
+        deferKeyboardSurfaceToHost()
     }
 
-    private func applyKeyboardSurfaceBackground() {
-        let background = PastaToolbarAppearance.uiKeyboardSurface
-        view.isOpaque = true
-        view.backgroundColor = background
-        inputView?.isOpaque = true
-        inputView?.backgroundColor = background
+    private func deferKeyboardSurfaceToHost() {
+        view.isOpaque = false
+        view.backgroundColor = .clear
+        inputView?.isOpaque = false
+        inputView?.backgroundColor = .clear
         children.forEach { child in
-            child.view.isOpaque = true
-            child.view.backgroundColor = background
+            child.view.isOpaque = false
+            child.view.backgroundColor = .clear
         }
     }
 
@@ -76,7 +80,7 @@ final class KeyboardViewController: KeyboardInputViewController {
                 publish: { [weak self] in self?.publishClipboardText() }
             )
         }
-        applyKeyboardSurfaceBackground()
+        deferKeyboardSurfaceToHost()
     }
 
     private func autoRefreshHistoryIfPossible() {
@@ -183,12 +187,9 @@ private struct PastaKeyboardView: View {
     @EnvironmentObject private var keyboardContext: KeyboardContext
 
     var body: some View {
-        // Pasta is additive: KeyboardKit owns the keys and input handling, and the
-        // Pasta action row lives in KeyboardKit's native toolbar slot (where the
-        // QuickType band normally sits). Opacity comes from an explicit keyboard
-        // surface, not `renderBackground` — the standard style service's background
-        // is transparent, so never set `renderBackground: false` and hand-paint a
-        // sibling strip again.
+        // Pasta is additive: KeyboardKit owns the keyboard, autocomplete band,
+        // sizing, and input handling. Pasta only adds compact side actions around
+        // KeyboardKit's standard autocomplete toolbar.
         KeyboardView(
             layout: pastaLayout,
             state: state,
@@ -197,21 +198,30 @@ private struct PastaKeyboardView: View {
             buttonView: { $0.view },
             collapsedView: { $0.view },
             emojiKeyboard: { $0.view },
-            toolbar: { _ in
+            toolbar: { params in
                 PastaKeyboardToolbar(
                     model: toolbarModel,
+                    autocompleteToolbar: params.view,
                     insertClip: insertClip,
                     publish: publish
                 )
             }
         )
-        .keyboardViewStyle(.init(background: .color(PastaToolbarAppearance.keyboardSurface)))
+        .autocompleteToolbarStyle(PastaToolbarAppearance.autocompleteToolbarStyle)
         .keyboardInputToolbarDisplayMode(.none)
         .id(keyboardLayoutIdentifier)
     }
 
     private var pastaLayout: KeyboardLayout {
-        services.layoutService.keyboardLayout(for: keyboardContext)
+        var layout = services.layoutService.keyboardLayout(for: keyboardContext)
+        guard keyboardContext.keyboardType == .alphabetic else { return layout }
+
+        let config = layout.deviceConfiguration ?? .standard(for: keyboardContext)
+        let numberRow = KeyboardAction.Row(characters: "1234567890").map {
+            $0.standardLayoutItem(for: config)
+        }
+        layout.itemRows.insert(numberRow, at: 0)
+        return layout
     }
 
     private var keyboardLayoutIdentifier: String {
@@ -228,62 +238,50 @@ private struct PastaKeyboardView: View {
     }
 }
 
-private struct PastaKeyboardToolbar: View {
+private struct PastaKeyboardToolbar<AutocompleteToolbar: View>: View {
     let model: PastaKeyboardToolbarModel
+    let autocompleteToolbar: AutocompleteToolbar
     let insertClip: (String) -> Void
     let publish: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
-            actionButton(
-                title: "Publish",
+            iconButton(
+                accessibilityLabel: "Publish Clipboard",
                 systemImage: "square.and.arrow.up",
                 isEnabled: !model.isRunningLiveAction,
                 action: publish
             )
             divider
+            autocompleteToolbar
+                .frame(maxWidth: .infinity)
+                .frame(height: PastaToolbarAppearance.toolbarHeight)
+            divider
             pasteMenu
         }
-        .frame(height: PastaToolbarAppearance.shelfHeight)
+        .frame(maxWidth: .infinity)
+        .frame(height: PastaToolbarAppearance.toolbarHeight)
         .background(Color.clear)
     }
 
-    private func statusLabel(_ text: String) -> some View {
-        Text(text)
-            .font(PastaToolbarAppearance.font)
-            .foregroundStyle(PastaToolbarAppearance.foreground)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .padding(.horizontal, 14)
-            .frame(minWidth: 116, maxWidth: 240)
-            .frame(height: PastaToolbarAppearance.shelfHeight)
-            .background(Color.clear)
-    }
-
-    private func actionButton(
-        title: String,
+    private func iconButton(
+        accessibilityLabel: String,
         systemImage: String,
         isEnabled: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Label {
-                Text(title)
-            } icon: {
-                Image(systemName: systemImage)
-            }
-            .font(PastaToolbarAppearance.font)
-            .labelStyle(.titleAndIcon)
-            .padding(.horizontal, 13)
-            .lineLimit(1)
-            .frame(height: PastaToolbarAppearance.shelfHeight)
-            .frame(minWidth: 132)
-            .contentShape(Rectangle())
+            Image(systemName: systemImage)
+                .font(PastaToolbarAppearance.iconFont)
+                .frame(width: PastaToolbarAppearance.actionWidth, height: PastaToolbarAppearance.toolbarHeight)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(PastaToolbarAppearance.foreground)
         .allowsHitTesting(isEnabled)
+        .opacity(isEnabled ? 1 : 0.35)
         .background(Color.clear)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     private var pasteMenu: some View {
@@ -299,22 +297,15 @@ private struct PastaKeyboardToolbar: View {
                 }
             }
         } label: {
-            Label {
-                Text("Paste")
-            } icon: {
-                Image(systemName: "doc.on.clipboard")
-            }
-                .font(PastaToolbarAppearance.font)
-                .labelStyle(.titleAndIcon)
-                .padding(.horizontal, 13)
-                .lineLimit(1)
-                .frame(height: PastaToolbarAppearance.shelfHeight)
-                .frame(maxWidth: .infinity)
+            Image(systemName: "doc.on.clipboard")
+                .font(PastaToolbarAppearance.iconFont)
+                .frame(width: PastaToolbarAppearance.actionWidth, height: PastaToolbarAppearance.toolbarHeight)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(PastaToolbarAppearance.foreground)
         .background(Color.clear)
+        .accessibilityLabel("Paste from Pasta History")
     }
 
     private var divider: some View {
@@ -325,22 +316,18 @@ private struct PastaKeyboardToolbar: View {
 }
 
 private enum PastaToolbarAppearance {
-    /// Match KeyboardKit's standard autocomplete row height so the Pasta actions
-    /// sit in the native toolbar slot instead of creating a taller custom band.
     static let foreground = Color.keyboardButtonForeground
     static let separator = Color.keyboardButtonForeground.opacity(0.20)
-    static let shelfHeight: CGFloat = 48
+    static let toolbarHeight: CGFloat = 48
+    static let actionWidth: CGFloat = 58
     static let separatorHeight: CGFloat = 30
 
-    static var font: Font { .system(size: 17, weight: .semibold) }
-    static let keyboardSurface = Color.keyboardBackground
-    static let uiKeyboardSurface = UIColor { traits in
-        switch traits.userInterfaceStyle {
-        case .dark:
-            return UIColor(red: 0.173, green: 0.173, blue: 0.173, alpha: 1)
-        default:
-            return UIColor(red: 0.835, green: 0.839, blue: 0.867, alpha: 1)
-        }
+    static var iconFont: Font { .system(size: 22, weight: .semibold) }
+    static var autocompleteToolbarStyle: Autocomplete.ToolbarStyle {
+        Autocomplete.ToolbarStyle(
+            height: toolbarHeight,
+            padding: 0
+        )
     }
 }
 
@@ -374,6 +361,240 @@ private final class PastaKeyboardBehavior: Keyboard.StandardKeyboardBehavior {
     }
 }
 
+private final class PastaAutocompleteService: AutocompleteService {
+    static let idleSuggestions = [
+        Autocomplete.Suggestion(text: "I"),
+        Autocomplete.Suggestion(text: "The"),
+        Autocomplete.Suggestion(text: "It")
+    ]
+
+    var locale: Locale = .current
+
+    private var ignored = Set<String>()
+    private var learned = Set<String>()
+
+    var canIgnoreWords: Bool { true }
+    var canLearnWords: Bool { true }
+    var ignoredWords: [String] { Array(ignored).sorted() }
+    var learnedWords: [String] { Array(learned).sorted() }
+
+    func autocomplete(_ text: String) async throws -> Autocomplete.ServiceResult {
+        let languageCandidates = Self.languageCandidates(for: locale)
+        let ignoredSnapshot = ignored
+        let suggestions = await MainActor.run {
+            Self.suggestions(
+                for: text,
+                languageCandidates: languageCandidates,
+                ignoredWords: ignoredSnapshot
+            )
+        }
+        return Autocomplete.ServiceResult(inputText: text, suggestions: suggestions)
+    }
+
+    func hasIgnoredWord(_ word: String) -> Bool {
+        ignored.contains(Self.normalized(word))
+    }
+
+    func hasLearnedWord(_ word: String) -> Bool {
+        learned.contains(Self.normalized(word))
+    }
+
+    func ignoreWord(_ word: String) {
+        ignored.insert(Self.normalized(word))
+    }
+
+    func learnWord(_ word: String) {
+        learned.insert(Self.normalized(word))
+    }
+
+    func removeIgnoredWord(_ word: String) {
+        ignored.remove(Self.normalized(word))
+    }
+
+    func unlearnWord(_ word: String) {
+        learned.remove(Self.normalized(word))
+    }
+
+    @MainActor
+    private static func suggestions(
+        for text: String,
+        languageCandidates: [String],
+        ignoredWords: Set<String>
+    ) -> [Autocomplete.Suggestion] {
+        guard let range = currentWordRange(in: text) else {
+            return Self.idleSuggestions
+        }
+
+        let nsText = text as NSString
+        let word = nsText.substring(with: range)
+        guard !word.isEmpty else { return Self.idleSuggestions }
+
+        let checker = UITextChecker()
+        let language = checkerLanguage(candidates: languageCandidates)
+        var suggestions: [Autocomplete.Suggestion] = []
+        var seen = Set<String>()
+
+        appendUnknownSuggestion(for: word, to: &suggestions, seen: &seen)
+        appendAutocorrectSuggestion(
+            for: word,
+            text: text,
+            range: range,
+            checker: checker,
+            language: language,
+            ignoredWords: ignoredWords,
+            to: &suggestions,
+            seen: &seen
+        )
+        appendCompletionSuggestions(
+            for: word,
+            text: text,
+            range: range,
+            checker: checker,
+            language: language,
+            to: &suggestions,
+            seen: &seen
+        )
+        appendFallbackSuggestions(for: word, to: &suggestions, seen: &seen)
+
+        return suggestions.isEmpty ? Self.idleSuggestions : Array(suggestions.prefix(3))
+    }
+
+    private static func appendUnknownSuggestion(
+        for word: String,
+        to suggestions: inout [Autocomplete.Suggestion],
+        seen: inout Set<String>
+    ) {
+        guard word.count > 1 else { return }
+        append(
+            Autocomplete.Suggestion(text: word, type: .unknown, title: "\"\(word)\""),
+            to: &suggestions,
+            seen: &seen
+        )
+    }
+
+    @MainActor
+    private static func appendAutocorrectSuggestion(
+        for word: String,
+        text: String,
+        range: NSRange,
+        checker: UITextChecker,
+        language: String,
+        ignoredWords: Set<String>,
+        to suggestions: inout [Autocomplete.Suggestion],
+        seen: inout Set<String>
+    ) {
+        guard !ignoredWords.contains(normalized(word)) else { return }
+        let misspelled = checker.rangeOfMisspelledWord(
+            in: text,
+            range: range,
+            startingAt: range.location,
+            wrap: false,
+            language: language
+        )
+        guard misspelled.location != NSNotFound else { return }
+        guard let guess = checker.guesses(forWordRange: range, in: text, language: language)?.first else { return }
+        guard !guess.caseInsensitiveEquals(word) else { return }
+        let suggestion = Autocomplete.Suggestion(text: guess, type: .autocorrect)
+            .autocompleteCased(for: word)
+        append(suggestion, to: &suggestions, seen: &seen)
+    }
+
+    @MainActor
+    private static func appendCompletionSuggestions(
+        for word: String,
+        text: String,
+        range: NSRange,
+        checker: UITextChecker,
+        language: String,
+        to suggestions: inout [Autocomplete.Suggestion],
+        seen: inout Set<String>
+    ) {
+        let completions = checker.completions(
+            forPartialWordRange: range,
+            in: text,
+            language: language
+        ) ?? []
+
+        for completion in completions.prefix(6) {
+            guard !completion.caseInsensitiveEquals(word) else { continue }
+            let suggestion = Autocomplete.Suggestion(text: completion)
+                .autocompleteCased(for: word)
+            append(suggestion, to: &suggestions, seen: &seen)
+        }
+    }
+
+    private static func appendFallbackSuggestions(
+        for word: String,
+        to suggestions: inout [Autocomplete.Suggestion],
+        seen: inout Set<String>
+    ) {
+        let prefix = word.lowercased()
+        for fallback in Self.commonWords where fallback.lowercased().hasPrefix(prefix) {
+            guard !fallback.caseInsensitiveEquals(word) else { continue }
+            let suggestion = Autocomplete.Suggestion(text: fallback)
+                .autocompleteCased(for: word)
+            append(suggestion, to: &suggestions, seen: &seen)
+        }
+    }
+
+    private static func append(
+        _ suggestion: Autocomplete.Suggestion,
+        to suggestions: inout [Autocomplete.Suggestion],
+        seen: inout Set<String>
+    ) {
+        let key = normalized(suggestion.text)
+        guard !key.isEmpty, !seen.contains(key) else { return }
+        seen.insert(key)
+        suggestions.append(suggestion)
+    }
+
+    private static func currentWordRange(in text: String) -> NSRange? {
+        let nsText = text as NSString
+        var start = nsText.length
+        while start > 0 {
+            let codeUnit = nsText.character(at: start - 1)
+            guard
+                let scalar = UnicodeScalar(Int(codeUnit)),
+                Self.wordCharacters.contains(scalar)
+            else {
+                break
+            }
+            start -= 1
+        }
+
+        let length = nsText.length - start
+        guard length > 0 else { return nil }
+        return NSRange(location: start, length: length)
+    }
+
+    @MainActor
+    private static func checkerLanguage(candidates: [String]) -> String {
+        let available = UITextChecker.availableLanguages
+        return candidates.first { available.contains($0) } ?? "en_US"
+    }
+
+    private static func languageCandidates(for locale: Locale) -> [String] {
+        [
+            locale.identifier,
+            locale.identifier.replacingOccurrences(of: "_", with: "-"),
+            locale.language.languageCode?.identifier ?? "",
+            "en_US",
+            "en"
+        ].filter { !$0.isEmpty }
+    }
+
+    private static func normalized(_ word: String) -> String {
+        word.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private static let wordCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "'"))
+    private static let commonWords = [
+        "I", "the", "to", "and", "you", "that", "it", "in", "is", "for",
+        "of", "on", "with", "this", "we", "are", "be", "have", "not", "can",
+        "will", "from", "at", "as", "if", "or", "so", "but", "just", "thanks"
+    ]
+}
+
 private struct LivePastaContext {
     let configuration: PastaDeviceConfiguration
     let groupKey: String
@@ -389,6 +610,10 @@ private extension String {
     var singleLineTitle: String {
         let compact = replacingOccurrences(of: "\n", with: " ")
         return compact.isEmpty ? "Text clip" : String(compact.prefix(48))
+    }
+
+    func caseInsensitiveEquals(_ other: String) -> Bool {
+        compare(other, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
     }
 }
 
@@ -438,6 +663,10 @@ private struct PastaKeyboardPreviewHost: View {
 #Preview("Pasta toolbar — row only") {
     PastaKeyboardToolbar(
         model: .preview,
+        autocompleteToolbar: Autocomplete.Toolbar(
+            suggestions: PastaAutocompleteService.idleSuggestions,
+            suggestionAction: { _ in }
+        ),
         insertClip: { _ in },
         publish: {}
     )
