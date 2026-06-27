@@ -31,9 +31,10 @@ Scope changes stop execution and surface to the user.
 
 ## 3. Definition of Done · INVARIANT
 
-- [ ] **DoD-1** — A native Pasta app target builds and runs on iOS Simulator with
-  the shared Swift core linked. — *verify by:* Xcode build/run command and
-  simulator launch proof.
+- [ ] **DoD-1** — A native Pasta app target builds in Xcode Cloud with the shared
+  Swift core linked, and launches on simulator/device when a runnable artifact is
+  available. — *verify by:* Xcode Cloud build evidence plus simulator/device
+  launch proof when available.
 - [ ] **DoD-2** — The app can pair or join an existing Pasta space as a normal
   trusted device without exposing raw group keys. — *verify by:* simulator or
   device pairing smoke against the existing Worker API or a local test server.
@@ -53,8 +54,9 @@ Scope changes stop execution and surface to the user.
 
 - **`DONE`** — the containing app can onboard, pair, browse history, and feed
   safe cached text history to extensions. *(primary)*
-- **`BLOCKED-DEP`** — Goal 12 is incomplete or Apple signing entitlements cannot
-  be configured locally without developer-account input.
+- **`BLOCKED-DEP`** — Goal 12 is incomplete, Xcode Cloud cannot be configured
+  without Apple Developer input, or signing entitlements cannot be configured
+  without developer-account input.
 - **`SCOPE-CHANGE`** — app shell work requires backend route changes, new auth,
   secret recovery, or background pasteboard monitoring.
 - **`CONFIDENCE-STALL`** — a task cannot reach 90 confidence after two attempts.
@@ -69,14 +71,16 @@ Scope changes stop execution and surface to the user.
 
 **Steps**
 - [ ] Add an Xcode workspace/project or generator accepted by the repo.
+- [ ] Configure the project so Xcode Cloud can build the app target.
 - [ ] Add the app target, bundle id, App Group, and Keychain access group.
 - [ ] Link `PastaCore`.
 
 **Verification Contract**
 - *Check:* The app target builds and launches.
-- *Method:* XcodeBuildMCP or `xcodebuild` simulator build/run command.
-- *Expected:* Simulator launches Pasta without signing, entitlement, or runtime
-  crashes.
+- *Method:* Xcode Cloud build/test evidence plus local simulator/device launch
+  proof when possible.
+- *Expected:* Xcode Cloud builds the Pasta app target; simulator/device launch
+  proof is recorded separately from build authority.
 
 **Confidence:** 0 / 90 · **Depends on:** Goal 12 · **Closes:** DoD-1
 
@@ -162,7 +166,7 @@ Scope changes stop execution and surface to the user.
   trust, setup, history, and explicit clipboard operations so the keyboard can
   stay small and focused. Scope impact: none.
 - 2026-06-27 - Self adversarial review found signing and entitlements are likely
-  to block local simulator/device proof. This goal treats missing developer-team
+  to block Xcode Cloud or device proof. This goal treats missing developer-team
   configuration as a blocker, not a reason to dilute the security model. Scope
   impact: none.
 

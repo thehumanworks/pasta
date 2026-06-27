@@ -34,6 +34,17 @@ Native iOS expansion starts at Goal 11. Goals 12-17 remain blocked until their
 prerequisite goals have verified evidence and the user confirms the DoD + Tasks
 for execution.
 
+Native iOS Xcode build authority:
+
+- Local `swift build --package-path ios` and `swift test --package-path ios` are
+  acceptable for the shared SwiftPM core.
+- The current development host is macOS 27 beta 2, so local Xcode app/extension
+  builds are not authoritative proof.
+- Xcode Cloud is the required source of truth for iOS app, keyboard extension,
+  share extension, App Intents extension, archive, and release build evidence.
+- Local simulator or device runs are secondary behavioral smoke unless they use
+  an Xcode Cloud/TestFlight artifact.
+
 ## Moo Agent Orchestration
 
 The lead agent owns coordination, final integration, and verification. Worker agents do bounded work in Moo sessions inside the `pasta` workspace. Do not use untracked local panes, ad hoc terminal windows, or memory-only task assignment for delivery work.
@@ -158,6 +169,8 @@ For each goal:
 - CI pairing: a clean noninteractive profile can join with `PASTA_JOIN_TOKEN`; default joins remain trusted until explicit revocation, while joins created with `--device-ttl` use the clipboard before `device_expires_at` and fail with revoked-device auth after expiry.
 - Distribution: `bunx --bun -p github:thehumanworks/pasta pasta --version` works from a clean cache after public repo/package shape exists.
 - Cross-platform: macOS, Linux, Windows smoke at least `--version`, `doctor`, and the supported clipboard adapter path.
+- Native iOS: SwiftPM core tests may run locally, but Xcode target build/archive
+  proof must come from Xcode Cloud because the local host is macOS 27 beta 2.
 
 ## Blocker Rules
 

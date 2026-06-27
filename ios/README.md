@@ -24,6 +24,18 @@ The package supports iOS 17+ for app/extension targets and macOS 14+ for local
 unit tests. App Intents, Controls, and newer iOS surfaces must be guarded with
 availability checks when the Xcode project lands.
 
+## Build Authority
+
+Local SwiftPM commands are useful for `PastaCore` unit tests and fast protocol
+work. They are not authoritative proof for the eventual iOS app, keyboard
+extension, share extension, App Intents extension, archives, or release builds.
+
+The current development host runs macOS 27 beta 2, so native Xcode app/extension
+build proof must come from Xcode Cloud. Local simulator or physical-device runs
+can still be useful behavioral smoke when they are possible, but future goals
+should treat Xcode Cloud build/test/archive evidence as the source of truth for
+Xcode target compatibility.
+
 ## Target Plan
 
 Future implementation should add an Xcode workspace or project that embeds this

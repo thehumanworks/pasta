@@ -57,8 +57,8 @@ Scope changes stop execution and surface to the user.
 
 - **`DONE`** — iOS can publish from native Share and system command surfaces
   without changing Pasta's protocol or privacy boundary. *(primary)*
-- **`BLOCKED-DEP`** — Goals 13 or 14 are incomplete, or extension signing cannot
-  proceed locally.
+- **`BLOCKED-DEP`** — Goals 13 or 14 are incomplete, Xcode Cloud cannot build the
+  extension targets, or extension signing cannot proceed.
 - **`SCOPE-CHANGE`** — publish requires new backend routes, silent monitoring, or
   wider metadata disclosure.
 - **`CONFIDENCE-STALL`** — a task cannot reach 90 confidence after two attempts.
@@ -73,6 +73,7 @@ Scope changes stop execution and surface to the user.
 
 **Steps**
 - [ ] Add Share extension target and activation rules.
+- [ ] Ensure the Share extension target is included in the Xcode Cloud workflow.
 - [ ] Load `NSExtensionItem` text and URL attachments.
 - [ ] Encrypt and publish through existing text clip flow.
 
@@ -114,6 +115,8 @@ Scope changes stop execution and surface to the user.
 - [ ] Implement Publish Clipboard intent.
 - [ ] Implement Copy Latest Text to Clipboard intent.
 - [ ] Implement Open History and Search History intents.
+- [ ] Ensure the App Intents extension target is included in the Xcode Cloud
+  workflow.
 - [ ] Keep entities small and non-secret.
 
 **Verification Contract**

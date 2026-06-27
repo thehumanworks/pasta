@@ -31,9 +31,10 @@ Scope changes stop execution and surface to the user.
 
 ## 3. Definition of Done · INVARIANT
 
-- [ ] **DoD-1** — A keyboard extension target builds, installs, and appears as a
-  selectable iOS keyboard. — *verify by:* simulator/device install and keyboard
-  selection proof.
+- [ ] **DoD-1** — A keyboard extension target builds in Xcode Cloud, installs,
+  and appears as a selectable iOS keyboard when a runnable artifact is available.
+  — *verify by:* Xcode Cloud build evidence plus simulator/device install and
+  keyboard selection proof when available.
 - [ ] **DoD-2** — Normal typing, delete, return, space, shift/case, punctuation
   access, and next-keyboard behavior are usable enough that Pasta is not a
   one-button keyboard. — *verify by:* simulator/manual keyboard smoke.
@@ -56,8 +57,8 @@ Scope changes stop execution and surface to the user.
 
 - **`DONE`** — Pasta keyboard feels native enough for text entry and can insert
   Pasta text history where iOS allows third-party keyboards. *(primary)*
-- **`BLOCKED-DEP`** — Goal 13 is incomplete or keyboard entitlement/signing
-  setup cannot proceed locally.
+- **`BLOCKED-DEP`** — Goal 13 is incomplete, Xcode Cloud cannot build the
+  keyboard target, or keyboard entitlement/signing setup cannot proceed.
 - **`SCOPE-CHANGE`** — desired behavior requires replacing the Apple keyboard,
   bypassing secure-field restrictions, or monitoring keystrokes/pasteboard.
 - **`CONFIDENCE-STALL`** — a task cannot reach 90 confidence after two attempts.
@@ -72,13 +73,16 @@ Scope changes stop execution and surface to the user.
 
 **Steps**
 - [ ] Add keyboard extension target and Info.plist.
+- [ ] Ensure the target is included in the Xcode Cloud workflow.
 - [ ] Implement basic keyboard layout and text document proxy interactions.
 - [ ] Include globe/next-keyboard behavior.
 
 **Verification Contract**
-- *Check:* Keyboard target installs and types in a host text field.
-- *Method:* simulator/device keyboard smoke.
-- *Expected:* User can type ordinary text and switch away from Pasta keyboard.
+- *Check:* Keyboard target builds in Xcode Cloud and installs/types when a
+  runnable artifact is available.
+- *Method:* Xcode Cloud build evidence plus simulator/device keyboard smoke.
+- *Expected:* Xcode Cloud builds the keyboard target; user can type ordinary text
+  and switch away from Pasta keyboard in behavioral smoke.
 
 **Confidence:** 0 / 90 · **Depends on:** Goal 13 · **Closes:** DoD-1, DoD-2
 

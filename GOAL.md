@@ -100,8 +100,8 @@ Current proposed implementation order:
    insertion where iOS allows third-party keyboards.
 5. Goal 15 adds Share extension and App Intents publish surfaces.
 6. Goal 16 completes image, file, directory, and File Provider handoff decisions.
-7. Goal 17 proves end-to-end integration, device/simulator behavior, review copy,
-   and release readiness.
+7. Goal 17 proves Xcode Cloud build/test/archive evidence, end-to-end
+   integration, device/simulator behavior, review copy, and release readiness.
 
 Goals 11-17 are not a change to the completed desktop MVP scope. They are the
 native iOS expansion queue and require user confirmation of each goal's DoD and
@@ -126,6 +126,7 @@ Current verified state:
 - Goal 10 completed the directory path copy/paste follow-up: `pasta copy <directory>` bundles regular directory contents as an encrypted zip-backed file payload, and `pasta paste` extracts the directory locally.
 - Native iOS UX research is recorded in `docs-site/content/native-ios.md` and published in the docs site. The well-founded UX choice is a keyboard-centered iOS app: custom keyboard for text insertion, containing app for setup/history/trust, Share extension for publish, App Intents for command surfaces, and binary/file/directory handoff outside direct text insertion.
 - The native iOS build environment seed is under `ios/` as a SwiftPM `PastaCore` package. Goal 11 is the active native iOS setup goal awaiting DoD/Task scope confirmation before GDD execution ticks.
+- The current development host is macOS 27 beta 2. Local SwiftPM tests are acceptable for `PastaCore`, but Xcode app/extension build, archive, and release proof must come from Xcode Cloud.
 
 The latest completed follow-up is directory copy/paste. Release artifact verification remains a later distribution action:
 

@@ -36,9 +36,10 @@ Scope changes stop execution and surface to the user.
 - [ ] **DoD-1** — iOS and desktop can pair, publish, history-sync, and paste text
   end to end against the real Pasta relay without server-side plaintext. — *verify
   by:* remote smoke with redacted logs.
-- [ ] **DoD-2** — Keyboard, app, share extension, App Intents, and binary handoff
-  flows are proven on simulator and at least one physical iPhone when available.
-  — *verify by:* recorded manual/device matrix.
+- [ ] **DoD-2** — Xcode Cloud builds/tests the app, keyboard, share extension,
+  App Intents, and binary handoff targets; flows are then proven on simulator and
+  at least one physical iPhone when available. — *verify by:* Xcode Cloud run
+  evidence plus recorded manual/device matrix.
 - [ ] **DoD-3** — Tests cover Swift core, app services, extension services,
   TypeScript compatibility, and any backend compatibility changes. — *verify by:*
   `swift test --package-path ios` and `mise exec -- bun test`.
@@ -46,8 +47,9 @@ Scope changes stop execution and surface to the user.
   Access, pasteboard use, encrypted sync, metadata, and unsupported contexts.
   — *verify by:* docs/app metadata review.
 - [ ] **DoD-5** — Release path is documented and, if credentials are available,
-  internal TestFlight or equivalent distribution proof exists. — *verify by:*
-  archive/export/TestFlight evidence or an explicit credential blocker.
+  Xcode Cloud archive plus internal TestFlight or equivalent distribution proof
+  exists. — *verify by:* Xcode Cloud archive/export/TestFlight evidence or an
+  explicit credential blocker.
 
 ---
 
@@ -55,8 +57,9 @@ Scope changes stop execution and surface to the user.
 
 - **`DONE`** — native iOS is integrated, verified, documented, and ready for
   internal distribution or explicit external-signing handoff. *(primary)*
-- **`BLOCKED-DEP`** — any prerequisite iOS goal is incomplete, or Apple Developer
-  credentials/devices are unavailable for required release proof.
+- **`BLOCKED-DEP`** — any prerequisite iOS goal is incomplete, Xcode Cloud is not
+  configured, or Apple Developer credentials/devices are unavailable for required
+  release proof.
 - **`SCOPE-CHANGE`** — release readiness requires changing Pasta's privacy,
   transport, or encryption contract.
 - **`CONFIDENCE-STALL`** — a task cannot reach 90 confidence after two attempts.
@@ -90,12 +93,16 @@ Scope changes stop execution and surface to the user.
 - [ ] Verify app onboarding/history/settings.
 - [ ] Verify keyboard standard access and Full Access modes.
 - [ ] Verify Share extension, App Intents, and binary handoff.
+- [ ] Verify Xcode Cloud build/test evidence for every Xcode target before
+  treating local simulator/device smoke as product proof.
 - [ ] Include physical-device proof when available.
 
 **Verification Contract**
-- *Check:* All native iOS surfaces work outside unit tests.
-- *Method:* simulator and physical-device matrix.
-- *Expected:* Each surface has pass/fail evidence and known limitations.
+- *Check:* All native iOS targets build in Xcode Cloud and surfaces work outside
+  unit tests.
+- *Method:* Xcode Cloud run evidence plus simulator and physical-device matrix.
+- *Expected:* Each target has Xcode Cloud evidence; each surface has pass/fail
+  behavior evidence and known limitations.
 
 **Confidence:** 0 / 90 · **Depends on:** T1 · **Closes:** DoD-2
 
@@ -144,13 +151,15 @@ Scope changes stop execution and surface to the user.
 ### T5 · Prove Or Block Release Distribution · [ ]
 
 **Steps**
-- [ ] Archive/export the iOS app if signing credentials are available.
+- [ ] Archive/export the iOS app through Xcode Cloud if signing credentials are
+  available.
 - [ ] Upload to internal TestFlight or document the exact missing credential.
 - [ ] Record release evidence separately from local build/test evidence.
 
 **Verification Contract**
 - *Check:* Distribution path is either proven or explicitly blocked.
-- *Method:* Xcode archive/export/TestFlight proof or credential blocker note.
+- *Method:* Xcode Cloud archive/export/TestFlight proof or credential blocker
+  note.
 - *Expected:* Internal distribution is available, or the blocker is concrete and
   actionable.
 
@@ -160,12 +169,16 @@ Scope changes stop execution and surface to the user.
 
 ## 6. Decisions · LIVE (append-only)
 
-- 2026-06-27 - Release readiness is a separate goal because simulator build
-  success, physical-device extension behavior, remote relay proof, and
-  TestFlight distribution are different proof layers. Scope impact: none.
+- 2026-06-27 - Release readiness is a separate goal because Xcode Cloud build
+  success, physical-device extension behavior, remote relay proof, and TestFlight
+  distribution are different proof layers. Scope impact: none.
 - 2026-06-27 - Self adversarial review found the main risk is claiming iOS done
   from unit tests. This goal requires simulator/device and real-relay proof before
   completion. Scope impact: none.
+- 2026-06-27 - User clarified the local host is macOS 27 beta 2, so Xcode Cloud
+  is the authoritative source for app/extension build, archive, and release
+  proof. Local simulator/device runs remain behavior proof only. Scope impact:
+  none.
 
 ---
 

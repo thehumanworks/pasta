@@ -59,9 +59,11 @@ Each item is atomic, tagged with a stable id that Tasks reference via
 - [ ] **DoD-4** — The keyboard-centered architecture decision is recorded as a
   durable ADR with alternatives and footguns. — *verify by:* review
   `docs/adrs/0001-native-ios-keyboard-centered.md`.
-- [ ] **DoD-5** — Local Apple toolchain availability is recorded before app or
-  extension target implementation starts. — *verify by:* rerun and record
-  `swift --version`, `xcodebuild -version`, and `xcrun simctl list runtimes`.
+- [ ] **DoD-5** — Local Apple toolchain availability and the Xcode Cloud build
+  authority rule are recorded before app or extension target implementation
+  starts. — *verify by:* rerun and record `swift --version`,
+  `xcodebuild -version`, `xcrun simctl list runtimes`, and review
+  `ios/README.md`.
 
 ---
 
@@ -69,8 +71,9 @@ Each item is atomic, tagged with a stable id that Tasks reference via
 
 - **`DONE`** — iOS workspace scaffold, root handoff, ADR, and goal stack are
   verified and ready for implementation scope confirmation. *(primary)*
-- **`BLOCKED-DEP`** — Xcode/Swift tooling is missing or cannot build a minimal
-  package after one direct repair attempt.
+- **`BLOCKED-DEP`** — Swift tooling is missing, cannot build a minimal package
+  after one direct repair attempt, or future Xcode Cloud configuration cannot be
+  located when app/extension targets begin.
 - **`SCOPE-CHANGE`** — setup requires introducing a new package manager, changing
   the central-service protocol, or committing developer-account secrets.
 - **`CONFIDENCE-STALL`** — a task cannot reach 90 confidence after two honest
@@ -90,13 +93,17 @@ trailing `[ ]` only when the Verification Contract passes and Confidence ≥ flo
 
 **Steps**
 - [ ] Check Swift, Xcode, and iOS simulator runtimes.
+- [ ] Record that local Xcode is non-authoritative for app/extension builds
+  because the host is macOS 27 beta 2.
 - [ ] Confirm no existing native iOS workspace is being overwritten.
 - [ ] Reconcile the documented UX surfaces with the future target plan.
 
 **Verification Contract**
 - *Check:* Local toolchain and target surfaces are known before implementation.
 - *Method:* `swift --version && xcodebuild -version && xcrun simctl list runtimes`
-- *Expected:* Commands exit 0 and show usable Swift, Xcode, and iOS runtimes.
+- *Expected:* Commands exit 0 for local discovery; `ios/README.md` states that
+  Xcode Cloud is authoritative for app/extension build, test, archive, and
+  release proof.
 
 **Confidence:** 0 / 90 · **Depends on:** none · **Closes:** DoD-2, DoD-5
 
@@ -190,6 +197,10 @@ trailing `[ ]` only when the Verification Contract passes and Confidence ≥ flo
   environment setup imply that iOS feature scope is already frozen. Tasks remain
   unchecked and evidence-free until the user confirms DoD + Tasks for execution.
   Scope impact: none.
+- 2026-06-27 - User clarified the development host is macOS 27 beta 2, so local
+  Xcode app/extension builds are not authoritative. Future app, extension,
+  archive, and release proof must come from Xcode Cloud; local SwiftPM remains
+  acceptable for shared core tests. Scope impact: none.
 
 ---
 
