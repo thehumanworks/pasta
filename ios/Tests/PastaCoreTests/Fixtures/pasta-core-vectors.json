@@ -66,5 +66,16 @@
     "recipientPublicKey": "zo060cy2M-x7cMF4FKXHbs0CloUFDTRHRboFhw5YfVk",
     "nonce": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
     "wrapped": "{\"alg\":\"X25519-HKDF-SHA256-XChaCha20-Poly1305\",\"ciphertext\":\"khdsa_sCEApmxJIx1horG9pD8X12eSB7nVVD-fhibFX5crJ25OkMB0wBI1bX3uix\",\"nonce\":\"BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"senderWrapPublicKey\":\"pOCSkrZRwni5dyxWn1-puxPZBrRqtoyd-dwrRAn4ogk\",\"v\":1}"
+  },
+  "joinGrant": {
+    "endpoint": "https://relay.example",
+    "accountId": "acct_ci",
+    "grantId": "grant_ci",
+    "redeemSecret": "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU",
+    "sealSecret": "BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY",
+    "groupKey": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk",
+    "token": "pasta_join_v1.aHR0cHM6Ly9yZWxheS5leGFtcGxl.acct_ci.grant_ci.BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU.BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY",
+    "sealedGroupKey": "{\"aad\":{\"accountId\":\"acct_ci\",\"deviceTtlMs\":null,\"grantId\":\"grant_ci\",\"keyVersion\":1,\"maxUses\":1,\"tokenExpiresAt\":1782475200000},\"alg\":\"HKDF-SHA256-XChaCha20-Poly1305\",\"ciphertext\":\"UUvXiTrbEpBkupdLZFzlziAXEU5l92wMKZAOWCdJael65tERhYs_NWgKKYc7IJiX\",\"nonce\":\"BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH\",\"v\":1}",
+    "openedGroupKey": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk"
   }
 }

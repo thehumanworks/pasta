@@ -1,3 +1,4 @@
+import KeyboardKit
 import PastaCore
 import SwiftUI
 import UIKit
@@ -8,8 +9,10 @@ struct PastaApp: App {
 
     var body: some Scene {
         WindowGroup {
-            PastaRootView()
-                .environmentObject(model)
+            KeyboardAppView(for: .pasta) {
+                PastaRootView()
+                    .environmentObject(model)
+            }
         }
     }
 }
@@ -139,7 +142,41 @@ final class PastaAppModel: ObservableObject {
         do {
             try await operation()
         } catch {
-            status = "Error: \(String(describing: error))"
+            status = Self.statusMessage(for: error)
+        }
+    }
+
+    private static func statusMessage(for error: Error) -> String {
+        switch error {
+        case PastaCryptoError.invalidToken:
+            return "Join token is invalid or incomplete. Paste the full `join token ...` line from Pasta."
+        case PastaCryptoError.invalidGrant, PastaCryptoError.cryptoFailed:
+            return "Join token crypto check failed. Create a fresh token and paste it without editing."
+        case let apiError as PastaAPIError:
+            return statusMessage(for: apiError)
+        default:
+            return "Error: \(String(describing: error))"
+        }
+    }
+
+    private static func statusMessage(for error: PastaAPIError) -> String {
+        switch error {
+        case .http(401, let body) where body.contains("bad_grant"):
+            return "Join token was rejected. Create a fresh token on an already paired device."
+        case .http(403, let body) where body.contains("grant_revoked"):
+            return "Join token was revoked. Create a fresh token and try again."
+        case .http(404, _):
+            return "Join token was not found. Paste a current token from an already paired device."
+        case .http(409, let body) where body.contains("grant_consumed"):
+            return "Join token was already used. Create a fresh token and try again."
+        case .http(410, let body) where body.contains("expired_grant"):
+            return "Join token expired. Create a fresh token and try again."
+        case .http(let status, _):
+            return "Join failed with server error \(status). Try a fresh token."
+        case .invalidURL:
+            return "Join token endpoint is invalid. Create a fresh token and try again."
+        case .missingClip:
+            return "Pasta could not find that clip."
         }
     }
 }

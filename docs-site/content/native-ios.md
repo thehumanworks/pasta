@@ -37,6 +37,8 @@ The keyboard is intentionally close to the stock iOS keyboard in daily use:
 
 - normal typing remains the default interaction;
 - Pasta does not add a duplicate globe key when iOS already presents the input-mode switch control;
+- letter, number (`123`), and symbol (`#+=`) keyboard modes are present so the keyboard remains usable for ordinary iOS text entry;
+- Pasta controls use an opaque compact history strip so action labels stay readable over iOS keyboard chrome;
 - Pasta controls live in a compact history strip and an expanded history drawer;
 - tapping a text item inserts it into the active text field;
 - long-pressing a history item opens actions such as preview, copy to iPhone clipboard, delete, or open in Pasta;
@@ -125,12 +127,17 @@ Cloudflare still sees only the existing routing metadata: kind, MIME, byte lengt
 The iOS work uses a native bundle with:
 
 - containing app: onboarding, pairing, history browser, device management, settings, clipboard import/export;
-- custom keyboard extension: Apple-like typing surface plus Pasta text history insertion;
+- custom keyboard extension: KeyboardKit-rendered Apple-like typing surface plus Pasta text history insertion;
 - share extension: publish selected/shared text, URLs, images, PDFs, and files;
 - App Intents + App Shortcuts + controls: publish clipboard, copy latest text, open/search history;
 - optional later File Provider: file/directory browsing from Files and document pickers.
 
 Do not replace this with a background clipboard monitor, P2P sync path, LAN discovery, VPN/tailnet dependency, or a standalone "copy button" app. The custom keyboard is the UX anchor because it is the only public iOS surface that can insert into the active text document in another app.
+
+The keyboard structure uses KeyboardKit for stock keyboard layout, sizing,
+letters, number/symbol modes, callouts, and key action handling. Pasta code owns
+only the product-specific toolbar, privacy gates, cached history insertion, and
+the no-duplicate-input-mode-switch policy.
 
 ## Apple constraints to preserve
 

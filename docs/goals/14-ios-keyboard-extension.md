@@ -91,6 +91,8 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0; keyboard extension target compiled into `Pasta.app/PlugIns/PastaKeyboard.appex`.
 - 2026-06-27 - `xcrun simctl spawn A5C6DC5D-CB65-4409-9CA8-3B0CD6709FE3 pluginkit -m -p com.apple.keyboard-service | rg 'com.thehumanworks.pasta.keyboard'` - exit 0; PluginKit registered `com.thehumanworks.pasta.keyboard(0.1.7)` after simulator install.
 - 2026-06-27 - feedback fix - pass by code review; `KeyboardViewController` now uses a 291pt default portrait keyboard height, four key rows, wider space bar, and no manual `next`/globe key path. `rg -n "advanceToNextInputMode|next|🌐|globe" ios/Keyboard/KeyboardViewController.swift` returns no matches.
+- 2026-06-27 - feedback fix - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0 after replacing the manual key grid with KeyboardKit 9.9.1; `Pasta.app/PlugIns/PastaKeyboard.appex` built and PluginKit registered the extension.
+- 2026-06-27 - feedback fix - pass by code review; KeyboardKit now owns keyboard layout, sizing, alphabetic/numeric/symbolic modes, callouts, and key action handling, while Pasta removes `nextKeyboard` from the generated layout to avoid a duplicate visible input-mode switch.
 
 ---
 
@@ -181,6 +183,10 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - User feedback corrected the keyboard chrome contract: Pasta must
   not add a duplicate visible globe key when iOS already presents the input-mode
   switch control. Scope impact: keyboard layout and docs wording.
+- 2026-06-27 - User preference corrected the implementation contract: use
+  libraries for keyboard structure where feasible. Pasta now uses KeyboardKit
+  for stock keyboard rendering and keeps only Pasta-specific toolbar/privacy
+  behavior in app code. Scope impact: keyboard implementation dependency.
 
 ---
 

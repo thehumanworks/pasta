@@ -110,6 +110,7 @@ Scope changes stop execution and surface to the user.
 
 - 2026-06-27 - `PASTA_IOS_JOIN_TOKEN="join token <redacted>" swift test --package-path ios --filter PastaCoreLiveRelayTests/testLiveRelayJoinPublishAndHistoryWhenTokenProvided` - exit 0; Swift core accepted a CLI-style pasted token, redeemed it against the real relay, published encrypted text, fetched it from history, and the smoke device was then revoked with `pasta devices revoke`.
 - 2026-06-27 - feedback fix - pass by code review; `PastaRootView` now shows join progress/errors inline, `PastaCrypto.parseJoinGrantTokenFromUserInput` extracts tokens from CLI/JSON paste text, and `PastaAppModel.join()` keeps successful pairing even if immediate history refresh fails. Physical tap-through on an iPhone remains unproven in this run.
+- 2026-06-27 - feedback fix - `mise exec -- bun run src/cli.ts pair grant create --json` generated a one-use grant, then `PASTA_IOS_JOIN_TOKEN="join token <redacted>" swift test --package-path ios --filter PastaCoreLiveRelayTests/testLiveRelayJoinPublishAndHistoryWhenTokenProvided` exited 0; Swift redeemed the shell-generated token against the real relay, published/fetched history, and the smoke device was revoked.
 
 ---
 
@@ -184,6 +185,10 @@ Scope changes stop execution and surface to the user.
   surface. Join now accepts raw tokens embedded in CLI or JSON text, and a
   successful join no longer depends on immediate history refresh. Scope impact:
   app-shell join UX only.
+- 2026-06-27 - User-reported `cryptoFailed` was reproduced with a fresh shell
+  generated grant. Root cause was Swift join-grant AAD re-encoding omitting
+  explicit JSON null for `deviceTtlMs`, while TypeScript seals it as null. Scope
+  impact: Swift join-grant crypto compatibility only.
 
 ---
 

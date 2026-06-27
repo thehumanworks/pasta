@@ -9,11 +9,15 @@
 /* Begin PBXBuildFile section */
 		108A098BCFD96417B5B3CF1D /* PastaKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0AD86DAC0062DCD0BC0565E6 /* PastaKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		46FA60DDE34DD7EAD1820F42 /* PastaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 51D04D06C7FA28CC86A13D61 /* PastaCore */; };
+		4A8CC6B075BCE34A1660F17A /* KeyboardKit in Frameworks */ = {isa = PBXBuildFile; productRef = 62FF1C73682554464EC2D182 /* KeyboardKit */; };
 		6D85C519703C3B2FF1F141B2 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 169B12E04CC0D3D9585C1D19 /* KeyboardViewController.swift */; };
 		8DABB3DBB31D9C15FC75933F /* PastaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6FCB0ACA4BE0F74BAB1DBBF1 /* PastaCore */; };
 		9C0016210EF0D7743C549A1C /* PastaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9D1D911AFB895F8865AB1B5 /* PastaApp.swift */; };
 		A970D5922CAE035E1E863908 /* PastaRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 631DC28DCD5046FCFD1262D1 /* PastaRootView.swift */; };
 		AD6EA6E5702284D2204F52C4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 516D18073929E2982A974975 /* Assets.xcassets */; };
+		B02A3B32FCEA7EC8892405CE /* PastaKeyboardApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D08238E1F942FD378FD30E2E /* PastaKeyboardApp.swift */; };
+		E26D064DB87D37E5E504874E /* PastaKeyboardApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D08238E1F942FD378FD30E2E /* PastaKeyboardApp.swift */; };
+		E57702EED1F2F6A009FAA938 /* KeyboardKit in Frameworks */ = {isa = PBXBuildFile; productRef = 868391C79B11EAE07C7F921E /* KeyboardKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,6 +56,7 @@
 		A176CC5C6DC08D1148B74198 /* PastaKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PastaKeyboard.entitlements; sourceTree = "<group>"; };
 		B8614638DA0A5F43E3B7738E /* Pasta.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Pasta.entitlements; sourceTree = "<group>"; };
 		C9D1D911AFB895F8865AB1B5 /* PastaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PastaApp.swift; sourceTree = "<group>"; };
+		D08238E1F942FD378FD30E2E /* PastaKeyboardApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PastaKeyboardApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -60,6 +65,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				46FA60DDE34DD7EAD1820F42 /* PastaCore in Frameworks */,
+				E57702EED1F2F6A009FAA938 /* KeyboardKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -68,6 +74,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8DABB3DBB31D9C15FC75933F /* PastaCore in Frameworks */,
+				4A8CC6B075BCE34A1660F17A /* KeyboardKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -84,6 +91,14 @@
 				34A86C09CD3255153390267D /* Resources */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		28F673C597D070EB645666F9 /* SharedUI */ = {
+			isa = PBXGroup;
+			children = (
+				D08238E1F942FD378FD30E2E /* PastaKeyboardApp.swift */,
+			);
+			path = SharedUI;
 			sourceTree = "<group>";
 		};
 		34A86C09CD3255153390267D /* Resources */ = {
@@ -117,6 +132,7 @@
 				0406169894952E79E85420D7 /* App */,
 				F3D9BD964A25B52EA83A5004 /* Keyboard */,
 				98BFD28E1B867B3942FA7FBB /* Packages */,
+				28F673C597D070EB645666F9 /* SharedUI */,
 				AD6A93A2E28A2546253D9118 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -151,6 +167,7 @@
 			name = Pasta;
 			packageProductDependencies = (
 				6FCB0ACA4BE0F74BAB1DBBF1 /* PastaCore */,
+				62FF1C73682554464EC2D182 /* KeyboardKit */,
 			);
 			productName = Pasta;
 			productReference = 9D6CABCBA245D5A56FFCA048 /* Pasta.app */;
@@ -170,6 +187,7 @@
 			name = PastaKeyboard;
 			packageProductDependencies = (
 				51D04D06C7FA28CC86A13D61 /* PastaCore */,
+				868391C79B11EAE07C7F921E /* KeyboardKit */,
 			);
 			productName = PastaKeyboard;
 			productReference = 0AD86DAC0062DCD0BC0565E6 /* PastaKeyboard.appex */;
@@ -204,6 +222,7 @@
 			mainGroup = E5FE3EF80DD7F9EFEBC4F107;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				92D205BBA33257DE0BB443C0 /* XCRemoteSwiftPackageReference "KeyboardKit" */,
 				510E1C5CBBC05CD64762BAF5 /* XCLocalSwiftPackageReference "." */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -234,6 +253,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				6D85C519703C3B2FF1F141B2 /* KeyboardViewController.swift in Sources */,
+				B02A3B32FCEA7EC8892405CE /* PastaKeyboardApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -242,6 +262,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9C0016210EF0D7743C549A1C /* PastaApp.swift in Sources */,
+				E26D064DB87D37E5E504874E /* PastaKeyboardApp.swift in Sources */,
 				A970D5922CAE035E1E863908 /* PastaRootView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -320,7 +341,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/Pasta.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 54MXM5JG3R;
 				DISPLAY_NAME = Pasta;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -344,7 +365,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = Keyboard/PastaKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 54MXM5JG3R;
 				DISPLAY_NAME = "Pasta Keyboard";
 				GENERATE_INFOPLIST_FILE = NO;
@@ -432,7 +453,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = Keyboard/PastaKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 54MXM5JG3R;
 				DISPLAY_NAME = "Pasta Keyboard";
 				GENERATE_INFOPLIST_FILE = NO;
@@ -459,7 +480,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/Pasta.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 54MXM5JG3R;
 				DISPLAY_NAME = Pasta;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -517,14 +538,35 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		92D205BBA33257DE0BB443C0 /* XCRemoteSwiftPackageReference "KeyboardKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/KeyboardKit/KeyboardKit.git";
+			requirement = {
+				kind = exactVersion;
+				version = 9.9.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		51D04D06C7FA28CC86A13D61 /* PastaCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PastaCore;
 		};
+		62FF1C73682554464EC2D182 /* KeyboardKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92D205BBA33257DE0BB443C0 /* XCRemoteSwiftPackageReference "KeyboardKit" */;
+			productName = KeyboardKit;
+		};
 		6FCB0ACA4BE0F74BAB1DBBF1 /* PastaCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PastaCore;
+		};
+		868391C79B11EAE07C7F921E /* KeyboardKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 92D205BBA33257DE0BB443C0 /* XCRemoteSwiftPackageReference "KeyboardKit" */;
+			productName = KeyboardKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

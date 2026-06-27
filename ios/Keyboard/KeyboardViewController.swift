@@ -1,284 +1,66 @@
+import KeyboardKit
 import PastaCore
+import SwiftUI
 import UIKit
 
 @MainActor
-final class KeyboardViewController: UIInputViewController {
+final class KeyboardViewController: KeyboardInputViewController {
     private var clips: [PastaKeyboardClip] = []
-    private var isShifted = false
     private var showsExpandedHistory = false
     private var isRunningLiveAction = false
     private var statusMessage: String?
-    private var heightConstraint: NSLayoutConstraint?
     private let client = PastaAPIClient()
     private let keychain = PastaKeychainStore()
     private let store = try? PastaAppGroupStore()
-    private let letterRows = [
-        ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
-        ["a", "s", "d", "f", "g", "h", "j", "k", "l"]
-    ]
-    private let thirdLetterRow = ["z", "x", "c", "v", "b", "n", "m"]
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor.systemGray6
-        configureKeyboardHeight()
+        enableExperimentalKeyboardTypeChangeTracking()
         reloadClips()
-        renderKeyboard()
+        setup(for: .pasta) { [weak self] _ in
+            guard let self else { return }
+            services.layoutService = PastaKeyboardLayoutService()
+            setupPastaKeyboardView()
+        }
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         reloadClips()
-        renderKeyboard()
+        setupPastaKeyboardView()
+    }
+
+    override func viewWillSetupKeyboardView() {
+        setupPastaKeyboardView()
     }
 
     private func reloadClips() {
         clips = store?.loadKeyboardClips() ?? []
     }
 
-    private func renderKeyboard() {
-        updateKeyboardHeight()
-        view.subviews.forEach { $0.removeFromSuperview() }
-        let stack = UIStackView()
-        stack.axis = .vertical
-        stack.spacing = 7
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 6),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -6),
-            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 6),
-            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -6)
-        ])
-
-        stack.addArrangedSubview(historyStrip())
-        if showsExpandedHistory {
-            stack.addArrangedSubview(expandedHistoryList())
-        }
-        for row in letterRows {
-            stack.addArrangedSubview(keyRow(row.map { (isShifted ? $0.uppercased() : $0, CGFloat(1)) }))
-        }
-        let thirdRow = [("shift", CGFloat(1.35))]
-            + thirdLetterRow.map { (isShifted ? $0.uppercased() : $0, CGFloat(1)) }
-            + [("delete", CGFloat(1.35))]
-        stack.addArrangedSubview(keyRow(thirdRow))
-        stack.addArrangedSubview(keyRow([(",", 1.2), ("space", 5.5), (".", 1.2), ("return", 2.2)], height: 47))
-    }
-
-    private func configureKeyboardHeight() {
-        guard heightConstraint == nil else { return }
-        heightConstraint = view.heightAnchor.constraint(equalToConstant: preferredKeyboardHeight)
-        heightConstraint?.priority = UILayoutPriority(999)
-        heightConstraint?.isActive = true
-    }
-
-    private func updateKeyboardHeight() {
-        heightConstraint?.constant = preferredKeyboardHeight
-    }
-
-    private var preferredKeyboardHeight: CGFloat {
-        let isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
-        if showsExpandedHistory {
-            return isLandscape ? 300 : 392
-        }
-        return isLandscape ? 216 : 291
-    }
-
-    private func historyStrip() -> UIView {
-        let scroll = UIScrollView()
-        scroll.showsHorizontalScrollIndicator = false
-        let stack = UIStackView()
-        stack.axis = .horizontal
-        stack.spacing = 6
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        scroll.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
-            stack.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor)
-        ])
-
-        if let statusMessage {
-            stack.addArrangedSubview(statusPill(statusMessage))
-        }
-        stack.addArrangedSubview(actionButton(title: "Refresh", systemImage: "arrow.clockwise", accessibilityLabel: "Refresh Pasta history") { [weak self] in
-            self?.refreshHistoryFromNetwork()
-        })
-        stack.addArrangedSubview(actionButton(title: "Publish", systemImage: "square.and.arrow.up", accessibilityLabel: "Publish iPhone clipboard to Pasta") { [weak self] in
-            self?.publishClipboardText()
-        })
-        stack.addArrangedSubview(actionButton(title: showsExpandedHistory ? "Less" : "All", systemImage: showsExpandedHistory ? "chevron.up" : "list.bullet", accessibilityLabel: "Toggle Pasta history") { [weak self] in
-            guard let self else { return }
-            showsExpandedHistory.toggle()
-            renderKeyboard()
-        })
-        if clips.isEmpty {
-            stack.addArrangedSubview(historyButton(title: "Open Pasta to sync", text: nil))
-        } else {
-            for clip in clips.prefix(12) {
-                stack.addArrangedSubview(historyButton(title: clip.title, text: clip.text))
-            }
-        }
-        scroll.heightAnchor.constraint(equalToConstant: 38).isActive = true
-        return scroll
-    }
-
-    private func expandedHistoryList() -> UIView {
-        let scroll = UIScrollView()
-        scroll.showsVerticalScrollIndicator = true
-        let stack = UIStackView()
-        stack.axis = .vertical
-        stack.spacing = 5
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        scroll.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
-            stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor)
-        ])
-
-        if clips.isEmpty {
-            stack.addArrangedSubview(historyButton(title: "No cached Pasta text", text: nil))
-        } else {
-            for clip in clips.prefix(20) {
-                stack.addArrangedSubview(historyButton(title: clip.title, text: clip.text))
-            }
-        }
-        scroll.heightAnchor.constraint(equalToConstant: 104).isActive = true
-        return scroll
-    }
-
-    private func keyRow(_ keys: [(String, CGFloat)], height: CGFloat = 46) -> UIStackView {
-        let row = UIStackView()
-        row.axis = .horizontal
-        row.spacing = 6
-        row.distribution = .fillProportionally
-        for (key, weight) in keys {
-            let container = WeightedKeyContainer(weight: weight)
-            let button = keyButton(key)
-            button.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(button)
-            NSLayoutConstraint.activate([
-                button.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                button.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                button.topAnchor.constraint(equalTo: container.topAnchor),
-                button.bottomAnchor.constraint(equalTo: container.bottomAnchor)
-            ])
-            row.addArrangedSubview(container)
-        }
-        row.heightAnchor.constraint(equalToConstant: height).isActive = true
-        return row
-    }
-
-    private func statusPill(_ message: String) -> UILabel {
-        let label = UILabel()
-        label.text = message
-        label.textAlignment = .center
-        label.numberOfLines = 1
-        label.font = UIFont.preferredFont(forTextStyle: .caption1)
-        label.textColor = UIColor.secondaryLabel
-        label.backgroundColor = UIColor.tertiarySystemBackground
-        label.layer.cornerRadius = 7
-        label.clipsToBounds = true
-        label.setContentCompressionResistancePriority(.required, for: .horizontal)
-        return label
-    }
-
-    private func historyButton(title: String, text: String?) -> UIButton {
-        let button = UIButton(type: .system)
-        var configuration = UIButton.Configuration.filled()
-        configuration.title = title
-        configuration.baseBackgroundColor = UIColor.secondarySystemBackground
-        configuration.baseForegroundColor = UIColor.label
-        configuration.cornerStyle = .small
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12)
-        button.configuration = configuration
-        button.titleLabel?.font = UIFont.preferredFont(forTextStyle: .footnote)
-        button.accessibilityLabel = "Pasta clip \(title)"
-        if let text {
-            button.addAction(UIAction { [weak self] _ in
-                self?.textDocumentProxy.insertText(text)
-            }, for: .touchUpInside)
-        } else {
-            button.isEnabled = false
-        }
-        return button
-    }
-
-    private func actionButton(title: String, systemImage: String, accessibilityLabel: String, action: @escaping () -> Void) -> UIButton {
-        let button = UIButton(type: .system)
-        var configuration = UIButton.Configuration.filled()
-        configuration.title = title
-        configuration.image = UIImage(systemName: systemImage)
-        configuration.imagePadding = 4
-        configuration.baseBackgroundColor = UIColor.systemBackground
-        configuration.baseForegroundColor = UIColor.label
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
-        button.configuration = configuration
-        button.titleLabel?.font = UIFont.preferredFont(forTextStyle: .footnote)
-        button.accessibilityLabel = accessibilityLabel
-        button.isEnabled = !isRunningLiveAction || title == "All" || title == "Less"
-        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
-        return button
-    }
-
-    private func keyButton(_ key: String) -> UIButton {
-        let button = UIButton(type: .system)
-        button.setTitle(displayTitle(for: key), for: .normal)
-        button.titleLabel?.font = key.count == 1
-            ? UIFont.systemFont(ofSize: 22, weight: .regular)
-            : UIFont.systemFont(ofSize: 16, weight: .regular)
-        button.backgroundColor = key == "space" ? UIColor.white : backgroundColor(for: key)
-        button.tintColor = UIColor.label
-        button.layer.cornerRadius = 6
-        button.accessibilityLabel = displayTitle(for: key)
-        button.addAction(UIAction { [weak self] _ in
-            self?.handle(key)
-        }, for: .touchUpInside)
-        return button
-    }
-
-    private func displayTitle(for key: String) -> String {
-        switch key {
-        case "space": return "space"
-        case "delete": return "⌫"
-        case "return": return "return"
-        case "shift": return isShifted ? "⇧" : "⇧"
-        default: return key
+    private func setupPastaKeyboardView() {
+        let model = PastaKeyboardToolbarModel(
+            clips: clips,
+            statusMessage: statusMessage,
+            showsExpandedHistory: showsExpandedHistory,
+            isRunningLiveAction: isRunningLiveAction
+        )
+        setupKeyboardView { [weak self] controller in
+            PastaKeyboardView(
+                services: controller.services,
+                state: controller.state,
+                toolbarModel: model,
+                insertClip: { [weak self] text in self?.textDocumentProxy.insertText(text) },
+                refresh: { [weak self] in self?.refreshHistoryFromNetwork() },
+                publish: { [weak self] in self?.publishClipboardText() },
+                toggleExpanded: { [weak self] in self?.toggleExpandedHistory() }
+            )
         }
     }
 
-    private func backgroundColor(for key: String) -> UIColor {
-        switch key {
-        case "shift", "delete", "return":
-            return UIColor.systemGray4
-        default:
-            return UIColor.secondarySystemBackground
-        }
-    }
-
-    private func handle(_ key: String) {
-        switch key {
-        case "space":
-            textDocumentProxy.insertText(" ")
-        case "delete":
-            textDocumentProxy.deleteBackward()
-        case "return":
-            textDocumentProxy.insertText("\n")
-        case "shift":
-            isShifted.toggle()
-            renderKeyboard()
-        default:
-            textDocumentProxy.insertText(key)
-            if isShifted {
-                isShifted = false
-                renderKeyboard()
-            }
-        }
+    private func toggleExpandedHistory() {
+        showsExpandedHistory.toggle()
+        setupPastaKeyboardView()
     }
 
     private func refreshHistoryFromNetwork() {
@@ -328,10 +110,10 @@ final class KeyboardViewController: UIInputViewController {
         guard !isRunningLiveAction else { return }
         isRunningLiveAction = true
         statusMessage = started
-        renderKeyboard()
+        setupPastaKeyboardView()
         defer {
             isRunningLiveAction = false
-            renderKeyboard()
+            setupPastaKeyboardView()
         }
         do {
             try await operation()
@@ -355,21 +137,142 @@ final class KeyboardViewController: UIInputViewController {
     }
 }
 
-private final class WeightedKeyContainer: UIView {
-    private let weight: CGFloat
+private struct PastaKeyboardView: View {
+    let services: Keyboard.Services
+    let state: Keyboard.State
+    let toolbarModel: PastaKeyboardToolbarModel
+    let insertClip: (String) -> Void
+    let refresh: () -> Void
+    let publish: () -> Void
+    let toggleExpanded: () -> Void
 
-    init(weight: CGFloat) {
-        self.weight = max(weight, 0.1)
-        super.init(frame: .zero)
+    var body: some View {
+        KeyboardView(
+            state: state,
+            services: services,
+            buttonContent: { $0.view },
+            buttonView: { $0.view },
+            collapsedView: { $0.view },
+            emojiKeyboard: { $0.view },
+            toolbar: { _ in
+                Keyboard.Toolbar {
+                    PastaKeyboardToolbar(
+                        model: toolbarModel,
+                        insertClip: insertClip,
+                        refresh: refresh,
+                        publish: publish,
+                        toggleExpanded: toggleExpanded
+                    )
+                }
+            }
+        )
+        .keyboardToolbarStyle(.init(
+            backgroundColor: Color(red: 0.82, green: 0.84, blue: 0.87),
+            height: 44,
+            minHeight: 44,
+            maxHeight: 44
+        ))
     }
+}
 
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+private struct PastaKeyboardToolbar: View {
+    let model: PastaKeyboardToolbarModel
+    let insertClip: (String) -> Void
+    let refresh: () -> Void
+    let publish: () -> Void
+    let toggleExpanded: () -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                if let statusMessage = model.statusMessage {
+                    Text(statusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 10)
+                        .frame(height: 30)
+                        .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                }
+
+                Button(action: refresh) {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .disabled(model.isRunningLiveAction)
+                .buttonStyle(PastaToolbarButtonStyle())
+
+                Button(action: publish) {
+                    Label("Publish", systemImage: "square.and.arrow.up")
+                }
+                .disabled(model.isRunningLiveAction)
+                .buttonStyle(PastaToolbarButtonStyle())
+
+                Button(action: toggleExpanded) {
+                    Label(model.showsExpandedHistory ? "Less" : "All", systemImage: model.showsExpandedHistory ? "chevron.up" : "list.bullet")
+                }
+                .buttonStyle(PastaToolbarButtonStyle())
+
+                if model.clips.isEmpty {
+                    Text("Open Pasta to sync")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .padding(.horizontal, 12)
+                        .frame(height: 30)
+                        .background(Color.white.opacity(0.72))
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                } else {
+                    ForEach(model.visibleClips) { clip in
+                        Button {
+                            insertClip(clip.text)
+                        } label: {
+                            Text(clip.title)
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(PastaToolbarButtonStyle())
+                    }
+                }
+            }
+            .padding(.horizontal, 6)
+        }
+        .frame(height: 36)
+        .background(Color(red: 0.82, green: 0.84, blue: 0.87))
     }
+}
 
-    override var intrinsicContentSize: CGSize {
-        CGSize(width: weight * 44, height: UIView.noIntrinsicMetric)
+private struct PastaToolbarButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.footnote)
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .labelStyle(.titleAndIcon)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(configuration.isPressed ? Color.white.opacity(0.7) : Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+private struct PastaKeyboardToolbarModel {
+    let clips: [PastaKeyboardClip]
+    let statusMessage: String?
+    let showsExpandedHistory: Bool
+    let isRunningLiveAction: Bool
+
+    var visibleClips: [PastaKeyboardClip] {
+        Array(clips.prefix(showsExpandedHistory ? 30 : 12))
+    }
+}
+
+private final class PastaKeyboardLayoutService: KeyboardLayoutService {
+    private let baseService = KeyboardLayout.StandardLayoutService()
+
+    func keyboardLayout(for context: KeyboardContext) -> KeyboardLayout {
+        var layout = baseService.keyboardLayout(for: context)
+        layout.itemRows.remove(.nextKeyboard)
+        return layout
     }
 }
 

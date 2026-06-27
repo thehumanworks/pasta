@@ -237,6 +237,11 @@ public enum PastaCrypto {
         guard let url = URL(string: endpoint), !parts[2].isEmpty, !parts[3].isEmpty, !parts[4].isEmpty, !parts[5].isEmpty else {
             throw PastaCryptoError.invalidToken
         }
+        guard try base64URLByteCount(parts[4]) == 32,
+              try base64URLByteCount(parts[5]) == 32
+        else {
+            throw PastaCryptoError.invalidToken
+        }
         return JoinGrantToken(endpoint: url, accountId: parts[2], grantId: parts[3], redeemSecret: parts[4], sealSecret: parts[5])
     }
 
@@ -246,15 +251,24 @@ public enum PastaCrypto {
     }
 
     public static func extractJoinGrantToken(from input: String) -> String? {
-        let pattern = #"pasta_join_v1(?:\.[A-Za-z0-9_-]+){5}"#
+        let pattern = #"pasta_join_v1(?:\s*\.\s*[A-Za-z0-9_-]+){5}"#
         guard let expression = try? NSRegularExpression(pattern: pattern) else { return nil }
-        let range = NSRange(input.startIndex..<input.endIndex, in: input)
-        guard let match = expression.firstMatch(in: input, range: range),
-              let tokenRange = Range(match.range, in: input)
-        else {
-            return nil
+        var firstMatch: String?
+        for candidate in joinTokenSearchInputs(from: input) {
+            let range = NSRange(candidate.startIndex..<candidate.endIndex, in: candidate)
+            let matches = expression.matches(in: candidate, range: range)
+            for match in matches {
+                guard let tokenRange = Range(match.range, in: candidate) else { continue }
+                let token = String(candidate[tokenRange])
+                    .components(separatedBy: .whitespacesAndNewlines)
+                    .joined()
+                firstMatch = firstMatch ?? token
+                if (try? parseJoinGrantToken(token)) != nil {
+                    return token
+                }
+            }
         }
-        return String(input[tokenRange])
+        return firstMatch
     }
 
     public static func openJoinGrant(sealedGroupKey: String, accountId: String, grantId: String, sealSecret: String) throws -> String {
@@ -314,6 +328,31 @@ public enum PastaCrypto {
         }
     }
 
+    private static func base64URLByteCount(_ value: String) throws -> Int {
+        try PastaEncoding.base64URLDecode(value).count
+    }
+
+    private static func joinTokenSearchInputs(from input: String) -> [String] {
+        var values = [input]
+        if let decoded = input.removingPercentEncoding, decoded != input {
+            values.append(decoded)
+        }
+        return Array(Set(values.map(sanitizeJoinTokenSearchInput)))
+    }
+
+    private static func sanitizeJoinTokenSearchInput(_ input: String) -> String {
+        let invisibleScalars = Set<UnicodeScalar>([
+            "\u{200B}",
+            "\u{200C}",
+            "\u{200D}",
+            "\u{2060}",
+            "\u{FEFF}"
+        ])
+        let scalars = input.unicodeScalars.filter { !invisibleScalars.contains($0) }
+        return String(String.UnicodeScalarView(scalars))
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+    }
+
     private static func encryptWithNonce(message: [UInt8], key: [UInt8], nonce: [UInt8], additionalData: [UInt8]) -> (authenticatedCipherText: Bytes, nonce: Bytes)? {
         let aead = Sodium().aead.xchacha20poly1305ietf
         guard key.count == aead.KeyBytes,
@@ -360,4 +399,27 @@ private struct JoinGrantAAD: Codable {
     let deviceTtlMs: Int64?
     let tokenExpiresAt: Int64
     let maxUses: Int
+
+    enum CodingKeys: String, CodingKey {
+        case accountId
+        case grantId
+        case keyVersion
+        case deviceTtlMs
+        case tokenExpiresAt
+        case maxUses
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(accountId, forKey: .accountId)
+        try container.encode(grantId, forKey: .grantId)
+        try container.encode(keyVersion, forKey: .keyVersion)
+        if let deviceTtlMs {
+            try container.encode(deviceTtlMs, forKey: .deviceTtlMs)
+        } else {
+            try container.encodeNil(forKey: .deviceTtlMs)
+        }
+        try container.encode(tokenExpiresAt, forKey: .tokenExpiresAt)
+        try container.encode(maxUses, forKey: .maxUses)
+    }
 }

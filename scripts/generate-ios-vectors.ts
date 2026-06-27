@@ -1,6 +1,15 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { generateSigningKeyPair, generateWrappingKeyPair, signCanonicalRequest, encryptTextClip, wrapGroupKey } from "../src/shared/crypto";
+import {
+  createJoinGrantToken,
+  encryptTextClip,
+  generateSigningKeyPair,
+  generateWrappingKeyPair,
+  openJoinGrant,
+  sealJoinGrant,
+  signCanonicalRequest,
+  wrapGroupKey
+} from "../src/shared/crypto";
 import { sha256Base64Url, type SignedRequestParts } from "../src/shared/protocol";
 import { stableJson, toBase64Url } from "../src/shared/encoding";
 
@@ -27,6 +36,24 @@ const signedRequest: SignedRequestParts = {
 const groupKey = toBase64Url(new Uint8Array(32).fill(9));
 const senderWrap = generateWrappingKeyPair(new Uint8Array(32).fill(1));
 const recipientWrap = generateWrappingKeyPair(new Uint8Array(32).fill(2));
+const joinGrant = {
+  endpoint: "https://relay.example",
+  accountId: "acct_ci",
+  grantId: "grant_ci",
+  redeemSecret: toBase64Url(new Uint8Array(32).fill(5)),
+  sealSecret: toBase64Url(new Uint8Array(32).fill(6))
+};
+const sealedJoinGrant = sealJoinGrant({
+  groupKey,
+  accountId: joinGrant.accountId,
+  grantId: joinGrant.grantId,
+  sealSecret: joinGrant.sealSecret,
+  keyVersion: 1,
+  tokenExpiresAt: 1782475200000,
+  maxUses: 1,
+  deviceTtlMs: null,
+  nonce: toBase64Url(new Uint8Array(24).fill(7))
+});
 const clip = encryptTextClip({
   accountId: "acct_vector",
   routingId: "space_vector",
@@ -84,6 +111,18 @@ const vectors = {
       senderPublicKey: senderWrap.publicKey,
       recipientPublicKey: recipientWrap.publicKey,
       nonce: toBase64Url(new Uint8Array(24).fill(4))
+    })
+  },
+  joinGrant: {
+    ...joinGrant,
+    groupKey,
+    token: createJoinGrantToken(joinGrant),
+    sealedGroupKey: sealedJoinGrant,
+    openedGroupKey: openJoinGrant({
+      sealedGroupKey: sealedJoinGrant,
+      accountId: joinGrant.accountId,
+      grantId: joinGrant.grantId,
+      sealSecret: joinGrant.sealSecret
     })
   }
 };

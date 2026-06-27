@@ -7,6 +7,9 @@ options:
 packages:
   PastaCore:
     path: .
+  KeyboardKit:
+    url: https://github.com/KeyboardKit/KeyboardKit.git
+    exactVersion: 9.9.1
 targets:
   Pasta:
     type: application
@@ -14,11 +17,14 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: App
+      - path: SharedUI
     resources:
       - path: App/Resources
     dependencies:
       - package: PastaCore
         product: PastaCore
+      - package: KeyboardKit
+        product: KeyboardKit
       - target: PastaKeyboard
         embed: true
     settings:
@@ -27,7 +33,7 @@ targets:
         PRODUCT_NAME: Pasta
         DISPLAY_NAME: Pasta
         MARKETING_VERSION: 0.1.7
-        CURRENT_PROJECT_VERSION: 3
+        CURRENT_PROJECT_VERSION: 4
         SWIFT_VERSION: 6.0
         DEVELOPMENT_TEAM: 54MXM5JG3R
         CODE_SIGN_STYLE: Automatic
@@ -41,16 +47,19 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Keyboard
+      - path: SharedUI
     dependencies:
       - package: PastaCore
         product: PastaCore
+      - package: KeyboardKit
+        product: KeyboardKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thehumanworks.pasta.keyboard
         PRODUCT_NAME: PastaKeyboard
         DISPLAY_NAME: Pasta Keyboard
         MARKETING_VERSION: 0.1.7
-        CURRENT_PROJECT_VERSION: 3
+        CURRENT_PROJECT_VERSION: 4
         SWIFT_VERSION: 6.0
         DEVELOPMENT_TEAM: 54MXM5JG3R
         CODE_SIGN_STYLE: Automatic

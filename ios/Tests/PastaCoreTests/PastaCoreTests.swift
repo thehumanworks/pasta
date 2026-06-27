@@ -27,10 +27,24 @@ final class PastaCoreBootstrapTests: XCTestCase {
 
     func testJoinTokenExtractionAcceptsCliAndJsonPastes() throws {
         let endpoint = PastaEncoding.base64URLEncode(PastaEncoding.bytes("https://pasta.example"))
-        let token = "pasta_join_v1.\(endpoint).acct_test.grant_test.redeemSecret_123.sealSecret_456"
+        let redeemSecret = PastaEncoding.base64URLEncode(Array(repeating: UInt8(1), count: 32))
+        let sealSecret = PastaEncoding.base64URLEncode(Array(repeating: UInt8(2), count: 32))
+        let token = "pasta_join_v1.\(endpoint).acct_test.grant_test.\(redeemSecret).\(sealSecret)"
         XCTAssertEqual(PastaCrypto.extractJoinGrantToken(from: "join token \(token)"), token)
         XCTAssertEqual(PastaCrypto.extractJoinGrantToken(from: #"{ "joinToken": "\#(token)" }"#), token)
+        XCTAssertEqual(PastaCrypto.extractJoinGrantToken(from: "join token \(token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!)"), token)
+        XCTAssertEqual(PastaCrypto.extractJoinGrantToken(from: "join token pasta_join_v1.\n\(endpoint).\nacct_test.\ngrant_test.\n\(redeemSecret).\n\(sealSecret)"), token)
         XCTAssertEqual(try PastaCrypto.parseJoinGrantTokenFromUserInput("join token \(token)").grantId, "grant_test")
+    }
+
+    func testJoinTokenValidationRejectsDamagedSecretsBeforeRedeem() throws {
+        let endpoint = PastaEncoding.base64URLEncode(PastaEncoding.bytes("https://pasta.example"))
+        let redeemSecret = PastaEncoding.base64URLEncode(Array(repeating: UInt8(1), count: 32))
+        let truncatedSealSecret = PastaEncoding.base64URLEncode(Array(repeating: UInt8(2), count: 12))
+        let token = "pasta_join_v1.\(endpoint).acct_test.grant_test.\(redeemSecret).\(truncatedSealSecret)"
+        XCTAssertThrowsError(try PastaCrypto.parseJoinGrantTokenFromUserInput("join token \(token)")) { error in
+            XCTAssertEqual(error as? PastaCryptoError, .invalidToken)
+        }
     }
 }
 
@@ -103,6 +117,26 @@ final class PastaCoreVectorTests: XCTestCase {
             ),
             vectors.wrappedGroupKey.groupKey
         )
+    }
+
+    func testJoinGrantOpeningMatchesTypeScriptVector() throws {
+        let vectors = try loadVectors()
+        let token = try PastaCrypto.parseJoinGrantToken(vectors.joinGrant.token)
+        XCTAssertEqual(token.endpoint.absoluteString, vectors.joinGrant.endpoint)
+        XCTAssertEqual(token.accountId, vectors.joinGrant.accountId)
+        XCTAssertEqual(token.grantId, vectors.joinGrant.grantId)
+        XCTAssertEqual(token.redeemSecret, vectors.joinGrant.redeemSecret)
+        XCTAssertEqual(token.sealSecret, vectors.joinGrant.sealSecret)
+        XCTAssertEqual(
+            try PastaCrypto.openJoinGrant(
+                sealedGroupKey: vectors.joinGrant.sealedGroupKey,
+                accountId: vectors.joinGrant.accountId,
+                grantId: vectors.joinGrant.grantId,
+                sealSecret: vectors.joinGrant.sealSecret
+            ),
+            vectors.joinGrant.openedGroupKey
+        )
+        XCTAssertEqual(vectors.joinGrant.openedGroupKey, vectors.joinGrant.groupKey)
     }
 
     private func loadVectors() throws -> PastaVectors {
@@ -194,6 +228,7 @@ private struct PastaVectors: Decodable {
     let signedRequest: SignedRequestVector
     let textClip: TextClipVector
     let wrappedGroupKey: WrappedGroupKeyVector
+    let joinGrant: JoinGrantVector
 }
 
 private struct Base64Vector: Decodable {
@@ -230,6 +265,18 @@ private struct WrappedGroupKeyVector: Decodable {
     let recipientPublicKey: String
     let nonce: String
     let wrapped: String
+}
+
+private struct JoinGrantVector: Decodable {
+    let endpoint: String
+    let accountId: String
+    let grantId: String
+    let redeemSecret: String
+    let sealSecret: String
+    let groupKey: String
+    let token: String
+    let sealedGroupKey: String
+    let openedGroupKey: String
 }
 
 private struct StableBody: Encodable {

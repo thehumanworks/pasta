@@ -177,6 +177,7 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - `swift test --package-path ios` - exit 0; 10 XCTest tests passed for Swift core, vectors, crypto, and storage.
 - 2026-06-27 - `mise exec -- bun run test` - exit 0; 30 Bun tests and 13 Worker/Vitest tests passed, covering the existing TypeScript runtime and Worker compatibility.
 - 2026-06-27 - proof-path correction - raw `mise exec -- bun test` is not the repo harness and fails on Worker imports; `package.json` defines the valid full local command as `bun run test`, which runs Bun tests plus Vitest Worker tests.
+- 2026-06-27 - feedback fix - `swift test --package-path ios` - exit 0; 14 XCTest tests passed, including a TypeScript-generated join-grant vector that preserves explicit `deviceTtlMs: null` AAD encoding.
 
 ## 6. Decisions · LIVE (append-only)
 
@@ -195,6 +196,7 @@ Scope changes stop execution and surface to the user.
 
 - 2026-06-27 - CryptoKit's `Curve25519.Signing` public key matched the Ed25519 seed vector, but signatures did not match Noble/Ed25519. Swift request signing now uses SwiftSodium Ed25519 seeded keys and stores the same 32-byte private seed shape as the TypeScript client.
 - 2026-06-27 - XChaCha20-Poly1305 is not available through CryptoKit. SwiftSodium 0.11.0 provides libsodium-backed XChaCha20-Poly1305 and Ed25519, while CryptoKit remains suitable for X25519 key agreement, HKDF-SHA256, and SHA-256.
+- 2026-06-27 - Live join grants with no device TTL require Swift to re-encode `deviceTtlMs: null` in the sealed-grant AAD. Omitting the optional field changes the AEAD additional data and causes `cryptoFailed` during iOS join.
 
 ---
 
