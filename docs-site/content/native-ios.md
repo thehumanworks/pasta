@@ -38,8 +38,9 @@ The keyboard is intentionally close to the stock iOS keyboard in daily use:
 - normal typing remains the default interaction;
 - Pasta does not add a duplicate globe key when iOS already presents the input-mode switch control;
 - letter, number (`123`), and symbol (`#+=`) keyboard modes are present so the keyboard remains usable for ordinary iOS text entry;
+- letter keys follow iOS-style case behavior: lowercase in normal typing, single-shift uppercase, and caps lock only through the standard shift interaction;
 - Pasta controls use a high-contrast opaque compact history strip so action labels stay readable over iOS keyboard chrome;
-- Pasta controls live in a compact history strip and an expanded history drawer;
+- Pasta controls live in a compact history strip and must not create a separate top bar, rounded cap, or spacer above the action buttons;
 - tapping a text item inserts it into the active text field;
 - long-pressing a history item opens actions such as preview, copy to iPhone clipboard, delete, or open in Pasta;
 - Pasta never publishes ordinary keystrokes as clips.
@@ -111,6 +112,12 @@ Cloudflare still sees only the existing routing metadata: kind, MIME, byte lengt
 **Do not treat binary clips as paste-anywhere content.** Images, files, and directories need clipboard/share/app/File Provider handoff, not text-field insertion.
 
 **Do not leak filenames or directory paths.** User-facing names and binary summaries belong in encrypted metadata, not Worker, Durable Object, R2, logs, or analytics.
+
+**Do not mount Pasta controls inside KeyboardKit autocomplete or toolbar chrome.** KeyboardKit's `toolbar:` slot is the autocomplete toolbar host, and `Keyboard.Toolbar` has its own minimum-height container. Pasta's action strip must be a sibling above `KeyboardView`, while KeyboardKit gets an empty zero-height toolbar. Otherwise iOS/SwiftUI host slack can appear as a strange strip above the action buttons.
+
+**Do not treat a KeyboardKit layout as live after it is created.** Build the layout from the observed `KeyboardContext` and refresh identity when `keyboardCase`, `keyboardType`, orientation, size, or device class changes. A stale layout snapshot can keep uppercased character actions on screen and make the keyboard feel caps-locked even though KeyboardKit's shift state changed.
+
+**Do not use SwiftUI preview as keyboard chrome proof.** The visible top strip, safe-area slack, globe behavior, dictation key, and host keyboard height only show up correctly in the custom keyboard extension host. Verify with simulator/device install and PluginKit registration, and prefer a TestFlight device readback for final UX feedback.
 
 ## Setup flow
 
@@ -276,7 +283,17 @@ interface ClipMetadata {
 
 Backfill metadata in a backwards-compatible way: unknown fields are ignored by old clients; missing fields degrade to `payloadKind`, MIME, byte length, and encrypted `name`.
 
-## Hypothetical issues encountered and fixes
+## Issues encountered and fixes
+
+**Issue: a strange strip stayed above the Pasta action buttons after the first toolbar fix.**
+Why it happened: the first fix removed a nested `Keyboard.Toolbar`, but Pasta still rendered actions through `KeyboardView.toolbar`, which is KeyboardKit's autocomplete toolbar host. That host has its own wrapper/background and can reveal extension-host slack above fixed-height custom content.
+Fix: render `PastaKeyboardToolbar` as a sibling above `KeyboardView`, pass `EmptyView()` into KeyboardKit's toolbar slot, set `autocompleteToolbarStyle(height: 0, padding: 0)`, disable the KeyboardKit input toolbar display mode, and use the native keyboard background across the whole root.
+Agent warning: do not claim keyboard chrome bugs fixed from source review or archive success alone. The defect survived a successful TestFlight build and only the device screenshot exposed the remaining host strip.
+
+**Issue: the keyboard looked permanently caps-locked and could not type lowercase.**
+Why it happened: a KeyboardKit layout is a snapshot. Pasta was allowing KeyboardKit to build one layout during setup, then wrapping it without observing enough live keyboard context for case/type changes. When the layout remains in an uppercased state, the displayed key labels and inserted character actions can both remain uppercase.
+Fix: observe `KeyboardContext`, pass an explicit layout generated from the current context, remove only the duplicate `nextKeyboard` item, and rebuild the KeyboardView identity when case, keyboard type, orientation, size, or device class changes.
+Agent warning: case is behavior, not styling. Verify inserted lowercase text, single-shift uppercase, caps lock, `123`, and `#+=` in a real text field.
 
 **Issue: keyboard looked embedded but failed review risk because it required Full Access.**
 Fix: keep the keyboard functional without Full Access by reading cached text history from the containing app's last sync, and explain that live refresh/publish needs Full Access.
@@ -309,6 +326,8 @@ Before claiming iOS parity:
 - cross-language crypto vectors pass in Swift and Bun;
 - iOS app can pair as a trusted device and decrypt existing text history;
 - keyboard inserts text history into a normal text field;
+- keyboard action strip is the only Pasta addition above the stock key rows, with no extra top strip above the action buttons;
+- keyboard can type lowercase, single-shift uppercase, caps lock, delete, return, space, `123`, and `#+=` through KeyboardKit's native behavior;
 - keyboard gracefully disappears or is replaced in secure fields/phone pads as iOS dictates;
 - keyboard works without Full Access using cached text history;
 - Full Access mode live-refreshes history and publishes only after explicit user action;

@@ -101,6 +101,11 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - top bar removal fix - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0; simulator install/launch plus `pluginkit -m -p com.apple.keyboard-service | rg 'com.thehumanworks.pasta.keyboard'` - exit 0 with `com.thehumanworks.pasta.keyboard(0.1.7)`.
 - 2026-06-27 - top bar removal fix - `swift test --package-path ios` - exit 0 with 14 tests passed and 1 live relay test skipped; `mise exec -- bun run test` - exit 0 with 30 Bun tests and 13 Vitest tests passed; `git diff --check` - exit 0.
 - 2026-06-27 - TestFlight build 6 - archive/export/upload passed; `inspect_ipa.sh ios/build/export-local/Pasta.ipa` confirmed `CFBundleVersion=6`, `ITSAppUsesNonExemptEncryption=false`, distribution profile, `get-task-allow=false`, and embedded `PastaKeyboard.appex`; App Store Connect build `24127bd0-4625-4e17-97ef-ce8451a32369` is `VALID` and internal beta group `internal` has access.
+- 2026-06-27 - native chrome/case fix - pass by code review against attached TestFlight screenshot and KeyboardKit 9.9.1 sources; `PastaKeyboardToolbar` is now a sibling above `KeyboardView`, KeyboardKit receives `toolbar: EmptyView()`, `.autocompleteToolbarStyle(height: 0, padding: 0)`, `.keyboardInputToolbarDisplayMode(.none)`, and a native keyboard background so there is no separate autocomplete/toolbar host strip above the action buttons.
+- 2026-06-27 - native chrome/case fix - pass by code review; `PastaKeyboardView` observes `KeyboardContext`, injects a layout generated from the current context through `PastaKeyboardLayoutService`, removes only `.nextKeyboard`, and rebuilds `KeyboardView` identity when case, keyboard type, orientation, screen size, or device class changes so lower/upper case and `123`/symbol rows track KeyboardKit state.
+- 2026-06-27 - native chrome/case fix - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0; simulator install/launch plus `pluginkit -m -p com.apple.keyboard-service | rg 'com.thehumanworks.pasta.keyboard'` - exit 0 with `com.thehumanworks.pasta.keyboard(0.1.7)`.
+- 2026-06-27 - native chrome/case fix - `swift test --package-path ios` - exit 0 with 14 tests passed and 1 live relay test skipped; `PASTA_IOS_JOIN_TOKEN=<redacted> swift test --package-path ios --filter PastaCoreLiveRelayTests` - exit 0 with live join/publish/history passed; `mise exec -- bun run test` - exit 0 with 30 Bun tests and 13 Vitest tests passed; `cd docs-site && bun run build -- --base /pasta/` - exit 0 with 15 pages built; `git diff --check` - exit 0.
+- 2026-06-27 - TestFlight build 7 - archive/export/upload passed; `inspect_ipa.sh ios/build/export-local/Pasta.ipa` confirmed `CFBundleVersion=7`, `ITSAppUsesNonExemptEncryption=false`, distribution profile, `get-task-allow=false`, and embedded `PastaKeyboard.appex`; App Store Connect build `36db846e-287b-4996-ae1d-c01c26ade0f0` is `VALID` and internal beta group `internal` has access.
 
 ---
 
@@ -202,12 +207,33 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - User screenshot corrected the toolbar container contract: Pasta
   action buttons should not sit under a separate visible top strip. Scope impact:
   toolbar composition only.
+- 2026-06-27 - User feedback corrected the native typing contract: KeyboardKit
+  remains authoritative for shift/case, lowercase labels/actions,
+  number/symbol modes, delete, return, space, and callouts; Pasta code only adds
+  the action shelf and removes duplicate input-mode switching. Scope impact:
+  keyboard layout observation and docs wording.
 
 ---
 
 ## 7. Learnings · LIVE (append-only)
 
-*(none yet)*
+- 2026-06-27 - KeyboardKit's `KeyboardView` `toolbar:` parameter is the
+  autocomplete toolbar host, not a neutral product-action shelf. If Pasta places
+  action controls there, KeyboardKit and the custom keyboard host can still paint
+  extra toolbar/safe-area chrome above the controls. Render Pasta's strip as a
+  sibling above `KeyboardView`, pass `EmptyView()` to KeyboardKit's toolbar, and
+  set `autocompleteToolbarStyle(height: 0, padding: 0)` plus
+  `keyboardInputToolbarDisplayMode(.none)`.
+- 2026-06-27 - KeyboardKit layouts are context snapshots. If a wrapper computes
+  a layout once and does not observe `KeyboardContext`, shift/case and
+  `123`/symbol transitions can leave stale key rows on screen. Observe
+  `KeyboardContext` and rebuild the KeyboardKit view identity for case, type,
+  orientation, screen-size, and device-class changes.
+- 2026-06-27 - SwiftUI previews are useful for toolbar contrast, but they do not
+  prove keyboard-extension chrome. The top strip regression only showed in the
+  hosted keyboard surface, so final proof must include simulator/device
+  extension install plus TestFlight readback when the user reports device
+  screenshots.
 
 ---
 

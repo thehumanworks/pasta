@@ -15,10 +15,15 @@ final class KeyboardViewController: KeyboardInputViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.backgroundColor = .clear
         enableExperimentalKeyboardTypeChangeTracking()
         reloadClips()
         setup(for: .pasta) { [weak self] _ in
             guard let self else { return }
+            services.keyboardBehavior = PastaKeyboardBehavior(
+                keyboardContext: state.keyboardContext,
+                repeatGestureTimer: services.repeatGestureTimer
+            )
             services.layoutService = PastaKeyboardLayoutService()
             setupPastaKeyboardView()
         }
@@ -146,28 +151,50 @@ private struct PastaKeyboardView: View {
     let publish: () -> Void
     let toggleExpanded: () -> Void
 
+    @EnvironmentObject private var keyboardContext: KeyboardContext
+
     var body: some View {
-        KeyboardView(
-            state: state,
-            services: services,
-            buttonContent: { $0.view },
-            buttonView: { $0.view },
-            collapsedView: { $0.view },
-            emojiKeyboard: { $0.view },
-            toolbar: { _ in
-                PastaKeyboardToolbar(
-                    model: toolbarModel,
-                    insertClip: insertClip,
-                    refresh: refresh,
-                    publish: publish,
-                    toggleExpanded: toggleExpanded
-                )
-            }
-        )
-        .autocompleteToolbarStyle(.init(
-            height: PastaToolbarAppearance.shelfHeight,
-            padding: 0
-        ))
+        VStack(spacing: 0) {
+            PastaKeyboardToolbar(
+                model: toolbarModel,
+                insertClip: insertClip,
+                refresh: refresh,
+                publish: publish,
+                toggleExpanded: toggleExpanded
+            )
+
+            KeyboardView(
+                layout: pastaLayout,
+                state: state,
+                services: services,
+                renderBackground: false,
+                buttonContent: { $0.view },
+                buttonView: { $0.view },
+                collapsedView: { $0.view },
+                emojiKeyboard: { $0.view },
+                toolbar: { _ in EmptyView() }
+            )
+            .autocompleteToolbarStyle(.init(height: 0, padding: 0))
+            .keyboardInputToolbarDisplayMode(.none)
+            .id(keyboardLayoutIdentifier)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(PastaToolbarAppearance.shelfBackground.ignoresSafeArea())
+        .ignoresSafeArea(.container, edges: [.top, .bottom])
+    }
+
+    private var pastaLayout: KeyboardLayout {
+        services.layoutService.keyboardLayout(for: keyboardContext)
+    }
+
+    private var keyboardLayoutIdentifier: String {
+        [
+            "\(keyboardContext.keyboardType)",
+            keyboardContext.keyboardCase.rawValue,
+            "\(keyboardContext.interfaceOrientation)",
+            "\(keyboardContext.screenSize.width)x\(keyboardContext.screenSize.height)",
+            "\(keyboardContext.deviceTypeForKeyboard)"
+        ].joined(separator: "|")
     }
 }
 
@@ -257,11 +284,11 @@ private struct PastaToolbarButtonStyle: ButtonStyle {
 }
 
 private enum PastaToolbarAppearance {
-    static let shelfBackground = Color(red: 0.73, green: 0.76, blue: 0.81)
-    static let chipBackground = Color(red: 1, green: 1, blue: 1)
-    static let pressedChipBackground = Color(red: 0.88, green: 0.90, blue: 0.93)
-    static let foreground = Color(red: 0.01, green: 0.01, blue: 0.02)
-    static let border = Color(red: 0.57, green: 0.59, blue: 0.64)
+    static let shelfBackground = Color.keyboardBackground
+    static let chipBackground = Color.keyboardButtonBackground
+    static let pressedChipBackground = Color.keyboardDarkButtonBackground
+    static let foreground = Color.keyboardButtonForeground
+    static let border = Color.black.opacity(0.14)
     static let font = Font.system(size: 15, weight: .semibold)
     static let shelfHeight: CGFloat = 36
     static let chipHeight: CGFloat = 31
@@ -289,6 +316,26 @@ private final class PastaKeyboardLayoutService: KeyboardLayoutService {
         var layout = baseService.keyboardLayout(for: context)
         layout.itemRows.remove(.nextKeyboard)
         return layout
+    }
+}
+
+private final class PastaKeyboardBehavior: Keyboard.StandardKeyboardBehavior {
+    override func preferredKeyboardCase(
+        after gesture: Keyboard.Gesture,
+        on action: KeyboardAction
+    ) -> Keyboard.KeyboardCase {
+        guard gesture == .release else {
+            return super.preferredKeyboardCase(after: gesture, on: action)
+        }
+
+        switch action {
+        case .character, .characterMargin, .diacritic:
+            guard keyboardContext.keyboardCase != .capsLocked else { return .capsLocked }
+            if keyboardContext.autocapitalizationType == .allCharacters { return .uppercased }
+            return .lowercased
+        default:
+            return super.preferredKeyboardCase(after: gesture, on: action)
+        }
     }
 }
 

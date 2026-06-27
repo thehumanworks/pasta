@@ -39,6 +39,18 @@ The dependency must be kept pinned and verified by Xcode app/extension builds.
 Pasta-specific code still owns privacy-sensitive behavior: no ordinary keystroke
 publishing, no silent pasteboard read, and no plaintext secret storage.
 
+Pasta-specific controls must not be mounted inside KeyboardKit's autocomplete
+toolbar host or `Keyboard.Toolbar` wrapper. Both containers own their own height
+and background behavior, which can leave a visible strip above Pasta controls in
+the real keyboard extension host. The action strip is rendered as a sibling
+above `KeyboardView`, while KeyboardKit receives an empty zero-height toolbar.
+
+KeyboardKit layouts are generated from a `KeyboardContext` snapshot. Pasta must
+observe that context and rebuild the layout identity when case, keyboard type,
+orientation, screen size, or device class changes. Otherwise the visible rows can
+stay uppercased or stuck in the previous mode even when KeyboardKit's standard
+shift/type behavior updated the context.
+
 ## Alternatives Considered
 
 - **Manual UIKit key grid**: rejected after feedback because it made Pasta
