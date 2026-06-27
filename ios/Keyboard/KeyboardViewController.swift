@@ -180,7 +180,10 @@ private struct PastaKeyboardView: View {
             }
         )
         .keyboardViewStyle(.init(background: .color(.keyboardBackground)))
+        .autocompleteToolbarStyle(.init(height: PastaToolbarAppearance.shelfHeight, padding: 0))
+        .keyboardToolbarStyle(.init(backgroundColor: .clear, minHeight: PastaToolbarAppearance.shelfHeight))
         .keyboardInputToolbarDisplayMode(.none)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .id(keyboardLayoutIdentifier)
     }
 
@@ -211,7 +214,7 @@ private struct PastaKeyboardToolbar: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 0) {
                 if let statusMessage = model.statusMessage {
                     Text(statusMessage)
                         .font(PastaToolbarAppearance.font)
@@ -270,6 +273,7 @@ private struct PastaKeyboardToolbar: View {
         }
         .scrollClipDisabled()
         .frame(height: PastaToolbarAppearance.shelfHeight)
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -310,12 +314,15 @@ private struct PastaToolbarDivider: View {
 }
 
 private enum PastaToolbarAppearance {
+    /// Matches KeyboardKit 9.9.1 `Autocomplete.ToolbarStyle` and `Keyboard.ToolbarStyle`
+    /// defaults (48pt). Not `DeviceConfiguration.inputToolbarHeight` (54pt), which sizes
+    /// Pro input-toolbar rows and key rows — a different subsystem.
     static let foreground = Color.keyboardButtonForeground
     static let pressedSegmentBackground = Color.keyboardButtonForeground.opacity(0.08)
-    static let separator = Color.keyboardButtonForeground.opacity(0.10)
+    static let separator = Color.keyboardButtonForeground.opacity(0.20)
     static let font = Font.system(size: 16, weight: .semibold)
     static let shelfHeight: CGFloat = 48
-    static let separatorHeight: CGFloat = 31
+    static let separatorHeight: CGFloat = 28
 }
 
 private struct PastaKeyboardToolbarModel {
@@ -366,3 +373,62 @@ private extension String {
         return compact.isEmpty ? "Text clip" : String(compact.prefix(48))
     }
 }
+
+#if DEBUG
+private extension PastaKeyboardToolbarModel {
+    static var preview: PastaKeyboardToolbarModel {
+        PastaKeyboardToolbarModel(
+            clips: [
+                PastaKeyboardClip(sequence: 3, title: "Let's take Mish in 25 mins and take a little break then.", text: "Let's take Mish in 25 mins and take a little break then.", createdAt: 0),
+                PastaKeyboardClip(sequence: 2, title: "melissa_bikini@icloud.com", text: "melissa_bikini@icloud.com", createdAt: 0),
+                PastaKeyboardClip(sequence: 1, title: "1172", text: "1172", createdAt: 0)
+            ],
+            statusMessage: nil,
+            showsExpandedHistory: false,
+            isRunningLiveAction: false
+        )
+    }
+}
+
+/// Live canvas for the Pasta keyboard. Renders the action row in KeyboardKit's
+/// native toolbar slot above the stock keys, so the toolbar styling can be tuned
+/// in Xcode without a device build. Caveat (see goal-14 / native-ios docs): the
+/// canvas does not reproduce the real keyboard-extension host chrome (top
+/// safe-area / strip), so confirm final chrome on a device/TestFlight build.
+private struct PastaKeyboardPreviewHost: View {
+    let controller = KeyboardInputViewController.preview
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            PastaKeyboardView(
+                services: controller.services,
+                state: controller.state,
+                toolbarModel: .preview,
+                insertClip: { _ in },
+                refresh: {},
+                publish: {},
+                toggleExpanded: {}
+            )
+        }
+        .keyboardState(controller.state)
+        .background(Color(white: 0.85))
+    }
+}
+
+#Preview("Pasta keyboard — full") {
+    PastaKeyboardPreviewHost()
+}
+
+#Preview("Pasta toolbar — row only") {
+    PastaKeyboardToolbar(
+        model: .preview,
+        insertClip: { _ in },
+        refresh: {},
+        publish: {},
+        toggleExpanded: {}
+    )
+    .frame(width: 393, height: 48)
+    .background(Color.keyboardBackground)
+}
+#endif
