@@ -100,6 +100,7 @@ Verification Contract:
 - 2026-06-26 - `mise exec -- bun run test` - exit 0; Worker pairing test approves wrapped group-key grant and consumes it once.
 - 2026-06-26 - live local smoke `devices approve <code>` then `pair consume` - exit 0; new device decrypted existing latest clip and cross-device paste worked.
 - 2026-06-27 - `mise exec -- bun run test` - exit 0; CLI/crypto/Worker tests cover CI join-grant token creation, sealed group-key redemption, one-use enforcement, grant revoke, default permanent devices, and optional device TTL.
+- 2026-06-27 - remote deploy verification - `mise exec -- fnox exec -- wrangler d1 migrations apply DB --remote` applied `0002_ci_join_grants.sql`, `mise exec -- fnox exec -- wrangler deploy` deployed Worker version `3c3f2799-57d9-410b-83cc-20cdf7444b96`, and a non-leaking smoke against `https://pasta.nothuman.work` ran `pasta pair grant create --json`, clean `PASTA_HOME` `pasta pair join`, signed `pasta devices list`, and cleanup revoke - exit 0.
 
 ### T4 - Device List and Revoke - [x]
 
