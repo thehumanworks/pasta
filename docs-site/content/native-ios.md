@@ -397,9 +397,13 @@ Rules:
 
 - Observe `KeyboardContext` in `PastaKeyboardView`.
 - Generate the layout from the current context.
+- Include `keyboardCase` in the cached layout signature so KeyboardKit rebuilds
+  character actions when Shift changes.
 - Key `KeyboardView.id` only on structural changes: keyboard type, orientation, screen size, and device class.
 - Do **not** key `.id` on `keyboardCase`; KeyboardKit updates shift/case reactively.
 - Do **not** strip `.nextKeyboard`; KeyboardKit adds the globe when iOS requires it.
+- In Dark Mode, active Shift must render with a white fill and black foreground,
+  while inactive Shift keeps KeyboardKit's standard colors.
 
 ### Proof requirements
 
@@ -567,8 +571,12 @@ Fix: remove the explicit `keyboardViewStyle(background: .color(.keyboardBackgrou
 
 **Issue: the keyboard looked permanently caps-locked and could not type lowercase.**
 Why it happened: a KeyboardKit layout is a snapshot. Pasta was allowing KeyboardKit to build one layout during setup, then wrapping it without observing enough live keyboard context for case/type changes. When the layout remains in an uppercased state, the displayed key labels and inserted character actions can both remain uppercase.
-Fix: observe `KeyboardContext`, pass an explicit layout generated from the current context, keep KeyboardKit's conditional `nextKeyboard` (globe) item, and rebuild the KeyboardView identity only on structural changes (keyboard type, orientation, size, device class) — never on `keyboardCase`.
+Fix: observe `KeyboardContext`, pass an explicit layout generated from the current context, include `keyboardCase` in Pasta's layout-cache signature, keep KeyboardKit's conditional `nextKeyboard` (globe) item, and rebuild the KeyboardView identity only on structural changes (keyboard type, orientation, size, device class) — never on `keyboardCase`.
 Agent warning: case is behavior, not styling. Verify inserted lowercase text, single-shift uppercase, caps lock, `123`, and `#+=` in a real text field.
+
+**Issue: active Shift was low-contrast in Dark Mode.**
+Why it happened: active Shift styling can inherit a dark fill in the hosted keyboard surface, making the Shift glyph hard to distinguish from the key background.
+Fix: keep KeyboardKit's standard key style by default, but explicitly map active Shift in Dark Mode to a white fill with black foreground. Cover the token mapping with Light/Dark automated tests.
 
 **Issue: keyboard looked embedded but failed review risk because it required Full Access.**
 Fix: keep the keyboard functional without Full Access by reading cached text history from the containing app's last sync, and explain that live refresh/publish needs Full Access.

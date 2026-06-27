@@ -127,6 +127,9 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - native autocomplete/background correction - `swift test --package-path ios` - exit 0 with 14 tests passed and 1 live relay test skipped because `PASTA_IOS_JOIN_TOKEN` is unset.
 - 2026-06-27 - native autocomplete/background correction - `make run-ios` - exit 0 on physical iPhone Air `AA3189CF-63E4-5B5B-884D-A39454926E42`; `xcodebuild` built and signed `Pasta.app` with embedded `PastaKeyboard.appex`, `devicectl` installed `com.thehumanworks.pasta`, and `devicectl` launched the app.
 - 2026-06-27 - native autocomplete/background correction - `xcrun devicectl device process launch --device AA3189CF-63E4-5B5B-884D-A39454926E42 com.apple.MobileSMS` - exit 0; `xcrun devicectl device capture screenshot --device AA3189CF-63E4-5B5B-884D-A39454926E42 --destination ios/build/screenshots/pasta-device-native-autocomplete-toolbar.png` - exit 0 with 1260x2736 screenshot showing the live Messages keyboard host with compact Pasta side icons, native autocomplete suggestions (`I'm`, `It's`, `It`), a number row, and no app-painted full-keyboard background path in code.
+- 2026-06-27 - keyboard casing/Shift contrast follow-up - pass by code review; `PastaKeyboardLayoutSignature` now includes `keyboardCase` so cached KeyboardKit layouts refresh their character actions when Shift/case changes, while `KeyboardView.id` still excludes `keyboardCase` to avoid tearing down gestures mid-type. Active Shift in Dark Mode now applies a white fill and black foreground through `PastaKeyboardShiftAppearance`.
+- 2026-06-27 - keyboard casing/Shift contrast follow-up - `swift test --package-path ios` - exit 0 with 27 tests executed, 1 live relay test skipped because `PASTA_IOS_JOIN_TOKEN` is unset, and 0 failures; added automated casing and Light/Dark Shift token coverage.
+- 2026-06-27 - keyboard casing/Shift contrast follow-up - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/build/DerivedDataKeyboardCaseContrast CODE_SIGNING_ALLOWED=NO build` - exit 0; app and embedded `PastaKeyboard.appex` compiled for simulator.
 
 ---
 
@@ -260,6 +263,11 @@ Scope changes stop execution and surface to the user.
   Pasta actions as compact transparent side icons, and leave UIKit host
   backgrounds clear. Scope impact: toolbar composition and docs wording; no
   DoD/task changes.
+- 2026-06-27 - User feedback separated two keyboard bugs from the prior
+  performance work: cached layouts must refresh on `keyboardCase` without
+  keying the whole view identity on case, and active Shift must remain
+  high-contrast in Dark Mode. Scope impact: keyboard cache key and Shift styling
+  only; no DoD/task changes.
 
 ---
 
