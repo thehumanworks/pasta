@@ -254,22 +254,19 @@ private final class PastaKeyboardLayoutCache: ObservableObject {
 }
 
 private struct PastaKeyboardLayoutKey: Equatable {
-    let keyboardType: String
-    let interfaceOrientation: String
-    let screenWidth: Int
-    let screenHeight: Int
-    let deviceType: String
-    let needsInputModeSwitchKey: Bool
-    let localeIdentifier: String
+    let signature: PastaKeyboardLayoutSignature
 
     init(context: KeyboardContext) {
-        keyboardType = "\(context.keyboardType)"
-        interfaceOrientation = "\(context.interfaceOrientation)"
-        screenWidth = Int(context.screenSize.width.rounded())
-        screenHeight = Int(context.screenSize.height.rounded())
-        deviceType = "\(context.deviceTypeForKeyboard)"
-        needsInputModeSwitchKey = context.needsInputModeSwitchKey
-        localeIdentifier = context.locale.identifier
+        signature = PastaKeyboardLayoutSignature(
+            keyboardType: "\(context.keyboardType)",
+            keyboardCase: context.keyboardCase.pastaCaseMode,
+            interfaceOrientation: "\(context.interfaceOrientation)",
+            screenWidth: Int(context.screenSize.width.rounded()),
+            screenHeight: Int(context.screenSize.height.rounded()),
+            deviceType: "\(context.deviceTypeForKeyboard)",
+            needsInputModeSwitchKey: context.needsInputModeSwitchKey,
+            localeIdentifier: context.locale.identifier
+        )
     }
 }
 
@@ -388,10 +385,34 @@ private final class PastaKeyboardBehavior: Keyboard.StandardKeyboardBehavior {
         switch action {
         case .character, .characterMargin, .diacritic:
             guard keyboardContext.keyboardCase != .capsLocked else { return .capsLocked }
-            if keyboardContext.autocapitalizationType == .allCharacters { return .uppercased }
-            return .lowercased
+            return keyboardContext.keyboardCase.pastaCaseMode
+                .caseAfterInsertedCharacter(
+                    autocapitalizesAllCharacters: keyboardContext.autocapitalizationType == .allCharacters
+                )
+                .keyboardCase
         default:
             return super.preferredKeyboardCase(after: gesture, on: action)
+        }
+    }
+}
+
+private extension Keyboard.KeyboardCase {
+    var pastaCaseMode: PastaKeyboardCaseMode {
+        PastaKeyboardCaseMode(rawValue: rawValue) ?? .auto
+    }
+}
+
+private extension PastaKeyboardCaseMode {
+    var keyboardCase: Keyboard.KeyboardCase {
+        switch self {
+        case .auto:
+            return .auto
+        case .capsLocked:
+            return .capsLocked
+        case .lowercased:
+            return .lowercased
+        case .uppercased:
+            return .uppercased
         }
     }
 }
