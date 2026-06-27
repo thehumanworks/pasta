@@ -177,6 +177,12 @@ Observable finished state:
 - The keyboard typing path keeps KeyboardKit as the input owner. Pasta does not remove features, reintroduce sibling toolbar strips, publish ordinary keystrokes, silently read pasteboard, or change layout behavior to gain speed.
 - Keyboard latency has a committed benchmark or XCTest performance check that exercises representative insert/delete/shift/punctuation paths. The final report includes baseline and optimized numbers from the same command on the same machine.
 
+Keyboard performance proof for this release:
+
+- Observed root cause: Pasta-owned helper work around KeyboardKit did avoidable work on typing-sensitive paths. The SwiftUI wrapper rebuilt Pasta's augmented KeyboardKit layout, including the extra number row, on repeated body evaluations, and the autocomplete service recreated `UITextChecker` plus its available-language lookup per autocomplete request.
+- Implemented fix: cache the structural layout augmentation by keyboard type, orientation, screen size, device class, input-mode-switch requirement, and locale; reuse the `UITextChecker` and available-language set for autocomplete.
+- Benchmark: `swift ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 40000 --mode both` reports `baseline.total: 5544.615 ms`, `optimized.total: 2266.839 ms`, and `59.116% faster` with matching checksums.
+
 Non-goals:
 
 - No background iOS clipboard monitor.
