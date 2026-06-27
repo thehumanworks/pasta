@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "bun:test";
 import { clipboardCandidatesForPlatform, MemoryClipboardAdapter } from "../../src/cli/clipboard";
 import { FetchApiClient, MockApiClient } from "../../src/cli/client";
+import { DIRECTORY_BUNDLE_MIME } from "../../src/cli/directory-zip";
 import { readConfig, type PastaConfig, type Paths, writeConfig } from "../../src/cli/config";
 import { authFileForHome, defaultSecretStoreForHome, FileSecretStore, MemorySecretStore, ResilientSecretStore, SecretName, type SecretStore } from "../../src/cli/secret-store";
 import { runCli } from "../../src/cli";
-import { encryptTextClip, generateDeviceKeyMaterial, generateGroupKey, parseJoinGrantToken } from "../../src/shared/crypto";
+import { decryptBytesClip, encryptTextClip, generateDeviceKeyMaterial, generateGroupKey, parseJoinGrantToken } from "../../src/shared/crypto";
 import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, SIGNATURE_HEADERS, type PairingGrantCreateRequest, type StoredClip } from "../../src/shared/protocol";
 import { shellSnippet } from "../../src/cli/shell";
 
@@ -39,6 +40,8 @@ describe("CLI", () => {
       expect(await runCli(args, { io: capture(output) }), args.join(" ")).toBe(0);
       expect(output.join(""), args.join(" ")).toContain("Examples:");
       expect(output.join(""), args.join(" ")).toContain(expected);
+      if (args.join(" ") === "copy --help") expect(output.join("")).toContain("pasta copy ./project-folder");
+      if (args.join(" ") === "paste --help") expect(output.join("")).toContain("pasta paste --out ./received-project");
     }
     for (const removed of ["copy-image", "paste-image", "send-file", "paste-file"]) {
       output.length = 0;
@@ -399,16 +402,23 @@ describe("CLI", () => {
     const fakePngPath = join(paths.home, "fake.png");
     const heicPath = join(paths.home, "IMG_3035.heic");
     const filePath = join(paths.home, "notes.bin");
+    const dirPath = join(paths.home, "project-folder");
     const imageOut = join(paths.home, "image.png");
     const largeImageOut = join(paths.home, "large-image.png");
     const out = join(paths.home, "received.bin");
     const outSeq = join(paths.home, "received-seq.bin");
+    const dirOut = join(paths.home, "received-project");
+    const dirOutSeq = join(paths.home, "received-project-seq");
     const pasteDir = join(paths.home, "paste-dir");
     await Bun.write(pngPath, png);
     await Bun.write(largePngPath, largePng);
     await Bun.write(fakePngPath, new Uint8Array([1, 2, 3, 4]));
     await Bun.write(heicPath, heic);
     await Bun.write(filePath, new Uint8Array([9, 8, 7, 6]));
+    await mkdir(join(dirPath, "nested"), { recursive: true });
+    await mkdir(join(dirPath, "empty"));
+    await Bun.write(join(dirPath, "root.txt"), "root file");
+    await Bun.write(join(dirPath, "nested", "child.txt"), "nested file");
     await mkdir(pasteDir);
     const clipboard = new MemoryClipboardAdapter();
     const output: string[] = [];
@@ -488,6 +498,27 @@ describe("CLI", () => {
       expect(new Uint8Array(await Bun.file(outSeq).arrayBuffer())).toEqual(new Uint8Array([9, 8, 7, 6]));
       expect(await runCli(["paste", "--file", "--seq", String(fileSeq)], deps)).toBe(0);
       expect(new Uint8Array(await Bun.file(join(pasteDir, "notes.bin")).arrayBuffer())).toEqual(new Uint8Array([9, 8, 7, 6]));
+
+      output.length = 0;
+      expect(await runCli(["copy", dirPath], deps)).toBe(0);
+      const dirSeq = clips.at(-1)?.seq;
+      expect(clips.at(-1)?.payloadKind).toBe("file");
+      expect(clips.at(-1)?.mime).toBe(DIRECTORY_BUNDLE_MIME);
+      expect(JSON.stringify(clips.at(-1))).not.toContain(paths.home);
+      expect(JSON.stringify(clips.at(-1))).not.toContain("project-folder");
+      expect(JSON.stringify(clips.at(-1))).not.toContain("child.txt");
+      expect(output.join("")).toContain("published directory");
+      const encryptedDirectory = storedFiles.get(dirSeq!)!;
+      const zipBytes = decryptBytesClip(groupKey, config.accountId, config.routingId, { ...encryptedDirectory.clip, ciphertext: encryptedDirectory.ciphertext });
+      expect(Array.from(zipBytes.slice(0, 4))).toEqual([0x50, 0x4b, 0x03, 0x04]);
+      expect(await runCli(["paste"], deps)).toBe(0);
+      expect(await Bun.file(join(pasteDir, "project-folder", "root.txt")).text()).toBe("root file");
+      expect(await Bun.file(join(pasteDir, "project-folder", "nested", "child.txt")).text()).toBe("nested file");
+      expect((await stat(join(pasteDir, "project-folder", "empty"))).isDirectory()).toBe(true);
+      expect(await runCli(["paste", "--out", dirOut], deps)).toBe(0);
+      expect(await Bun.file(join(dirOut, "nested", "child.txt")).text()).toBe("nested file");
+      expect(await runCli(["paste", "--file", "--seq", String(dirSeq), "--out", dirOutSeq], deps)).toBe(0);
+      expect(await Bun.file(join(dirOutSeq, "root.txt")).text()).toBe("root file");
     } finally {
       process.chdir(previousCwd);
     }

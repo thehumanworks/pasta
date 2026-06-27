@@ -9,7 +9,7 @@ Binary payload support is behind the text MVP. Text clips remain inline in the D
 - R2 key format: `spaces/{routing_id}/clips/{seq}/{payload_id}` where `payload_id` is random base64url and never derived from a filename, MIME type, or plaintext hash.
 - Sequence allocation: the Durable Object allocates `seq` for each accepted R2-backed image or file payload and derives the R2 key from that sequence plus a random `payload_id`.
 - Finalize semantics: the first implementation uses one signed Worker request for bounded R2-backed payloads. The Worker validates the encrypted envelope, reserves metadata in the Durable Object, writes encrypted bytes to R2, rolls back the metadata row if the R2 write fails, schedules retention after a successful R2 write, and only then returns `201`.
-- MIME and original filename handling: MIME type is stored in clip metadata. When a path is copied, only its basename is stored in encrypted clip metadata for trusted devices; local paths and plaintext filenames stay out of Worker/DO/R2 metadata.
+- MIME and original filename handling: MIME type is stored in clip metadata. When a path is copied, only its basename is stored in encrypted clip metadata for trusted devices; local paths and plaintext filenames stay out of Worker/DO/R2 metadata. Directory paths use a Pasta-specific zip MIME so normal `.zip` files remain normal file payloads.
 
 ## Metadata Contract
 
@@ -66,6 +66,8 @@ Retention alarms delete expired DO metadata and associated R2 objects. The alarm
 Image clipboard support is implemented for macOS PNG pasteboard data through the primary `copy` and `paste` commands. Small PNG payloads stay inline; large PNG payloads use the R2-backed image path while preserving `payloadKind: "image"`. Linux and Windows image clipboard support remains a command-plan assumption in this environment until a native runner is available.
 
 File payload support is implemented through the primary `copy` and `paste` commands. The CLI rejects files above 50 MiB before reading them into memory, encrypts bytes and basename metadata locally, sends encrypted bytes to the Worker, and the Worker stores them in R2 under the DO-assigned key. File payloads save to the original basename by default, fall back to `output.<ext>` when no name exists, and use `--out` to choose a different path.
+
+Directory path support is implemented as a client-local zip bundle over the same encrypted file payload path. `pasta copy <directory>` walks regular files/directories under the selected root, writes a zip archive with relative entry names only, rejects unsupported entries such as symlinks, checks the bundled zip against the 50 MiB payload cap, and uploads it with a Pasta directory-bundle MIME. `pasta paste` detects that MIME and extracts locally, using the encrypted original directory basename by default or `--out <dir>` when provided. Extraction fails if the target directory already exists, avoiding silent merges or overwrites. Normal `.zip` files are not auto-extracted.
 
 Unsupported binary clipboard content outside the implemented PNG image path fails with a controlled unsupported-payload result. Text support does not depend on R2. Goal 06 adds binary support behind platform-scoped clipboard adapters, and Goal 07 makes `copy`/`paste` the primary UX.
 

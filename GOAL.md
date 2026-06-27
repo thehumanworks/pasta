@@ -74,6 +74,7 @@ flowchart LR
 7. [Unified copy/paste UX](docs/goals/07-unified-copy-paste-ux.md)
 8. [GitHub release artifacts](docs/goals/08-github-release-artifacts.md)
 9. [Image copy reliability and history delete](docs/goals/09-image-copy-and-history-delete.md)
+10. [Directory copy/paste](docs/goals/10-directory-copy-paste.md)
 
 ## Research Pack
 
@@ -91,8 +92,9 @@ Current verified state:
 - Goal 05 Task 4 / DoD-4 uses live macOS smoke proof plus user-approved reasonable assumptions for Linux and Windows. Direct Linux/Windows smoke is not required for this checkpoint unless the proof standard changes.
 - Goal 06 completed binary payloads and hardening after the text MVP public distribution proof. Image clipboard smoke is live on macOS; Linux/Windows image clipboard behavior remains a documented platform assumption for this environment.
 - Goal 07 completed the unified `copy`/`paste` image and file UX follow-up; old binary commands were removed after the follow-up no-compatibility requirement.
+- Goal 10 completed the directory path copy/paste follow-up: `pasta copy <directory>` bundles regular directory contents as an encrypted zip-backed file payload, and `pasta paste` extracts the directory locally.
 
-The current next action is release artifact verification:
+The latest completed follow-up is directory copy/paste. Release artifact verification remains a later distribution action:
 
 ```bash
 python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/08-github-release-artifacts.md

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { basename } from "node:path";
+import { stat } from "node:fs/promises";
 import QRCode from "qrcode";
 import {
   decryptClipMetadata,
@@ -40,6 +41,7 @@ import {
 } from "./shared/protocol";
 import { randomBase64Url } from "./shared/encoding";
 import { SystemClipboardAdapter, type ClipboardAdapter } from "./cli/clipboard";
+import { DIRECTORY_BUNDLE_MIME, unzipDirectoryBundle, zipDirectory } from "./cli/directory-zip";
 import {
   defaultDeviceName,
   newAccountId,
@@ -277,7 +279,7 @@ async function copyCommand(
 
   if (filePath) {
     const published = await publishPath(config, secrets, client, filePath, mode, option(argv, "--mime"));
-    io.stdout(clipIsImageLike(published) ? "published image\n" : `published file ${published.seq}\n`);
+    io.stdout(clipIsImageLike(published) ? "published image\n" : clipIsDirectoryBundle(published) ? `published directory ${published.seq}\n` : `published file ${published.seq}\n`);
     return ExitCode.ok;
   }
 
@@ -316,6 +318,13 @@ async function publishPath(
   mode: CopyMode,
   explicitMime?: string
 ): Promise<StoredClip> {
+  const pathStat = await stat(filePath).catch(() => null);
+  if (!pathStat) throw new Error(`file not found: ${filePath}`);
+  if (pathStat.isDirectory()) {
+    if (mode === "image") throw new Error("copy --image requires PNG image bytes");
+    const bytes = await zipDirectory(filePath, LARGE_PAYLOAD_MAX_BYTES);
+    return publishFilePayload(config, secrets, client, bytes, DIRECTORY_BUNDLE_MIME, "file", metadataForPath(filePath));
+  }
   const file = Bun.file(filePath);
   if (!(await file.exists())) throw new Error(`file not found: ${filePath}`);
   const mime = mimeForPath(filePath, explicitMime ?? file.type);
@@ -361,7 +370,11 @@ async function pasteCommand(
       io.stderr(`latest clip is ${payload.clip.payloadKind}, not file\n`);
       return ExitCode.unavailable;
     }
-    await Bun.write(out ?? await defaultOutputPath(config, secrets, payload.clip), payload.bytes);
+    if (clipIsDirectoryBundle(payload.clip)) {
+      await unzipDirectoryBundle(payload.bytes, out ?? await defaultOutputPath(config, secrets, payload.clip));
+    } else {
+      await Bun.write(out ?? await defaultOutputPath(config, secrets, payload.clip), payload.bytes);
+    }
     return ExitCode.ok;
   }
   const clip = await fetchClip(client, seq);
@@ -394,6 +407,10 @@ async function pasteCommand(
   const bytes = clip.storageKind === "r2" || !clip.ciphertext
     ? (await fetchFilePayload(config, secrets, client, clip.seq)).bytes
     : await decryptStoredBytes(config, secrets, clip);
+  if (clipIsDirectoryBundle(clip)) {
+    await unzipDirectoryBundle(bytes, out ?? await defaultOutputPath(config, secrets, clip));
+    return ExitCode.ok;
+  }
   if (out) {
     await Bun.write(out, bytes);
     return ExitCode.ok;
@@ -990,6 +1007,10 @@ function clipIsImageLike(clip: StoredClip): boolean {
   return clip.payloadKind === "image" || clip.mime.startsWith("image/");
 }
 
+function clipIsDirectoryBundle(clip: EncryptedClip): boolean {
+  return clip.payloadKind === "file" && clip.mime === DIRECTORY_BUNDLE_MIME;
+}
+
 async function renderHistoryClip(config: PastaConfig, secrets: SecretStore, clip: StoredClip): Promise<string> {
   const base = `${clip.payloadKind} ${clip.mime} ${clip.byteLen} bytes encrypted`;
   if (clip.payloadKind === "text") {
@@ -1028,6 +1049,7 @@ function trimPathTrailingSeparators(value: string): string {
 }
 
 function defaultOutputName(clip: EncryptedClip): string {
+  if (clipIsDirectoryBundle(clip)) return "output-directory";
   return `output.${extensionForMime(clip.mime)}`;
 }
 
@@ -1093,13 +1115,15 @@ Examples:
 `,
     copy: `usage: pasta copy [path] [--path <path>] [--image|--file] [--mime <type>]
 
-Copies text, image, or file data. Piped stdin is text. A path is detected as an image when possible, otherwise as a file.
+Copies text, image, file, or directory data. Piped stdin is text. A path is detected as an image when possible, as a directory when it is one, otherwise as a file.
+Directory paths are bundled locally as zip bytes before encryption.
 --mime is optional; Pasta infers a MIME type from the file and extension, then falls back to application/octet-stream.
 
 Examples:
   echo "hello" | pasta copy
   pasta copy
   pasta copy ./Downloads/unlimit.png
+  pasta copy ./project-folder
   pasta copy --path ./archive.zip --mime application/zip
   pasta copy --image
   pasta copy --file ./notes.txt --mime text/plain
@@ -1108,12 +1132,14 @@ Examples:
 
 Pulls the latest or selected encrypted clip, decrypts locally, and routes by payload kind.
 File clips save to the original basename, or output.<ext> when no basename exists; use --out to choose a path.
+Directory bundles extract to the original basename, or use --out to choose a directory that does not already exist.
 
 Examples:
   pasta paste
   pasta paste --clipboard
   pasta paste --seq 12
   pasta paste --out ./received.bin
+  pasta paste --out ./received-project
   pasta paste --image --out ./screenshot.png
   pasta paste --file --seq 21 --out ./received.zip
 `,
@@ -1227,6 +1253,7 @@ function helpText(): string {
     "Examples:",
     "  echo hello | pasta copy",
     "  pasta copy ./Downloads/unlimit.png",
+    "  pasta copy ./project-folder",
     "  pasta paste --clipboard",
     "  pasta paste --out ./received.bin",
     "",

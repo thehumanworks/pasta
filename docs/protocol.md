@@ -65,7 +65,7 @@ The Worker rejects stale timestamps outside five minutes, bad body hashes, unkno
 | CLI command | Method/path | Auth | Request | Response | Mutation |
 | --- | --- | --- | --- | --- | --- |
 | `bootstrap` | `POST /v1/accounts/bootstrap` | none | first-device public keys, account/routing/device metadata | registered account/device | D1 `accounts`, `devices` |
-| `copy` | `POST /v1/clips` | device signature | encrypted text envelope | assigned `seq` and clip metadata | Durable Object `clips` |
+| `copy` | `POST /v1/clips` or `POST /v1/files` | device signature | encrypted text envelope, image/file bytes, or client-zipped directory bundle | assigned `seq` and clip metadata | Durable Object `clips`, optional R2 object |
 | `paste` | `GET /v1/clips/latest` or `/v1/clips/:seq` | device signature | empty signed request | encrypted clip | D1 `last_seen_at` |
 | `history` | `GET /v1/clips/history` | device signature | `before`, `limit` query | encrypted clip list | D1 `last_seen_at` |
 | `history delete` | `DELETE /v1/clips/:seq` | device signature | selected sequence | delete count and deleted object count | DO clip row delete, optional R2 object delete |

@@ -356,6 +356,30 @@ The CLI rejects files above 50 MiB before reading them into memory:
 pasta copy ./large.iso
 ```
 
+## Directory Examples
+
+Directory payloads are bundled locally as zip bytes, encrypted locally, and sent through the same file payload path. The zip stores paths relative to the selected directory root; absolute paths are not included.
+
+Copy a directory:
+
+```bash
+pasta copy ./project-folder
+```
+
+Paste the latest directory bundle to the original directory basename in the current directory:
+
+```bash
+pasta paste
+```
+
+Paste the latest directory bundle to a chosen directory:
+
+```bash
+pasta paste --out ./received-project
+```
+
+Directory bundles use the same 50 MiB payload limit after bundling. Regular `.zip` files remain file payloads; only Pasta-created directory bundles auto-extract on paste. The paste target directory must not already exist.
+
 ## Shell Integration
 
 Install a reversible shell snippet:
