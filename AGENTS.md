@@ -37,8 +37,10 @@ These project-local instructions apply to this repository.
 ## iOS Custom Keyboard (KeyboardKit)
 
 The Pasta keyboard is **additive**: KeyboardKit owns the keys and all input
-handling; Pasta only adds a top action row (refresh, publish, pull-history,
-paste/insert). Keep the keys and input as native as possible. The recurring bug
+handling; Pasta only adds a top action row. The visible controls are `Publish`
+and `Paste`; history refresh happens automatically when Full Access and pairing
+state allow it, and `Paste` opens a history menu. Keep the keys and input as
+native as possible. The recurring bug
 here has been turning the action row into a bolt-on strip glued to the keyboard's
 top edge — do not repeat it. Source of truth: `ios/Keyboard/KeyboardViewController.swift`,
 ADR `docs/adrs/0002-keyboardkit-keyboard-rendering.md`, and
@@ -47,14 +49,17 @@ ADR `docs/adrs/0002-keyboardkit-keyboard-rendering.md`, and
 Working pattern:
 
 - Put the Pasta row in KeyboardKit's **native `toolbar:` slot**:
-  `toolbar: { _ in Keyboard.Toolbar { PastaKeyboardToolbar(...) } }`. KeyboardKit
-  already composes the keyboard as `VStack { toolbar; keys }` on one surface — the
-  slot is the native QuickType band, and in 9.9.1 it paints no background of its own.
+  `toolbar: { _ in PastaKeyboardToolbar(...) }`. KeyboardKit already composes
+  the keyboard as `VStack { toolbar; keys }` on one surface — the slot is the
+  native QuickType band, and in 9.9.1 it paints no background of its own.
 - Set one explicit opaque surface:
   `.keyboardViewStyle(.init(background: .color(.keyboardBackground)))`. Do **not**
   rely on `renderBackground` for opacity — the standard style service's background
   is transparent (`Keyboard.Background.standard` has all layers nil), so
   `renderBackground` alone paints nothing.
+- Keep the Pasta toolbar row and buttons transparent. Do **not** hand-pick a gray
+  toolbar fill, add chip backgrounds, or use a horizontal scroll shelf; those
+  create a visible tone mismatch against the native key background.
 - Do **not**: render the row as a sibling above `KeyboardView`; pass `EmptyView()`
   into the slot with a zero-height autocomplete toolbar; use `.ignoresSafeArea(.top)`;
   or hand-paint a background behind a sibling band. That stack is exactly what

@@ -6,7 +6,7 @@ import UIKit
 @MainActor
 final class KeyboardViewController: KeyboardInputViewController {
     private var clips: [PastaKeyboardClip] = []
-    private var showsExpandedHistory = false
+    private var hasAutoRefreshedHistory = false
     private var isRunningLiveAction = false
     private var statusMessage: String?
     private let client = PastaAPIClient()
@@ -15,6 +15,7 @@ final class KeyboardViewController: KeyboardInputViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        applyKeyboardSurfaceBackground()
         enableExperimentalKeyboardTypeChangeTracking()
         reloadClips()
         setup(for: .pasta) { [weak self] _ in
@@ -29,12 +30,31 @@ final class KeyboardViewController: KeyboardInputViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        applyKeyboardSurfaceBackground()
         reloadClips()
         setupPastaKeyboardView()
+        autoRefreshHistoryIfPossible()
     }
 
     override func viewWillSetupKeyboardView() {
         setupPastaKeyboardView()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        applyKeyboardSurfaceBackground()
+    }
+
+    private func applyKeyboardSurfaceBackground() {
+        let background = PastaToolbarAppearance.uiKeyboardSurface
+        view.isOpaque = true
+        view.backgroundColor = background
+        inputView?.isOpaque = true
+        inputView?.backgroundColor = background
+        children.forEach { child in
+            child.view.isOpaque = true
+            child.view.backgroundColor = background
+        }
     }
 
     private func reloadClips() {
@@ -45,7 +65,6 @@ final class KeyboardViewController: KeyboardInputViewController {
         let model = PastaKeyboardToolbarModel(
             clips: clips,
             statusMessage: statusMessage,
-            showsExpandedHistory: showsExpandedHistory,
             isRunningLiveAction: isRunningLiveAction
         )
         setupKeyboardView { [weak self] controller in
@@ -54,21 +73,27 @@ final class KeyboardViewController: KeyboardInputViewController {
                 state: controller.state,
                 toolbarModel: model,
                 insertClip: { [weak self] text in self?.textDocumentProxy.insertText(text) },
-                refresh: { [weak self] in self?.refreshHistoryFromNetwork() },
-                publish: { [weak self] in self?.publishClipboardText() },
-                toggleExpanded: { [weak self] in self?.toggleExpandedHistory() }
+                publish: { [weak self] in self?.publishClipboardText() }
             )
         }
+        applyKeyboardSurfaceBackground()
     }
 
-    private func toggleExpandedHistory() {
-        showsExpandedHistory.toggle()
-        setupPastaKeyboardView()
+    private func autoRefreshHistoryIfPossible() {
+        guard !hasAutoRefreshedHistory else { return }
+        guard !isRunningLiveAction else { return }
+        guard hasFullAccess else { return }
+        guard store?.loadConfiguration() != nil else { return }
+        hasAutoRefreshedHistory = true
+        refreshHistoryFromNetwork(reportsStatus: false)
     }
 
-    private func refreshHistoryFromNetwork() {
+    private func refreshHistoryFromNetwork(reportsStatus: Bool = true) {
         Task {
-            await runLiveAction(started: "Refreshing Pasta history...") {
+            await runLiveAction(
+                started: reportsStatus ? "Refreshing Pasta history..." : nil,
+                reportsStatus: reportsStatus
+            ) {
                 let live = try liveContext()
                 let refreshed = try await client.history(
                     configuration: live.configuration,
@@ -77,7 +102,9 @@ final class KeyboardViewController: KeyboardInputViewController {
                 )
                 clips = refreshed
                 try store?.saveKeyboardClips(refreshed)
-                statusMessage = refreshed.isEmpty ? "No Pasta text history yet." : "Synced \(refreshed.count) Pasta text clips."
+                if reportsStatus {
+                    statusMessage = refreshed.isEmpty ? "No Pasta text history yet." : "Synced \(refreshed.count) Pasta text clips."
+                }
             }
         }
     }
@@ -109,10 +136,16 @@ final class KeyboardViewController: KeyboardInputViewController {
         }
     }
 
-    private func runLiveAction(started: String, operation: () async throws -> Void) async {
+    private func runLiveAction(
+        started: String?,
+        reportsStatus: Bool = true,
+        operation: () async throws -> Void
+    ) async {
         guard !isRunningLiveAction else { return }
         isRunningLiveAction = true
-        statusMessage = started
+        if let started {
+            statusMessage = started
+        }
         setupPastaKeyboardView()
         defer {
             isRunningLiveAction = false
@@ -121,11 +154,11 @@ final class KeyboardViewController: KeyboardInputViewController {
         do {
             try await operation()
         } catch PastaKeyboardError.fullAccessRequired {
-            statusMessage = "Allow Full Access for live sync."
+            if reportsStatus { statusMessage = "Allow Full Access for live sync." }
         } catch PastaKeyboardError.notPaired {
-            statusMessage = "Pair in Pasta before live sync."
+            if reportsStatus { statusMessage = "Pair in Pasta before live sync." }
         } catch {
-            statusMessage = "Pasta sync failed."
+            if reportsStatus { statusMessage = "Pasta sync failed." }
         }
     }
 
@@ -145,9 +178,7 @@ private struct PastaKeyboardView: View {
     let state: Keyboard.State
     let toolbarModel: PastaKeyboardToolbarModel
     let insertClip: (String) -> Void
-    let refresh: () -> Void
     let publish: () -> Void
-    let toggleExpanded: () -> Void
 
     @EnvironmentObject private var keyboardContext: KeyboardContext
 
@@ -167,18 +198,14 @@ private struct PastaKeyboardView: View {
             collapsedView: { $0.view },
             emojiKeyboard: { $0.view },
             toolbar: { _ in
-                Keyboard.Toolbar {
-                    PastaKeyboardToolbar(
-                        model: toolbarModel,
-                        insertClip: insertClip,
-                        refresh: refresh,
-                        publish: publish,
-                        toggleExpanded: toggleExpanded
-                    )
-                }
+                PastaKeyboardToolbar(
+                    model: toolbarModel,
+                    insertClip: insertClip,
+                    publish: publish
+                )
             }
         )
-        .keyboardViewStyle(.init(background: .color(.keyboardBackground)))
+        .keyboardViewStyle(.init(background: .color(PastaToolbarAppearance.keyboardSurface)))
         .keyboardInputToolbarDisplayMode(.none)
         .id(keyboardLayoutIdentifier)
     }
@@ -204,53 +231,19 @@ private struct PastaKeyboardView: View {
 private struct PastaKeyboardToolbar: View {
     let model: PastaKeyboardToolbarModel
     let insertClip: (String) -> Void
-    let refresh: () -> Void
     let publish: () -> Void
-    let toggleExpanded: () -> Void
 
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 0) {
-                if let statusMessage = model.statusMessage {
-                    statusLabel(statusMessage)
-                    divider
-                }
-
-                actionButton(
-                    title: "Refresh",
-                    systemImage: "arrow.clockwise",
-                    isEnabled: !model.isRunningLiveAction,
-                    action: refresh
-                )
-                divider
-                actionButton(
-                    title: "Publish",
-                    systemImage: "square.and.arrow.up",
-                    isEnabled: !model.isRunningLiveAction,
-                    action: publish
-                )
-                divider
-                actionButton(
-                    title: model.showsExpandedHistory ? "Less" : "All",
-                    systemImage: model.showsExpandedHistory ? "chevron.up" : "list.bullet",
-                    isEnabled: true,
-                    action: toggleExpanded
-                )
-
-                if model.clips.isEmpty {
-                    divider
-                    statusLabel("Open Pasta to sync")
-                } else {
-                    ForEach(model.visibleClips, id: \.sequence) { clip in
-                        divider
-                        clipButton(clip)
-                    }
-                }
-            }
-            .frame(height: PastaToolbarAppearance.shelfHeight)
-            .background(Color.clear)
+        HStack(spacing: 0) {
+            actionButton(
+                title: "Publish",
+                systemImage: "square.and.arrow.up",
+                isEnabled: !model.isRunningLiveAction,
+                action: publish
+            )
+            divider
+            pasteMenu
         }
-        .scrollIndicators(.hidden)
         .frame(height: PastaToolbarAppearance.shelfHeight)
         .background(Color.clear)
     }
@@ -262,6 +255,7 @@ private struct PastaKeyboardToolbar: View {
             .lineLimit(1)
             .truncationMode(.tail)
             .padding(.horizontal, 14)
+            .frame(minWidth: 116, maxWidth: 240)
             .frame(height: PastaToolbarAppearance.shelfHeight)
             .background(Color.clear)
     }
@@ -281,7 +275,9 @@ private struct PastaKeyboardToolbar: View {
             .font(PastaToolbarAppearance.font)
             .labelStyle(.titleAndIcon)
             .padding(.horizontal, 13)
+            .lineLimit(1)
             .frame(height: PastaToolbarAppearance.shelfHeight)
+            .frame(minWidth: 132)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -290,17 +286,30 @@ private struct PastaKeyboardToolbar: View {
         .background(Color.clear)
     }
 
-    private func clipButton(_ clip: PastaKeyboardClip) -> some View {
-        Button {
-            insertClip(clip.text)
+    private var pasteMenu: some View {
+        Menu {
+            if model.visibleClips.isEmpty {
+                Button("No Pasta history") {}
+                    .disabled(true)
+            } else {
+                ForEach(model.visibleClips, id: \.sequence) { clip in
+                    Button(clip.title) {
+                        insertClip(clip.text)
+                    }
+                }
+            }
         } label: {
-            Text(clip.title)
+            Label {
+                Text("Paste")
+            } icon: {
+                Image(systemName: "doc.on.clipboard")
+            }
                 .font(PastaToolbarAppearance.font)
+                .labelStyle(.titleAndIcon)
+                .padding(.horizontal, 13)
                 .lineLimit(1)
-                .truncationMode(.tail)
-                .padding(.horizontal, 16)
-                .frame(maxWidth: 220)
                 .frame(height: PastaToolbarAppearance.shelfHeight)
+                .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -324,16 +333,24 @@ private enum PastaToolbarAppearance {
     static let separatorHeight: CGFloat = 30
 
     static var font: Font { .system(size: 17, weight: .semibold) }
+    static let keyboardSurface = Color.keyboardBackground
+    static let uiKeyboardSurface = UIColor { traits in
+        switch traits.userInterfaceStyle {
+        case .dark:
+            return UIColor(red: 0.173, green: 0.173, blue: 0.173, alpha: 1)
+        default:
+            return UIColor(red: 0.835, green: 0.839, blue: 0.867, alpha: 1)
+        }
+    }
 }
 
 private struct PastaKeyboardToolbarModel {
     let clips: [PastaKeyboardClip]
     let statusMessage: String?
-    let showsExpandedHistory: Bool
     let isRunningLiveAction: Bool
 
     var visibleClips: [PastaKeyboardClip] {
-        Array(clips.prefix(showsExpandedHistory ? 30 : 12))
+        Array(clips.prefix(12))
     }
 }
 
@@ -385,7 +402,6 @@ private extension PastaKeyboardToolbarModel {
                 PastaKeyboardClip(sequence: 1, title: "1172", text: "1172", createdAt: 0)
             ],
             statusMessage: nil,
-            showsExpandedHistory: false,
             isRunningLiveAction: false
         )
     }
@@ -407,9 +423,7 @@ private struct PastaKeyboardPreviewHost: View {
                 state: controller.state,
                 toolbarModel: .preview,
                 insertClip: { _ in },
-                refresh: {},
-                publish: {},
-                toggleExpanded: {}
+                publish: {}
             )
         }
         .keyboardState(controller.state)
@@ -425,9 +439,7 @@ private struct PastaKeyboardPreviewHost: View {
     PastaKeyboardToolbar(
         model: .preview,
         insertClip: { _ in },
-        refresh: {},
-        publish: {},
-        toggleExpanded: {}
+        publish: {}
     )
     .frame(width: 393, height: 60)
     .background(Color.keyboardBackground)

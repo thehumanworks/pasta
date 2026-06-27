@@ -28,7 +28,9 @@ callouts, and the keyboard-switch (globe) key, while Pasta keeps only its
 product-specific action row, clip insertion actions, and Full Access gates. The
 action row renders inside KeyboardKit's native `toolbar:` slot (the band that
 normally holds QuickType suggestions); Pasta does not edit the generated layout
-and does not stack its own chrome around `KeyboardView`.
+and does not stack its own chrome around `KeyboardView`. The row is a fixed
+native-height `Publish` plus `Paste` menu surface; live history refresh happens
+automatically when Full Access and pairing state allow it.
 
 KeyboardKit is pinned through XcodeGen as an exact Swift Package dependency.
 
@@ -42,15 +44,17 @@ The dependency must be kept pinned and verified by Xcode app/extension builds.
 Pasta-specific code still owns privacy-sensitive behavior: no ordinary keystroke
 publishing, no silent pasteboard read, and no plaintext secret storage.
 
-Pasta's action row is mounted inside KeyboardKit's `toolbar:` slot, returned as
-`Keyboard.Toolbar { ... }`. In KeyboardKit 9.9.1 that slot adds no background of
-its own; the framework already composes the keyboard as `VStack { toolbar; keys }`
-and paints one surface behind both. An earlier revision wrongly concluded the
-slot itself painted a strip and moved the row to a sibling above `KeyboardView`
-with a zero-height toolbar, `renderBackground: false`, a hand-painted background,
-and `.ignoresSafeArea(.top)`. That stack is what produced the cropped, detached
-strip. The corrected rule: use the slot, delete the sibling/zeroed-toolbar/
-ignoresSafeArea workarounds, and supply opacity with an explicit
+Pasta's action row is mounted directly inside KeyboardKit's `toolbar:` slot. In
+KeyboardKit 9.9.1 that slot adds no background of its own; the framework already
+composes the keyboard as `VStack { toolbar; keys }` and paints one surface behind
+both. An earlier revision wrongly concluded the slot itself painted a strip and
+moved the row to a sibling above `KeyboardView` with a zero-height toolbar,
+`renderBackground: false`, a hand-painted background, and
+`.ignoresSafeArea(.top)`. That stack is what produced the cropped, detached
+strip. Later attempts also showed that a hand-picked row fill, chip background,
+or horizontally scrollable shelf creates a visible tone mismatch. The corrected
+rule: use the slot, keep the Pasta row/buttons transparent, delete the sibling/
+zeroed-toolbar/ignoresSafeArea workarounds, and supply opacity with an explicit
 `keyboardViewStyle(background: .color(.keyboardBackground))` because the standard
 style service's background is transparent.
 

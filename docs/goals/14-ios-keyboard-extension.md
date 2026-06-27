@@ -117,6 +117,12 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - toolbar surface cleanup - `make run-ios` - exit 0 on physical iPhone Air `AA3189CF-63E4-5B5B-884D-A39454926E42`; `xcodebuild` built `Pasta.app` with embedded `PastaKeyboard.appex`, `devicectl` installed `com.thehumanworks.pasta`, and `devicectl` launched the app. `xcrun devicectl device capture screenshot --device AA3189CF-63E4-5B5B-884D-A39454926E42 --destination ios/build/screenshots/pasta-device-after-toolbar-surface-fix.png` - exit 0, but captured the containing app rather than an active keyboard host, so final toolbar chrome proof remains pending a device screenshot with the Pasta keyboard visible.
 - 2026-06-27 - transparent button follow-up - pass by code review after user device feedback; Pasta toolbar content is now pure SwiftUI and uses `.buttonStyle(.plain)` plus explicit `Color.clear` backgrounds for the scroll container, buttons, labels, and separators. Removed the pressed-state background so toolbar buttons remain completely transparent in normal and pressed states.
 - 2026-06-27 - transparent button follow-up - `make run-ios` - exit 0 on physical iPhone Air `AA3189CF-63E4-5B5B-884D-A39454926E42`; `xcodebuild` built `Pasta.app` with embedded `PastaKeyboard.appex`, `devicectl` installed `com.thehumanworks.pasta`, and `devicectl` launched the app.
+- 2026-06-27 - simplified transparent toolbar follow-up - pass by code review after user device feedback; visible toolbar controls are now fixed `Publish` and `Paste`, history refresh runs automatically on appearance when Full Access and pairing state allow it, `Paste` opens a menu of the latest cached/refreshed clips, and the toolbar contains no horizontal `ScrollView` or visible `Refresh` button.
+- 2026-06-27 - simplified transparent toolbar follow-up - pass by code review against KeyboardKit 9.9.1 asset sources; `PastaKeyboardToolbar` and its buttons/menu labels render with `Color.clear` backgrounds over `Color.keyboardBackground`, and the UIKit host fallback uses the exact KeyboardKit `keyboardBackground.colorset` light/dark values to avoid a hand-picked gray row tone.
+- 2026-06-27 - simplified transparent toolbar follow-up - `swift test --package-path ios` - exit 0 with 14 tests passed and 1 live relay test skipped because `PASTA_IOS_JOIN_TOKEN` is unset.
+- 2026-06-27 - simplified transparent toolbar follow-up - `make run-ios` - exit 0 on physical iPhone Air `AA3189CF-63E4-5B5B-884D-A39454926E42`; `xcodebuild` built and signed `Pasta.app` with embedded `PastaKeyboard.appex`, `devicectl` installed `com.thehumanworks.pasta`, and `devicectl` launched the app.
+- 2026-06-27 - simplified transparent toolbar follow-up - `xcrun devicectl device process launch --device AA3189CF-63E4-5B5B-884D-A39454926E42 com.apple.MobileSMS` - exit 0; `xcrun devicectl device capture screenshot --device AA3189CF-63E4-5B5B-884D-A39454926E42 --destination ios/build/screenshots/pasta-device-transparent-toolbar.png` - exit 0 with 1260x2736 screenshot showing the Pasta keyboard row as fixed `Publish`/`Paste` controls with clear button backgrounds in the live Messages keyboard host.
+- 2026-06-27 - simplified transparent toolbar follow-up - `git diff --check` - exit 0.
 
 ---
 
@@ -238,6 +244,11 @@ Scope changes stop execution and surface to the user.
   adversarial device-chrome, native UX/HIG) approved the approach with these
   corrections. Scope impact: keyboard composition and docs wording; no DoD/task
   changes.
+- 2026-06-27 - User feedback simplified the action-row contract: remove the
+  visible Refresh button when automatic refresh is possible; keep the toolbar
+  fixed to `Publish` and `Paste`; expose history through the `Paste` menu rather
+  than a horizontally scrollable shelf. Scope impact: toolbar presentation and
+  docs wording; no DoD/task changes.
 
 ---
 
@@ -289,6 +300,10 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - A pressed-state or plain-button background can still make Pasta's
   controls read as separate widgets. Keep toolbar buttons backgroundless in all
   states; use plain text/icons/separators over KeyboardKit's toolbar surface.
+- 2026-06-27 - A transparent button is not enough if the toolbar row itself
+  paints a slightly different gray. Keep the row background clear, use
+  KeyboardKit's `Color.keyboardBackground` as the single SwiftUI surface, and
+  mirror the same KeyboardKit color asset only for UIKit host-view opacity.
 
 ---
 

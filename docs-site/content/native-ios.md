@@ -25,7 +25,7 @@ The iOS bundle has four surfaces:
 | Surface | What it does | Why it exists |
 | --- | --- | --- |
 | Pasta app | Pair the phone, manage trusted devices, browse history, explain keyboard access, publish the current iPhone clipboard by explicit tap | Required container and trust surface |
-| Pasta keyboard | Type normally, search text history, insert selected text clips with one tap, optionally publish the iPhone clipboard | Closest OS-embedded paste experience |
+| Pasta keyboard | Type normally, open a Paste menu for text history, insert selected text clips with one tap, optionally publish the iPhone clipboard | Closest OS-embedded paste experience |
 | Share extension | Publish selected/shared text, URLs, images, PDFs, and files into Pasta | Best native "copy to Pasta" path from other apps |
 | App Intents / Shortcuts / Controls | Publish Clipboard, Copy Latest Text to Clipboard, Open/Search Pasta History | OS-native command surfaces for Action Button, Control Center, Siri, Spotlight, and Shortcuts |
 
@@ -41,8 +41,8 @@ The keyboard is intentionally close to the stock iOS keyboard in daily use:
 - letter keys follow iOS-style case behavior: lowercase in normal typing, single-shift uppercase, and caps lock only through the standard shift interaction;
 - Pasta's actions live in KeyboardKit's native top toolbar slot (the band that normally holds QuickType suggestions), on one continuous keyboard surface with the keys below and no separate strip or spacer above them;
 - action labels stay readable over the keyboard surface and match the native suggestion-row height and centering;
-- tapping a text item inserts it into the active text field;
-- long-pressing a history item opens actions such as preview, copy to iPhone clipboard, delete, or open in Pasta;
+- the visible toolbar controls are **Publish** and **Paste**;
+- Paste opens a history menu; selecting a text item inserts it into the active text field;
 - Pasta never publishes ordinary keystrokes as clips.
 
 The keyboard has two operating levels:
@@ -50,7 +50,7 @@ The keyboard has two operating levels:
 | Mode | Capability | Tradeoff |
 | --- | --- | --- |
 | Standard keyboard access | Type normally and insert cached Pasta text history that the app previously synced | No live network, no shared app container updates from the keyboard |
-| Full Access enabled | Live history refresh, signed Pasta publish/paste requests, explicit iPhone clipboard import | Requires the user to trust Pasta's keyboard extension with expanded iOS sandbox access |
+| Full Access enabled | Automatic live history refresh, signed Pasta publish/paste requests, explicit iPhone clipboard import | Requires the user to trust Pasta's keyboard extension with expanded iOS sandbox access |
 
 Full Access is requested because live Pasta history requires network and shared app-group storage. The keyboard remains useful without it by showing cached text history.
 
@@ -113,7 +113,9 @@ Cloudflare still sees only the existing routing metadata: kind, MIME, byte lengt
 
 **Do not leak filenames or directory paths.** User-facing names and binary summaries belong in encrypted metadata, not Worker, Durable Object, R2, logs, or analytics.
 
-**Mount the Pasta action row inside KeyboardKit's `toolbar:` slot — do not build a sibling strip.** KeyboardKit already composes the keyboard as `VStack { toolbar; keys }` on one surface, and in 9.9.1 the `toolbar:` slot adds no background of its own. Return `Keyboard.Toolbar { PastaKeyboardToolbar(...) }` from the slot and let the keys render natively below it. Do not rebuild a sibling row above `KeyboardView`, do not pass `EmptyView()` with a zero-height autocomplete toolbar, and do not `.ignoresSafeArea(.top)` to pin a hand-painted band — those are what produced the cropped, detached strip. Opacity must come from an explicit `keyboardViewStyle` background (`.color(.keyboardBackground)`); the standard style service's background is transparent, so `renderBackground` alone paints nothing.
+**Mount the Pasta action row inside KeyboardKit's `toolbar:` slot — do not build a sibling strip.** KeyboardKit already composes the keyboard as `VStack { toolbar; keys }` on one surface, and in 9.9.1 the `toolbar:` slot adds no background of its own. Return `PastaKeyboardToolbar(...)` from the slot and let the keys render natively below it. Do not rebuild a sibling row above `KeyboardView`, do not pass `EmptyView()` with a zero-height autocomplete toolbar, and do not `.ignoresSafeArea(.top)` to pin a hand-painted band — those are what produced the cropped, detached strip. Opacity must come from an explicit `keyboardViewStyle` background (`.color(.keyboardBackground)`); the standard style service's background is transparent, so `renderBackground` alone paints nothing.
+
+**Keep the toolbar row and buttons transparent.** The action labels should sit directly on KeyboardKit's `keyboardBackground` surface. Do not add a hand-picked gray row fill, chip backgrounds, pressed-state fills, or a horizontally scrollable shelf; those make the toolbar read as a second surface with a different tone.
 
 **Observe `KeyboardContext` and let KeyboardKit react; do not key `.id` on case.** Build the layout from the observed `KeyboardContext` so the view re-evaluates on context changes, and refresh the `KeyboardView` `.id` only on structural changes (keyboard type, orientation, size, device class). Never key `.id` on `keyboardCase`: KeyboardKit updates shift/case reactively, and rebuilding on every auto-capitalization flip tears the whole keyboard down mid-typing and cancels in-flight gestures.
 
@@ -127,7 +129,7 @@ Cloudflare still sees only the existing routing metadata: kind, MIME, byte lengt
 2. Pair the iPhone as a normal trusted device using the existing Pasta pairing flow.
 3. Enable the Pasta keyboard in iOS Settings.
 4. Optionally enable Full Access after reviewing the in-app explanation.
-5. Use the keyboard history strip to insert text into supported fields.
+5. Use the keyboard **Paste** menu to insert text into supported fields.
 6. Use Share to Pasta or Publish Clipboard for explicit publishing from iOS.
 
 <!-- @agent -->
@@ -215,7 +217,7 @@ Do not store the group key or private keys in `UserDefaults`, app-group files, l
 ### Text insertion from keyboard
 
 1. Keyboard loads cached text history from App Group storage.
-2. If Full Access is enabled and network is reachable, keyboard signs `GET /v1/clips/history?limit=...`.
+2. If Full Access is enabled and network is reachable, keyboard automatically signs `GET /v1/clips/history?limit=...` on appearance.
 3. Swift core decrypts text clips locally.
 4. Keyboard renders decrypted previews in memory only.
 5. User taps a text clip.
@@ -290,13 +292,17 @@ Backfill metadata in a backwards-compatible way: unknown fields are ignored by o
 
 **Issue: the action row read as a cropped strip glued to the top of the keyboard, detached from the keys.**
 Why it happened: Pasta rendered the action row as a sibling *above* `KeyboardView` in an outer `VStack`, passed `EmptyView()` into KeyboardKit's `toolbar:` slot with a zero-height autocomplete toolbar, set `renderBackground: false`, hand-painted the surface, and pinned it with `.ignoresSafeArea(.top)`. The row shared the key background with no separation and butted against the keyboard's top edge, so its buttons looked cropped instead of seated in a toolbar. The earlier belief that the `toolbar:` slot itself paints chrome was a misdiagnosis: in KeyboardKit 9.9.1 the slot adds no background, and the visible band came from the hand-painted sibling and stacked containers.
-Fix: render the action row through KeyboardKit's `toolbar:` slot as `Keyboard.Toolbar { PastaKeyboardToolbar(...) }`; delete the outer `VStack`/sibling, the `EmptyView()` slot, the zeroed autocomplete toolbar, and the `.ignoresSafeArea` hand-painted band; and set one explicit opaque surface with `keyboardViewStyle(background: .color(.keyboardBackground))`. KeyboardKit then lays out `VStack { Pasta row; native keys }` on a single continuous surface, like the native QuickType band.
+Fix: render the action row through KeyboardKit's `toolbar:` slot as `PastaKeyboardToolbar(...)`; delete the outer `VStack`/sibling, the `EmptyView()` slot, the zeroed autocomplete toolbar, and the `.ignoresSafeArea` hand-painted band; and set one explicit opaque surface with `keyboardViewStyle(background: .color(.keyboardBackground))`. KeyboardKit then lays out `VStack { Pasta row; native keys }` on a single continuous surface, like the native QuickType band.
 Agent warning: do not claim this chrome is fixed from source review or a green simulator build alone. The previous strip survived a successful TestFlight build and only a device screenshot exposed it; a device/TestFlight readback is the final proof.
 
 **Issue: the Pasta shelf still looked blurry and clipped compared with Grammarly.**
 Why it happened: Pasta used a 36pt horizontally clipped scroll row with bordered white chips. The stock key rows are much taller, so the shelf read as compressed chrome instead of a native suggestion/action row.
 Fix: use a 48pt native-height shelf, remove vertical clipping, center all labels in full-height hit areas, use plain text action/suggestion segments with subtle dividers, and reserve chip-like backgrounds only for pressed feedback.
 Agent warning: compare against real third-party keyboards in the same host app. The action labels should be crisp, vertically centered, and never cut off by the next key row.
+
+**Issue: the toolbar still had a slightly different tone from the key surface.**
+Why it happened: Pasta hand-picked a gray row fill and earlier used scroll/chip treatments, so even transparent buttons sat on a different surface from the native key background.
+Fix: keep the toolbar row and all button/menu labels backgroundless, use KeyboardKit's `Color.keyboardBackground` as the single SwiftUI keyboard surface, and use the same KeyboardKit asset values only as the UIKit host-view fallback.
 
 **Issue: the keyboard looked permanently caps-locked and could not type lowercase.**
 Why it happened: a KeyboardKit layout is a snapshot. Pasta was allowing KeyboardKit to build one layout during setup, then wrapping it without observing enough live keyboard context for case/type changes. When the layout remains in an uppercased state, the displayed key labels and inserted character actions can both remain uppercase.
@@ -340,7 +346,7 @@ Before claiming iOS parity:
 - keyboard can type lowercase, single-shift uppercase, caps lock, delete, return, space, `123`, and `#+=` through KeyboardKit's native behavior;
 - keyboard gracefully disappears or is replaced in secure fields/phone pads as iOS dictates;
 - keyboard works without Full Access using cached text history;
-- Full Access mode live-refreshes history and publishes only after explicit user action;
+- Full Access mode automatically refreshes history and publishes only after explicit user action;
 - Share extension publishes text, URL, image, and file without plaintext metadata leakage;
 - App Intents publish clipboard and copy latest text to clipboard;
 - non-text clips never claim direct paste-anywhere support;
