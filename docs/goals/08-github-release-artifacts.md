@@ -56,6 +56,10 @@ Verification Contract:
 - 2026-06-26 - `unzip -l dist/release/pasta-v0.1.1-windows-x64.zip` - exit 0; archive contains root-level `pasta.exe`.
 - 2026-06-26 - extracted `dist/release/pasta-v0.1.1-macos-arm64.tar.gz` and ran `pasta --version` - exit 0; output `0.1.1`.
 - 2026-06-26 - `shasum -a 256 -c checksums.txt` from `dist/release` - exit 0; all eight archive checksums verified.
+- 2026-06-27 - `PASTA_RELEASE_VERSION=v0.1.7 mise exec -- bun run build:release` - exit 0; generated `RELEASE_NOTES.md`, `checksums.txt`, and eight archives for macOS arm64/x64, Linux arm64/x64 glibc+musl, and Windows arm64/x64.
+- 2026-06-27 - `tar -tzf dist/release/pasta-v0.1.7-macos-arm64.tar.gz` and `unzip -l dist/release/pasta-v0.1.7-windows-x64.zip` - exit 0; archives contain root-level `pasta` and `pasta.exe`.
+- 2026-06-27 - extracted `dist/release/pasta-v0.1.7-macos-arm64.tar.gz` and ran `pasta --version` - exit 0; output `0.1.7`.
+- 2026-06-27 - `shasum -a 256 -c checksums.txt` from `dist/release` - exit 0; all eight `v0.1.7` archive checksums verified.
 
 ### T2 - Release Workflow - [x]
 
