@@ -1,16 +1,18 @@
 ---
 title: Overview
 slug: overview
-description: What Pasta is for, what it is not, and the product shape at v0.1.6.
+description: What Pasta is for, what it is not, and the current product shape.
 nav_order: 2
 ---
 
 <!-- @human -->
 ## What Pasta does
 
-Pasta lets **trusted desktops share a clipboard** through an encrypted central relay. When you copy text (or, on supported paths, an image or file) on one machine, another machine you have paired can pull and decrypt it — locally — on paste.
+Pasta lets **trusted devices share a clipboard** through an encrypted central relay. When you copy text (or, on supported paths, an image or file) on one device, another device you have paired can pull and decrypt it locally on paste.
 
-The experience is deliberately **terminal-first**: a `pasta` CLI, an optional background daemon that watches your clipboard, and shell aliases for common flows. There is no GUI, browser extension, or mobile client in v0.1.6.
+The desktop experience is deliberately **terminal-first**: a `pasta` CLI, an optional background daemon that watches your clipboard, and shell aliases for common flows.
+
+The native iOS experience is **keyboard-centered**: the Pasta keyboard inserts text history inside supported text fields, while the app, Share extension, and Shortcuts handle pairing, publishing, and binary handoff. See [Native iOS](/native-ios/) for the exact platform limits.
 
 ## Why a central relay?
 
@@ -26,7 +28,7 @@ That choice trades metadata visibility (the relay sees *that* you copied, *when*
 4. **Clean pairing** — short code + QR; no typing long secrets.
 5. **Honest recovery** — lose all devices → `reset`; no backdoor recovery.
 
-## Supported today (v0.1.6)
+## Supported surfaces
 
 | Capability | Status |
 | --- | --- |
@@ -35,6 +37,9 @@ That choice trades metadata visibility (the relay sees *that* you copied, *when*
 | Pairing & device revoke | Done |
 | macOS PNG image clipboard | Done: `copy --image` / `paste --image` |
 | File payloads <= 50 MiB | Done: R2-backed `copy <path>` / `paste` |
+| Native iOS text paste | Done by custom keyboard where iOS allows third-party keyboards |
+| iOS publish | Done through Share extension, explicit keyboard/app action, or App Intent |
+| iOS image/file/directory paste | Handoff only: clipboard/share/app/File Provider paths, not text-field insertion |
 | Linux / Windows image clipboard | Documented assumption; not live-smoked here |
 | npm / compiled binaries | Fallback paths; GitHub `bunx` is primary |
 
@@ -57,7 +62,7 @@ That choice trades metadata visibility (the relay sees *that* you copied, *when*
 ## System identity
 
 - **Name:** Pasta (`pasta` CLI/bin)
-- **Version:** 0.1.6 (`PASTA_VERSION` in `src/shared/protocol.ts`)
+- **Version:** 0.1.7 (`PASTA_VERSION` in `src/shared/protocol.ts`)
 - **License:** UNLICENSED (package.json)
 - **Public repo:** github:thehumanworks/pasta
 
@@ -76,6 +81,7 @@ Bun CLI on desktop ↔ HTTPS ↔ Cloudflare Worker ↔ D1 registry + DO per clip
 | Worker router | `src/worker/index.ts` | HTTP API, auth gate |
 | ClipboardSpace DO | `src/worker/clipboard-space.ts` | Seq, history, wrapped keys |
 | D1 schema | `migrations/0001_registry.sql` | Accounts, devices, pairing |
+| iOS UX contract | `docs-site/content/native-ios.md` | Keyboard-first native iOS behavior and constraints |
 
 ## State locations
 
@@ -86,6 +92,14 @@ Bun CLI on desktop ↔ HTTPS ↔ Cloudflare Worker ↔ D1 registry + DO per clip
 | Non-secret config | `$PASTA_HOME/config.json` |
 | Ciphertext clips | Durable Object (inline) or R2 (files/large) |
 | Device registry, nonces, pairing | D1 |
+
+## Native iOS doc anchor
+
+Human docs: `/native-ios/`
+
+Agent docs: `/agent/native-ios.md`
+
+Treat the iOS docs as the canonical UX contract: keyboard inserts text only, publish is explicit, binary clips use handoff surfaces, and no background clipboard daemon is allowed on iOS.
 
 ## GDD status
 

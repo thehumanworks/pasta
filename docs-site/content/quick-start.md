@@ -8,7 +8,7 @@ nav_order: 1
 <!-- @human -->
 ## The thirty-second version
 
-**Pasta** is an encrypted clipboard relay for your own trusted desktops. Copy on one machine, paste on another — but the Cloudflare relay only ever sees ciphertext. No P2P, no LAN tricks, no tailnets: just outbound HTTPS that works through firewalls.
+**Pasta** is an encrypted clipboard relay for your own trusted devices. Copy on one machine, paste on another — but the Cloudflare relay only ever sees ciphertext. No P2P, no LAN tricks, no tailnets: just outbound HTTPS that works through firewalls.
 
 ```
 Device A  ──encrypt──▶  Cloudflare Worker  ──ciphertext──▶  Device B
@@ -92,7 +92,7 @@ pasta daemon              # polls clipboard every 750ms
 <!-- @agent -->
 ## Product summary
 
-Pasta v0.1.6 — terminal-first encrypted clipboard relay. Central Cloudflare Worker transport only. Devices encrypt locally; relay stores ciphertext.
+Pasta v0.1.7 — terminal-first encrypted clipboard relay. Central Cloudflare Worker transport only. Devices encrypt locally; relay stores ciphertext.
 
 ## Repository layout
 
@@ -138,7 +138,7 @@ reset --yes → new routing_id + group key
 ## Quick verification commands
 
 ```bash
-bunx --bun -p github:thehumanworks/pasta pasta --version   # expect 0.1.6
+bunx --bun -p github:thehumanworks/pasta pasta --version   # expect 0.1.7
 pasta protocol                                              # PROTOCOL_ENDPOINTS JSON
 pasta payload-plan                                          # R2 thresholds
 pasta doctor                                                # clipboard adapter probe

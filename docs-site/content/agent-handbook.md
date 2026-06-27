@@ -28,6 +28,8 @@ Browser: add `?audience=agent` or toggle **Agent** in the header.
 
 Central HTTPS relay only. No plaintext on Cloudflare. bun only. fnox for wrangler secrets.
 
+Native iOS is keyboard-centered, not daemon-centered. Read `/agent/native-ios.md` before touching any iOS, app-extension, keyboard, App Intents, Share extension, File Provider, or clipboard-paste docs. Do not implement or document iOS background clipboard monitoring, binary paste-anywhere, or P2P/mobile-specific transport.
+
 ## Verify before done
 
 ```bash
@@ -37,6 +39,8 @@ mise exec -- bun run test && mise exec -- bunx tsc --noEmit
 ## Key paths
 
 CLI: src/cli.ts | Worker: src/worker/ | Crypto: src/shared/crypto.ts | Protocol: src/shared/protocol.ts
+
+Native iOS contract: docs-site/content/native-ios.md | Agent markdown: /agent/native-ios.md
 
 ## Machine docs
 

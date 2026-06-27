@@ -240,7 +240,7 @@ async function buildSite(): Promise<void> {
     JSON.stringify(
       {
         name: "Pasta Documentation",
-        version: "0.1.6",
+        version: "0.1.7",
         accept_markdown: "Request /agent/{slug}.md with Accept: text/markdown, text/plain, or */*",
         accept_json: "Request /api/{slug}.json with Accept: application/json",
         pages: agentManifest
