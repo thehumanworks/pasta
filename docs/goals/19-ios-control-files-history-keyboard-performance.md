@@ -51,7 +51,7 @@ keyboard without the lag seen before this goal.
 - [ ] **DoD-2** - iOS app exports remote file, image, and directory clips through
   iOS document/share surfaces using temporary plaintext only. - *verify by:*
   Swift tests plus simulator/device export smoke or inspected temp-file cleanup.
-- [ ] **DoD-3** - iOS app presents remote history and deletes a selected entry
+- [x] **DoD-3** - iOS app presents remote history and deletes a selected entry
   through `DELETE /v1/clips/:clipId`, then refreshes app/keyboard caches. -
   *verify by:* Swift tests and live or mocked API smoke.
 - [ ] **DoD-4** - Keyboard input hot paths are benchmarked before and after, with
@@ -110,7 +110,7 @@ Verification Contract:
 **Closes:** DoD-1, DoD-2
 **Evidence:**
 
-### T3 - Implement Control-Plane History Delete - [ ]
+### T3 - Implement Control-Plane History Delete - [x]
 
 - Add full history rows that keep stable `clipId` alongside display `seq`.
 - Add signed `DELETE /v1/clips/:clipId` to `PastaAPIClient`.
@@ -122,9 +122,26 @@ Verification Contract:
 - Swift tests cover delete-by-clipId and cache refresh.
 - Live or mocked API smoke proves the expected request and state transition.
 
-**Confidence:** 0/90
+**Confidence:** 90/100
 **Closes:** DoD-3
 **Evidence:**
+
+- 2026-06-27 - docs-first contract refinement in
+  `docs-site/content/native-ios.md` states stable `clipId` identity and
+  text-only keyboard cache refresh after history refresh/delete.
+- 2026-06-27 - `swift test --package-path ios` - exit 0; 16 tests executed,
+  1 live relay test skipped because `PASTA_IOS_JOIN_TOKEN` was unset. New
+  `PastaCoreHistoryDeleteTests` cover signed `DELETE
+  /v1/clips/clip_delete_test` with no request body, full history rows retaining
+  `clipId` plus display `seq`, and text-only keyboard cache save/readback.
+- 2026-06-27 - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta
+  -configuration Debug -sdk iphonesimulator -destination 'platform=iOS
+  Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData
+  CODE_SIGNING_ALLOWED=NO build` - exit 0; containing app and keyboard
+  extension simulator build compiled after history delete UI/cache changes.
+- 2026-06-27 - `cd docs-site && bun install --frozen-lockfile && bun run build
+  -- --base /` - exit 0; built 15 pages into `docs-site/dist` with existing
+  docs stack after installing locked docs dependency.
 
 ### T4 - Benchmark And Optimize Keyboard Input - [ ]
 

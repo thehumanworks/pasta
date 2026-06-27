@@ -21,10 +21,12 @@ struct PastaApp: App {
 final class PastaAppModel: ObservableObject {
     @Published var configuration: PastaDeviceConfiguration?
     @Published var clips: [PastaKeyboardClip] = []
+    @Published var historyEntries: [PastaHistoryEntry] = []
     @Published var joinToken = ""
     @Published var publishText = ""
     @Published var status = "Not paired"
     @Published var isBusy = false
+    @Published var deletingClipId: String?
 
     private let client = PastaAPIClient()
     private let keychain = PastaKeychainStore()
@@ -79,8 +81,9 @@ final class PastaAppModel: ObservableObject {
                 signingPrivateKey: try keychain.get(.signingPrivateKey)
             )
             publishText = ""
-            let cached = PastaKeyboardClip(sequence: clip.seq, title: text.singleLineTitle, text: text, createdAt: clip.createdAt)
-            clips = [cached] + clips.filter { $0.sequence != clip.seq }
+            let entry = PastaHistoryEntry(clip: clip, decryptedText: text)
+            historyEntries = [entry] + historyEntries.filter { $0.clipId != clip.clipId }
+            clips = PastaHistoryEntry.keyboardClips(from: historyEntries)
             try store?.saveKeyboardClips(clips)
             status = "Published clip \(clip.seq)"
         }
@@ -107,6 +110,7 @@ final class PastaAppModel: ObservableObject {
 
     func seedLocalClip() {
         let clip = PastaKeyboardClip(
+            clipId: "local_\(UUID().uuidString)",
             sequence: Int(Date().timeIntervalSince1970),
             title: "Pasta keyboard ready",
             text: "Pasta keyboard ready",
@@ -117,16 +121,46 @@ final class PastaAppModel: ObservableObject {
         status = "Saved a local keyboard clip."
     }
 
+    func deleteHistoryEntry(_ entry: PastaHistoryEntry) async {
+        await run("Deleting clip \(entry.sequence)...") {
+            let configuration = try requireConfiguration()
+            deletingClipId = entry.clipId
+            defer { deletingClipId = nil }
+            let result = try await client.deleteClip(
+                clipId: entry.clipId,
+                configuration: configuration,
+                signingPrivateKey: try keychain.get(.signingPrivateKey)
+            )
+            try await performRefreshHistory(statusAfterRefresh: false)
+            if result.deleted == 0 {
+                status = "Clip \(entry.sequence) was already gone. Synced \(clips.count) text clips."
+            } else {
+                status = "Deleted clip \(entry.sequence). Synced \(clips.count) text clips."
+            }
+        }
+    }
+
     private func performRefreshHistory() async throws {
+        try await performRefreshHistory(statusAfterRefresh: true)
+    }
+
+    private func performRefreshHistory(statusAfterRefresh: Bool) async throws {
         let configuration = try requireConfiguration()
-        let refreshed = try await client.history(
+        let refreshed = try await client.historyEntries(
             configuration: configuration,
             groupKey: try keychain.get(.groupKey),
             signingPrivateKey: try keychain.get(.signingPrivateKey)
         )
-        clips = refreshed
-        try store?.saveKeyboardClips(refreshed)
-        status = refreshed.isEmpty ? "No text history yet." : "Synced \(refreshed.count) text clips."
+        historyEntries = refreshed
+        clips = PastaHistoryEntry.keyboardClips(from: refreshed)
+        try store?.saveKeyboardClips(clips)
+        if statusAfterRefresh {
+            if refreshed.isEmpty {
+                status = "No history yet."
+            } else {
+                status = "Synced \(refreshed.count) history entries and \(clips.count) text clips."
+            }
+        }
     }
 
     private func requireConfiguration() throws -> PastaDeviceConfiguration {

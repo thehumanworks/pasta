@@ -132,6 +132,18 @@ public struct StoredClip: Codable, Equatable, Sendable {
     }
 }
 
+public struct PastaDeleteClipResponse: Codable, Equatable, Sendable {
+    public let clipId: String
+    public let deleted: Int
+    public let deletedObjects: Int
+
+    public init(clipId: String, deleted: Int, deletedObjects: Int) {
+        self.clipId = clipId
+        self.deleted = deleted
+        self.deletedObjects = deletedObjects
+    }
+}
+
 public struct PastaDeviceConfiguration: Codable, Equatable, Sendable {
     public let endpoint: URL
     public let accountId: String

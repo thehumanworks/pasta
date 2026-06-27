@@ -173,6 +173,7 @@ Observable finished state:
 - The containing app has a file import/export surface separate from the keyboard. Importing a user-selected document publishes an encrypted `file` clip through `/v1/files`; exporting a remote non-text clip downloads and decrypts into a temporary file, then hands the result to the iOS document/share UI.
 - The containing app has a history list backed by live Pasta history. Each row shows safe local display text derived from decrypted text or encrypted metadata; no plaintext filename or path is exposed to Worker-visible metadata.
 - Deleting a history row calls `DELETE /v1/clips/:clipId`, confirms the remote result, removes any associated R2 object server-side, and refreshes the app and keyboard caches.
+- History rows and keyboard cache entries keep stable `clipId` as identity. The user-facing `seq` is display metadata only, and cache refresh saves only decrypted text clips for keyboard insertion after history refresh or delete.
 - The keyboard typing path keeps KeyboardKit as the input owner. Pasta does not remove features, reintroduce sibling toolbar strips, publish ordinary keystrokes, silently read pasteboard, or change layout behavior to gain speed.
 - Keyboard latency has a committed benchmark or XCTest performance check that exercises representative insert/delete/shift/punctuation paths. The final report includes baseline and optimized numbers from the same command on the same machine.
 

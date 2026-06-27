@@ -128,12 +128,13 @@ final class KeyboardViewController: KeyboardInputViewController {
                     signingPrivateKey: live.signingPrivateKey
                 )
                 let cached = PastaKeyboardClip(
+                    clipId: clip.clipId,
                     sequence: clip.seq,
                     title: text.singleLineTitle,
                     text: text,
                     createdAt: clip.createdAt
                 )
-                clips = [cached] + clips.filter { $0.sequence != clip.seq }
+                clips = [cached] + clips.filter { $0.clipId != clip.clipId }
                 try store?.saveKeyboardClips(clips)
                 statusMessage = "Published clipboard to Pasta."
             }
@@ -290,7 +291,7 @@ private struct PastaKeyboardToolbar<AutocompleteToolbar: View>: View {
                 Button("No Pasta history") {}
                     .disabled(true)
             } else {
-                ForEach(model.visibleClips, id: \.sequence) { clip in
+                ForEach(model.visibleClips, id: \.clipId) { clip in
                     Button(clip.title) {
                         insertClip(clip.text)
                     }
@@ -622,9 +623,9 @@ private extension PastaKeyboardToolbarModel {
     static var preview: PastaKeyboardToolbarModel {
         PastaKeyboardToolbarModel(
             clips: [
-                PastaKeyboardClip(sequence: 3, title: "Let's take Mish in 25 mins and take a little break then.", text: "Let's take Mish in 25 mins and take a little break then.", createdAt: 0),
-                PastaKeyboardClip(sequence: 2, title: "melissa_bikini@icloud.com", text: "melissa_bikini@icloud.com", createdAt: 0),
-                PastaKeyboardClip(sequence: 1, title: "1172", text: "1172", createdAt: 0)
+                PastaKeyboardClip(clipId: "clip_preview_3", sequence: 3, title: "Let's take Mish in 25 mins and take a little break then.", text: "Let's take Mish in 25 mins and take a little break then.", createdAt: 0),
+                PastaKeyboardClip(clipId: "clip_preview_2", sequence: 2, title: "melissa_bikini@icloud.com", text: "melissa_bikini@icloud.com", createdAt: 0),
+                PastaKeyboardClip(clipId: "clip_preview_1", sequence: 1, title: "1172", text: "1172", createdAt: 0)
             ],
             statusMessage: nil,
             isRunningLiveAction: false

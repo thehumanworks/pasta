@@ -71,6 +71,16 @@ public struct PastaAPIClient: Sendable {
     }
 
     public func history(configuration: PastaDeviceConfiguration, groupKey: String, signingPrivateKey: String, limit: Int = PastaCore.defaultHistoryLimit) async throws -> [PastaKeyboardClip] {
+        let entries = try await historyEntries(
+            configuration: configuration,
+            groupKey: groupKey,
+            signingPrivateKey: signingPrivateKey,
+            limit: limit
+        )
+        return PastaHistoryEntry.keyboardClips(from: entries)
+    }
+
+    public func historyEntries(configuration: PastaDeviceConfiguration, groupKey: String, signingPrivateKey: String, limit: Int = PastaCore.defaultHistoryLimit) async throws -> [PastaHistoryEntry] {
         let response: ClipsResponse = try await request(
             endpoint: configuration.endpoint,
             method: "GET",
@@ -79,21 +89,31 @@ public struct PastaAPIClient: Sendable {
             configuration: configuration,
             signingPrivateKey: signingPrivateKey
         )
-        return try response.clips.compactMap { clip in
-            guard clip.payloadKind == "text" else { return nil }
-            let text = try PastaCrypto.decryptTextClip(
-                groupKey: groupKey,
-                accountId: configuration.accountId,
-                routingId: configuration.routingId,
-                clip: clip.encryptedClip
-            )
-            return PastaKeyboardClip(
-                sequence: clip.seq,
-                title: text.replacingOccurrences(of: "\n", with: " ").prefixText(42),
-                text: text,
-                createdAt: clip.createdAt
-            )
+        return try response.clips.map { clip in
+            let text: String?
+            if clip.payloadKind == "text" {
+                text = try PastaCrypto.decryptTextClip(
+                    groupKey: groupKey,
+                    accountId: configuration.accountId,
+                    routingId: configuration.routingId,
+                    clip: clip.encryptedClip
+                )
+            } else {
+                text = nil
+            }
+            return PastaHistoryEntry(clip: clip, decryptedText: text)
         }
+    }
+
+    public func deleteClip(clipId: String, configuration: PastaDeviceConfiguration, signingPrivateKey: String) async throws -> PastaDeleteClipResponse {
+        try await request(
+            endpoint: configuration.endpoint,
+            method: "DELETE",
+            path: "/v1/clips/\(Self.escapePathComponent(clipId))",
+            body: Optional<EmptyBody>.none,
+            configuration: configuration,
+            signingPrivateKey: signingPrivateKey
+        )
     }
 
     private func request<T: Decodable, B: Encodable>(
@@ -139,6 +159,12 @@ public struct PastaAPIClient: Sendable {
             return EmptyBody() as! T
         }
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private static func escapePathComponent(_ value: String) -> String {
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "/")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 }
 

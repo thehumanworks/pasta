@@ -54,7 +54,7 @@ struct PastaRootView: View {
                     }
                 }
 
-                Section("Keyboard Cache") {
+                Section("History") {
                     HStack {
                         Button {
                             Task { await model.refreshHistory() }
@@ -70,20 +70,45 @@ struct PastaRootView: View {
                         }
                         .disabled(model.clips.isEmpty)
                     }
+                    if model.historyEntries.isEmpty {
+                        Text("Refresh after pairing to show remote history.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(model.historyEntries) { entry in
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(entry.title)
+                                    .font(.headline)
+                                Text(entry.preview)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                Text("#\(entry.sequence) - \(entry.kindLabel) - \(entry.mime)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 8)
+                            Button(role: .destructive) {
+                                Task { await model.deleteHistoryEntry(entry) }
+                            } label: {
+                                if model.deletingClipId == entry.clipId {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Label("Delete", systemImage: "trash")
+                                        .labelStyle(.iconOnly)
+                                }
+                            }
+                            .disabled(model.isBusy || model.configuration == nil)
+                            .accessibilityLabel("Delete history entry \(entry.sequence)")
+                        }
+                    }
                     Button {
                         model.seedLocalClip()
                     } label: {
                         Label("Add Local Keyboard Clip", systemImage: "keyboard.badge.ellipsis")
-                    }
-                    ForEach(model.clips) { clip in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(clip.title)
-                                .font(.headline)
-                            Text(clip.text)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
                     }
                 }
             }

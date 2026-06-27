@@ -26,6 +26,20 @@ public enum PastaResolvedClipKind: Equatable, Sendable {
     case image
     case file
     case directoryBundle
+
+    public static func resolve(payloadKind: String, mime: String) -> PastaResolvedClipKind {
+        if mime == PastaCore.directoryBundleMIME {
+            return .directoryBundle
+        }
+        switch payloadKind {
+        case "text":
+            return .text
+        case "image":
+            return .image
+        default:
+            return .file
+        }
+    }
 }
 
 public enum PastaKeyboardAction: Equatable, Sendable {
@@ -45,16 +59,136 @@ public enum PastaClipInsertability {
 }
 
 public struct PastaKeyboardClip: Codable, Equatable, Identifiable, Sendable {
-    public var id: Int { sequence }
+    public var id: String { clipId }
+    public let clipId: String
     public let sequence: Int
     public let title: String
     public let text: String
     public let createdAt: Int64
 
-    public init(sequence: Int, title: String, text: String, createdAt: Int64) {
+    public init(clipId: String, sequence: Int, title: String, text: String, createdAt: Int64) {
+        self.clipId = clipId
         self.sequence = sequence
         self.title = title
         self.text = text
         self.createdAt = createdAt
+    }
+}
+
+public struct PastaHistoryEntry: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { clipId }
+    public let clipId: String
+    public let sequence: Int
+    public let payloadKind: String
+    public let mime: String
+    public let title: String
+    public let preview: String
+    public let text: String?
+    public let createdAt: Int64
+
+    public var resolvedKind: PastaResolvedClipKind {
+        PastaResolvedClipKind.resolve(payloadKind: payloadKind, mime: mime)
+    }
+
+    public var kindLabel: String {
+        switch resolvedKind {
+        case .text:
+            return "Text"
+        case .image:
+            return "Image"
+        case .file:
+            return "File"
+        case .directoryBundle:
+            return "Directory"
+        }
+    }
+
+    public var isKeyboardInsertable: Bool {
+        text != nil && resolvedKind == .text
+    }
+
+    public var keyboardClip: PastaKeyboardClip? {
+        guard let text, isKeyboardInsertable else { return nil }
+        return PastaKeyboardClip(
+            clipId: clipId,
+            sequence: sequence,
+            title: title,
+            text: text,
+            createdAt: createdAt
+        )
+    }
+
+    public init(
+        clipId: String,
+        sequence: Int,
+        payloadKind: String,
+        mime: String,
+        title: String,
+        preview: String,
+        text: String?,
+        createdAt: Int64
+    ) {
+        self.clipId = clipId
+        self.sequence = sequence
+        self.payloadKind = payloadKind
+        self.mime = mime
+        self.title = title
+        self.preview = preview
+        self.text = text
+        self.createdAt = createdAt
+    }
+
+    public init(clip: StoredClip, decryptedText: String?) {
+        let resolvedKind = PastaResolvedClipKind.resolve(payloadKind: clip.payloadKind, mime: clip.mime)
+        let textPreview = decryptedText?.pastaSingleLinePreview(maxLength: 96)
+        self.init(
+            clipId: clip.clipId,
+            sequence: clip.seq,
+            payloadKind: clip.payloadKind,
+            mime: clip.mime,
+            title: decryptedText?.pastaSingleLineTitle(maxLength: 48) ?? Self.title(for: resolvedKind, sequence: clip.seq),
+            preview: textPreview ?? Self.preview(for: resolvedKind, mime: clip.mime, byteLen: clip.byteLen),
+            text: resolvedKind == .text ? decryptedText : nil,
+            createdAt: clip.createdAt
+        )
+    }
+
+    public static func keyboardClips(from entries: [PastaHistoryEntry]) -> [PastaKeyboardClip] {
+        entries.compactMap(\.keyboardClip)
+    }
+
+    private static func title(for kind: PastaResolvedClipKind, sequence: Int) -> String {
+        switch kind {
+        case .text:
+            return "Text clip \(sequence)"
+        case .image:
+            return "Image clip \(sequence)"
+        case .file:
+            return "File clip \(sequence)"
+        case .directoryBundle:
+            return "Directory clip \(sequence)"
+        }
+    }
+
+    private static func preview(for kind: PastaResolvedClipKind, mime: String, byteLen: Int) -> String {
+        let size = "\(byteLen) bytes"
+        switch kind {
+        case .text:
+            return "Encrypted text"
+        case .image, .file, .directoryBundle:
+            return "\(mime) - \(size)"
+        }
+    }
+}
+
+private extension String {
+    func pastaSingleLineTitle(maxLength: Int) -> String {
+        let compact = pastaSingleLinePreview(maxLength: maxLength)
+        return compact.isEmpty ? "Text clip" : compact
+    }
+
+    func pastaSingleLinePreview(maxLength: Int) -> String {
+        let compact = replacingOccurrences(of: "\n", with: " ")
+        return String(compact.prefix(maxLength))
     }
 }

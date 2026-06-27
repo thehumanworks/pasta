@@ -164,9 +164,10 @@ final class PastaCoreStorageTests: XCTestCase {
             keyVersion: 1
         )
         try store.saveConfiguration(configuration)
-        try store.saveKeyboardClips([PastaKeyboardClip(sequence: 7, title: "Hello", text: "Hello", createdAt: 1)])
+        try store.saveKeyboardClips([PastaKeyboardClip(clipId: "clip_cached", sequence: 7, title: "Hello", text: "Hello", createdAt: 1)])
         XCTAssertEqual(store.loadConfiguration(), configuration)
         XCTAssertEqual(store.loadKeyboardClips().map(\.sequence), [7])
+        XCTAssertEqual(store.loadKeyboardClips().map(\.clipId), ["clip_cached"])
         XCTAssertNil(UserDefaults.standard.data(forKey: "pasta.device.configuration"))
         XCTAssertNil(UserDefaults.standard.data(forKey: "pasta.keyboard.cachedTextClips"))
     }
@@ -180,6 +181,144 @@ final class PastaCoreStorageTests: XCTestCase {
         try store.set("secret_group_key", for: .groupKey)
         XCTAssertEqual(try store.get(.groupKey), "secret_group_key")
         XCTAssertNil(UserDefaults.standard.string(forKey: PastaSecretName.groupKey.rawValue))
+    }
+}
+
+final class PastaCoreHistoryDeleteTests: XCTestCase {
+    override func tearDown() {
+        PastaMockURLProtocol.handler = nil
+        super.tearDown()
+    }
+
+    func testDeleteClipUsesClipIdPathAndSignedDelete() async throws {
+        let configuration = Self.testConfiguration
+        let signing = try PastaCrypto.generateSigningKeyPair(seed: Array(repeating: UInt8(3), count: 32))
+        let client = PastaAPIClient(session: Self.mockSession { request in
+            XCTAssertEqual(request.httpMethod, "DELETE")
+            XCTAssertEqual(request.url?.path, "/v1/clips/clip_delete_test")
+            XCTAssertNil(request.url?.query)
+            XCTAssertNil(request.httpBody)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "pasta-account-id"), configuration.accountId)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "pasta-device-id"), configuration.deviceId)
+            XCTAssertNotNil(request.value(forHTTPHeaderField: "pasta-signature"))
+            return Self.jsonResponse(
+                request: request,
+                statusCode: 200,
+                body: #"{"clipId":"clip_delete_test","deleted":1,"deletedObjects":0}"#
+            )
+        })
+
+        let result = try await client.deleteClip(
+            clipId: "clip_delete_test",
+            configuration: configuration,
+            signingPrivateKey: signing.privateKey
+        )
+
+        XCTAssertEqual(result, PastaDeleteClipResponse(clipId: "clip_delete_test", deleted: 1, deletedObjects: 0))
+    }
+
+    func testHistoryEntriesKeepClipIdAndRefreshTextOnlyKeyboardCache() async throws {
+        let configuration = Self.testConfiguration
+        let signing = try PastaCrypto.generateSigningKeyPair(seed: Array(repeating: UInt8(4), count: 32))
+        let groupKey = PastaEncoding.base64URLEncode(Array(repeating: UInt8(9), count: 32))
+        let text = "hello from remote history"
+        let encryptedText = try PastaCrypto.encryptTextClip(TextClipEncryptionInput(
+            accountId: configuration.accountId,
+            routingId: configuration.routingId,
+            originDeviceId: configuration.deviceId,
+            plaintext: text,
+            groupKey: groupKey,
+            keyVersion: configuration.keyVersion,
+            clipId: "clip_text_cache",
+            createdAt: 1000,
+            expiresAt: nil,
+            nonce: PastaEncoding.base64URLEncode(Array(repeating: UInt8(2), count: 24))
+        ))
+        let storedText = StoredClip(seq: 8, clip: encryptedText)
+        let storedFile = StoredClip(
+            seq: 7,
+            clipId: "clip_file_cache",
+            originDeviceId: configuration.deviceId,
+            createdAt: 900,
+            expiresAt: nil,
+            payloadKind: "file",
+            mime: "application/pdf",
+            byteLen: 42,
+            keyVersion: configuration.keyVersion,
+            nonce: PastaEncoding.base64URLEncode(Array(repeating: UInt8(7), count: 24)),
+            aadHash: "file_aad_hash",
+            ciphertext: "",
+            storageKind: "r2",
+            payloadId: "payload_file",
+            r2Key: "spaces/space_test/clips/clip_file_cache/payload_file",
+            metadata: nil
+        )
+        let responseBody = try JSONEncoder().encode(ClipsFixture(clips: [storedText, storedFile]))
+        let client = PastaAPIClient(session: Self.mockSession { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/v1/clips/history")
+            XCTAssertEqual(request.url?.query, "limit=5")
+            return Self.jsonResponse(request: request, statusCode: 200, data: responseBody)
+        })
+
+        let entries = try await client.historyEntries(
+            configuration: configuration,
+            groupKey: groupKey,
+            signingPrivateKey: signing.privateKey,
+            limit: 5
+        )
+
+        XCTAssertEqual(entries.map(\.clipId), ["clip_text_cache", "clip_file_cache"])
+        XCTAssertEqual(entries.map(\.sequence), [8, 7])
+        XCTAssertEqual(entries[0].text, text)
+        XCTAssertEqual(entries[0].keyboardClip?.clipId, "clip_text_cache")
+        XCTAssertNil(entries[1].text)
+        XCTAssertEqual(entries[1].kindLabel, "File")
+
+        let cached = PastaHistoryEntry.keyboardClips(from: entries)
+        XCTAssertEqual(cached.map(\.clipId), ["clip_text_cache"])
+        XCTAssertEqual(cached.map(\.text), [text])
+
+        let suiteName = "PastaCoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        let store = PastaAppGroupStore(defaults: defaults)
+        try store.saveKeyboardClips(cached)
+        XCTAssertEqual(store.loadKeyboardClips(), cached)
+    }
+
+    private static let testConfiguration = PastaDeviceConfiguration(
+        endpoint: URL(string: "https://pasta.example")!,
+        accountId: "acct_test",
+        routingId: "space_test",
+        deviceId: "dev_test",
+        deviceName: "iPhone",
+        verifyPublicKey: "verify_public",
+        wrapPublicKey: "wrap_public",
+        keyVersion: 1
+    )
+
+    private static func mockSession(_ handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)) -> URLSession {
+        PastaMockURLProtocol.handler = handler
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PastaMockURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+
+    private static func jsonResponse(request: URLRequest, statusCode: Int, body: String) -> (HTTPURLResponse, Data) {
+        jsonResponse(request: request, statusCode: statusCode, data: Data(body.utf8))
+    }
+
+    private static func jsonResponse(request: URLRequest, statusCode: Int, data: Data) -> (HTTPURLResponse, Data) {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: nil,
+            headerFields: ["content-type": "application/json"]
+        )!
+        return (response, data)
     }
 }
 
@@ -219,6 +358,66 @@ final class PastaCoreLiveRelayTests: XCTestCase {
             signingPrivateKey: keyMaterial.signing.privateKey
         )
         XCTAssertTrue(history.contains { $0.text == text })
+    }
+}
+
+private struct ClipsFixture: Encodable {
+    let clips: [StoredClip]
+}
+
+private final class PastaMockURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let handler = Self.handler else {
+            client?.urlProtocol(self, didFailWithError: PastaMockURLProtocolError.missingHandler)
+            return
+        }
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
+private enum PastaMockURLProtocolError: Error {
+    case missingHandler
+}
+
+private extension StoredClip {
+    init(seq: Int, clip: EncryptedClip) {
+        self.init(
+            seq: seq,
+            clipId: clip.clipId,
+            originDeviceId: clip.originDeviceId,
+            createdAt: clip.createdAt,
+            expiresAt: clip.expiresAt,
+            payloadKind: clip.payloadKind,
+            mime: clip.mime,
+            byteLen: clip.byteLen,
+            keyVersion: clip.keyVersion,
+            nonce: clip.nonce,
+            aadHash: clip.aadHash,
+            ciphertext: clip.ciphertext,
+            storageKind: clip.storageKind,
+            payloadId: clip.payloadId,
+            r2Key: clip.r2Key,
+            metadata: clip.metadata
+        )
     }
 }
 
