@@ -1,0 +1,532 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		108A098BCFD96417B5B3CF1D /* PastaKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0AD86DAC0062DCD0BC0565E6 /* PastaKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		46FA60DDE34DD7EAD1820F42 /* PastaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 51D04D06C7FA28CC86A13D61 /* PastaCore */; };
+		6D85C519703C3B2FF1F141B2 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 169B12E04CC0D3D9585C1D19 /* KeyboardViewController.swift */; };
+		8DABB3DBB31D9C15FC75933F /* PastaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6FCB0ACA4BE0F74BAB1DBBF1 /* PastaCore */; };
+		9C0016210EF0D7743C549A1C /* PastaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9D1D911AFB895F8865AB1B5 /* PastaApp.swift */; };
+		A970D5922CAE035E1E863908 /* PastaRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 631DC28DCD5046FCFD1262D1 /* PastaRootView.swift */; };
+		AD6EA6E5702284D2204F52C4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 516D18073929E2982A974975 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		09189D6EA8EFEFE9DC4FF0B0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FAF9F3AA2894F33CC22BFE3D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C19981C0FF49A91BEF85EFCA;
+			remoteInfo = PastaKeyboard;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		7493B7A3A5E18300F5DEA00C /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				108A098BCFD96417B5B3CF1D /* PastaKeyboard.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0AD86DAC0062DCD0BC0565E6 /* PastaKeyboard.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = PastaKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		0FB27EB7F048674262B47258 /* ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ios; path = .; sourceTree = SOURCE_ROOT; };
+		169B12E04CC0D3D9585C1D19 /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
+		516D18073929E2982A974975 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		631DC28DCD5046FCFD1262D1 /* PastaRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PastaRootView.swift; sourceTree = "<group>"; };
+		863ED60600A087A7983BEECF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		9BB7131923EB3B587957C358 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		9D6CABCBA245D5A56FFCA048 /* Pasta.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Pasta.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A176CC5C6DC08D1148B74198 /* PastaKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PastaKeyboard.entitlements; sourceTree = "<group>"; };
+		B8614638DA0A5F43E3B7738E /* Pasta.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Pasta.entitlements; sourceTree = "<group>"; };
+		C9D1D911AFB895F8865AB1B5 /* PastaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PastaApp.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		3C8A25DEC194FF91C502E06D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				46FA60DDE34DD7EAD1820F42 /* PastaCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABFE62C535B8448EB4644A92 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8DABB3DBB31D9C15FC75933F /* PastaCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0406169894952E79E85420D7 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				9BB7131923EB3B587957C358 /* Info.plist */,
+				B8614638DA0A5F43E3B7738E /* Pasta.entitlements */,
+				C9D1D911AFB895F8865AB1B5 /* PastaApp.swift */,
+				631DC28DCD5046FCFD1262D1 /* PastaRootView.swift */,
+				34A86C09CD3255153390267D /* Resources */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		34A86C09CD3255153390267D /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				516D18073929E2982A974975 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		98BFD28E1B867B3942FA7FBB /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				0FB27EB7F048674262B47258 /* ios */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		AD6A93A2E28A2546253D9118 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9D6CABCBA245D5A56FFCA048 /* Pasta.app */,
+				0AD86DAC0062DCD0BC0565E6 /* PastaKeyboard.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		E5FE3EF80DD7F9EFEBC4F107 = {
+			isa = PBXGroup;
+			children = (
+				0406169894952E79E85420D7 /* App */,
+				F3D9BD964A25B52EA83A5004 /* Keyboard */,
+				98BFD28E1B867B3942FA7FBB /* Packages */,
+				AD6A93A2E28A2546253D9118 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F3D9BD964A25B52EA83A5004 /* Keyboard */ = {
+			isa = PBXGroup;
+			children = (
+				863ED60600A087A7983BEECF /* Info.plist */,
+				169B12E04CC0D3D9585C1D19 /* KeyboardViewController.swift */,
+				A176CC5C6DC08D1148B74198 /* PastaKeyboard.entitlements */,
+			);
+			path = Keyboard;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		31765E146ECF0C69A2AF3F65 /* Pasta */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4B6E76DF4624E15B0549767D /* Build configuration list for PBXNativeTarget "Pasta" */;
+			buildPhases = (
+				62D2BD9B907769DAE9375030 /* Sources */,
+				F8176F99E62B29A01478A67C /* Resources */,
+				ABFE62C535B8448EB4644A92 /* Frameworks */,
+				7493B7A3A5E18300F5DEA00C /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C95DC1F47F67C33543978CA8 /* PBXTargetDependency */,
+			);
+			name = Pasta;
+			packageProductDependencies = (
+				6FCB0ACA4BE0F74BAB1DBBF1 /* PastaCore */,
+			);
+			productName = Pasta;
+			productReference = 9D6CABCBA245D5A56FFCA048 /* Pasta.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C19981C0FF49A91BEF85EFCA /* PastaKeyboard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4D0B31FD4FDF2B3C704D730E /* Build configuration list for PBXNativeTarget "PastaKeyboard" */;
+			buildPhases = (
+				481B2F6AD6C121D642DD4512 /* Sources */,
+				3C8A25DEC194FF91C502E06D /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PastaKeyboard;
+			packageProductDependencies = (
+				51D04D06C7FA28CC86A13D61 /* PastaCore */,
+			);
+			productName = PastaKeyboard;
+			productReference = 0AD86DAC0062DCD0BC0565E6 /* PastaKeyboard.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		FAF9F3AA2894F33CC22BFE3D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					31765E146ECF0C69A2AF3F65 = {
+						DevelopmentTeam = 54MXM5JG3R;
+						ProvisioningStyle = Automatic;
+					};
+					C19981C0FF49A91BEF85EFCA = {
+						DevelopmentTeam = 54MXM5JG3R;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 7B9DDB230484E6E74B8FA1CD /* Build configuration list for PBXProject "Pasta" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = E5FE3EF80DD7F9EFEBC4F107;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				510E1C5CBBC05CD64762BAF5 /* XCLocalSwiftPackageReference "." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = AD6A93A2E28A2546253D9118 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				31765E146ECF0C69A2AF3F65 /* Pasta */,
+				C19981C0FF49A91BEF85EFCA /* PastaKeyboard */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F8176F99E62B29A01478A67C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AD6EA6E5702284D2204F52C4 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		481B2F6AD6C121D642DD4512 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6D85C519703C3B2FF1F141B2 /* KeyboardViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		62D2BD9B907769DAE9375030 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9C0016210EF0D7743C549A1C /* PastaApp.swift in Sources */,
+				A970D5922CAE035E1E863908 /* PastaRootView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C95DC1F47F67C33543978CA8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C19981C0FF49A91BEF85EFCA /* PastaKeyboard */;
+			targetProxy = 09189D6EA8EFEFE9DC4FF0B0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		212213C2B69D636D88C3C120 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		406C673BE1864719861CB5DF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/Pasta.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 54MXM5JG3R;
+				DISPLAY_NAME = Pasta;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thehumanworks.pasta;
+				PRODUCT_NAME = Pasta;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		4A7991AB40665076E3109209 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Keyboard/PastaKeyboard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 54MXM5JG3R;
+				DISPLAY_NAME = "Pasta Keyboard";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Keyboard/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thehumanworks.pasta.keyboard;
+				PRODUCT_NAME = PastaKeyboard;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		5A72D90AC69A25A40113E372 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		7D75DDD6D95EFD8923C42DB6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Keyboard/PastaKeyboard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 54MXM5JG3R;
+				DISPLAY_NAME = "Pasta Keyboard";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Keyboard/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thehumanworks.pasta.keyboard;
+				PRODUCT_NAME = PastaKeyboard;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		FD7A7F162121E7E496E3C6E0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/Pasta.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 54MXM5JG3R;
+				DISPLAY_NAME = Pasta;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thehumanworks.pasta;
+				PRODUCT_NAME = Pasta;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4B6E76DF4624E15B0549767D /* Build configuration list for PBXNativeTarget "Pasta" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FD7A7F162121E7E496E3C6E0 /* Debug */,
+				406C673BE1864719861CB5DF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		4D0B31FD4FDF2B3C704D730E /* Build configuration list for PBXNativeTarget "PastaKeyboard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4A7991AB40665076E3109209 /* Debug */,
+				7D75DDD6D95EFD8923C42DB6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		7B9DDB230484E6E74B8FA1CD /* Build configuration list for PBXProject "Pasta" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5A72D90AC69A25A40113E372 /* Debug */,
+				212213C2B69D636D88C3C120 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		510E1C5CBBC05CD64762BAF5 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		51D04D06C7FA28CC86A13D61 /* PastaCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PastaCore;
+		};
+		6FCB0ACA4BE0F74BAB1DBBF1 /* PastaCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PastaCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = FAF9F3AA2894F33CC22BFE3D /* Project object */;
+}

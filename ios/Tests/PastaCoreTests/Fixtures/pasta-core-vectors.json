@@ -1,0 +1,70 @@
+{
+  "base64Url": {
+    "bytes": [
+      0,
+      1,
+      2,
+      253,
+      254,
+      255
+    ],
+    "encoded": "AAEC_f7_"
+  },
+  "stableJson": {
+    "value": {
+      "clipId": "clip_vector",
+      "nested": {
+        "z": 3,
+        "a": true
+      },
+      "items": [
+        "pasta",
+        42,
+        null
+      ]
+    },
+    "encoded": "{\"clipId\":\"clip_vector\",\"items\":[\"pasta\",42,null],\"nested\":{\"a\":true,\"z\":3}}",
+    "sha256": "1FzIHbse3jmhXzsnU2nHegskUgjwg-6GImpaqNzZkoE"
+  },
+  "signedRequest": {
+    "parts": {
+      "method": "post",
+      "pathWithQuery": "/v1/clips/history?limit=2",
+      "timestamp": 1782475200000,
+      "nonce": "nonce_vector",
+      "bodyHash": "1FzIHbse3jmhXzsnU2nHegskUgjwg-6GImpaqNzZkoE"
+    },
+    "canonical": "PASTA-SIGN-V1\nPOST\n/v1/clips/history?limit=2\n1782475200000\nnonce_vector\n1FzIHbse3jmhXzsnU2nHegskUgjwg-6GImpaqNzZkoE",
+    "privateKey": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+    "publicKey": "6kpsY-KcUgq-9VB7Ey7F-ZVHdq6-vnuSQh7qaRRG0iw",
+    "signature": "DzC2np7LWPUbP3Q7hAet5dgkvNWxbBMUXJKzSU3JIWkGod06d-VnRc2ee5BpfwTg4vfwSOtXr7v50saglX_tCA"
+  },
+  "textClip": {
+    "accountId": "acct_vector",
+    "routingId": "space_vector",
+    "groupKey": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk",
+    "plaintext": "Hello from Pasta iOS",
+    "clip": {
+      "clipId": "clip_vector_text",
+      "originDeviceId": "dev_vector",
+      "createdAt": 1782475200000,
+      "expiresAt": null,
+      "payloadKind": "text",
+      "mime": "text/plain; charset=utf-8",
+      "byteLen": 20,
+      "keyVersion": 1,
+      "nonce": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD",
+      "aadHash": "yI_xDuz_0-VOPyLN8uMiYZnmMVdoShmCuiy-B68uD5c",
+      "ciphertext": "1lKk2wV9EQKG45L1HSXXBNRTdxfAry3sJYsfbdNhhDapODKw"
+    }
+  },
+  "wrappedGroupKey": {
+    "groupKey": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk",
+    "senderPrivateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+    "senderPublicKey": "pOCSkrZRwni5dyxWn1-puxPZBrRqtoyd-dwrRAn4ogk",
+    "recipientPrivateKey": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI",
+    "recipientPublicKey": "zo060cy2M-x7cMF4FKXHbs0CloUFDTRHRboFhw5YfVk",
+    "nonce": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+    "wrapped": "{\"alg\":\"X25519-HKDF-SHA256-XChaCha20-Poly1305\",\"ciphertext\":\"khdsa_sCEApmxJIx1horG9pD8X12eSB7nVVD-fhibFX5crJ25OkMB0wBI1bX3uix\",\"nonce\":\"BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"senderWrapPublicKey\":\"pOCSkrZRwni5dyxWn1-puxPZBrRqtoyd-dwrRAn4ogk\",\"v\":1}"
+  }
+}

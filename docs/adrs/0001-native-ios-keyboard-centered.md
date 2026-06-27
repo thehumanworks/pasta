@@ -46,11 +46,11 @@ The UX is the closest Apple-supported option to feeling embedded in the OS, but
 it is not literally the Apple keyboard and it cannot run in secure text fields,
 phone pads, or apps that reject third-party keyboards.
 
-The engineering work must include normal typing behavior, the next-keyboard key,
-keyboard privacy copy, Full Access education, App Group cache coordination, and
-Keychain access-group storage. It also needs simulator and physical-device proof,
-because extension behavior and pasteboard privacy prompts are not fully proven
-by unit tests.
+The engineering work must include normal typing behavior, non-duplicated
+input-mode switching, keyboard privacy copy, Full Access education, App Group
+cache coordination, and Keychain access-group storage. It also needs simulator
+and physical-device proof, because extension behavior and pasteboard privacy
+prompts are not fully proven by unit tests.
 
 ## Alternatives Considered
 

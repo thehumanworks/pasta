@@ -85,6 +85,10 @@ Scope changes stop execution and surface to the user.
 
 **Evidence (required before tick; append-only)**
 
+- 2026-06-27 - `swift test --package-path ios` - exit 0; 12 XCTest tests executed with 1 gated live-relay test skipped without `PASTA_IOS_JOIN_TOKEN`, 0 failures.
+- 2026-06-27 - `PASTA_IOS_JOIN_TOKEN="join token <redacted>" swift test --package-path ios --filter PastaCoreLiveRelayTests/testLiveRelayJoinPublishAndHistoryWhenTokenProvided` - exit 0; live Swift relay join/publish/history smoke passed against the real relay and the smoke device was revoked.
+- 2026-06-27 - `mise exec -- bun run test` - exit 0; 30 Bun tests and 13 Worker/Vitest tests passed.
+
 ---
 
 ### T2 · Run iOS Surface Matrix · [ ]
@@ -107,6 +111,8 @@ Scope changes stop execution and surface to the user.
 **Confidence:** 0 / 90 · **Depends on:** T1 · **Closes:** DoD-2
 
 **Evidence (required before tick; append-only)**
+
+- 2026-06-27 - docs review/update - pass; `docs-site/content/native-ios.md` and `docs/adrs/0001-native-ios-keyboard-centered.md` now describe non-duplicated input-mode controls instead of always adding a manual globe key.
 
 ---
 
@@ -166,6 +172,10 @@ Scope changes stop execution and surface to the user.
 **Confidence:** 0 / 90 · **Depends on:** T3, T4 · **Closes:** DoD-5
 
 **Evidence (required before tick; append-only)**
+
+- 2026-06-27 - local archive/export/upload - pass; build 3 archived to `ios/build/archive/Pasta.xcarchive`, exported to `ios/build/export-local/Pasta.ipa`, passed IPA inspection, and uploaded with `xcodebuild -exportArchive` using App Store Connect API-key auth.
+- 2026-06-27 - App Store Connect readback - pass; `wait-build --bundle-id com.thehumanworks.pasta --version 3 --json` returned build id `40abc882-6fe2-4db7-9216-41b1fab27e96`, processingState `VALID`, uploadedDate `2026-06-27T06:12:57-07:00`, and `usesNonExemptEncryption=false`.
+- 2026-06-27 - TestFlight readback - pass; `release-to-testflight --bundle-id com.thehumanworks.pasta --version 3 --beta-group-name internal --replace-existing --require-exempt-encryption --json` returned internal group `91ffd61d-626c-44e4-ab22-552d858c3d0b` with build 3 in `groupBuilds`. This is App Store Connect/TestFlight distribution proof, not Xcode Cloud proof.
 
 ## 6. Decisions · LIVE (append-only)
 

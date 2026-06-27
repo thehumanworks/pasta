@@ -86,6 +86,10 @@ Scope changes stop execution and surface to the user.
 
 **Evidence (required before tick; append-only)**
 
+- 2026-06-27 - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0; local simulator build compiles app, keyboard extension, and `PastaCore` linkage for build 3 sources.
+- 2026-06-27 - `xcrun simctl install A5C6DC5D-CB65-4409-9CA8-3B0CD6709FE3 ios/build/DerivedData/Build/Products/Debug-iphonesimulator/Pasta.app && xcrun simctl launch ... com.thehumanworks.pasta` - exit 0; app launched with pid 49273, and screenshot saved to `ios/build/screenshots/pasta-app-feedback-fix.png`.
+- 2026-06-27 - `EXPECT_NO_NON_EXEMPT_ENCRYPTION=1 /Users/mish/.agents/skills/apple-developer/scripts/inspect_ipa.sh ios/build/export-local/Pasta.ipa` - exit 0; build 3 IPA has bundle id `com.thehumanworks.pasta`, version `0.1.7`, build `3`, app icon, keyboard appex, and no non-exempt encryption flag.
+
 ---
 
 ### T2 · Implement Pairing And Device Trust UI · [ ]
@@ -103,6 +107,9 @@ Scope changes stop execution and surface to the user.
 **Confidence:** 0 / 90 · **Depends on:** T1 · **Closes:** DoD-2
 
 **Evidence (required before tick; append-only)**
+
+- 2026-06-27 - `PASTA_IOS_JOIN_TOKEN="join token <redacted>" swift test --package-path ios --filter PastaCoreLiveRelayTests/testLiveRelayJoinPublishAndHistoryWhenTokenProvided` - exit 0; Swift core accepted a CLI-style pasted token, redeemed it against the real relay, published encrypted text, fetched it from history, and the smoke device was then revoked with `pasta devices revoke`.
+- 2026-06-27 - feedback fix - pass by code review; `PastaRootView` now shows join progress/errors inline, `PastaCrypto.parseJoinGrantTokenFromUserInput` extracts tokens from CLI/JSON paste text, and `PastaAppModel.join()` keeps successful pairing even if immediate history refresh fails. Physical tap-through on an iPhone remains unproven in this run.
 
 ---
 
@@ -122,6 +129,8 @@ Scope changes stop execution and surface to the user.
 **Confidence:** 0 / 90 · **Depends on:** T2 · **Closes:** DoD-3
 
 **Evidence (required before tick; append-only)**
+
+- 2026-06-27 - `rg -n "UIPasteboard|Timer|scenePhase|NotificationCenter|background|pasteboard|hasFullAccess" ios/App ios/Keyboard` - exit 0; pasteboard reads/writes are only in user-tapped app import/export and keyboard publish paths, with keyboard live actions gated by `hasFullAccess`.
 
 ---
 
@@ -160,6 +169,8 @@ Scope changes stop execution and surface to the user.
 
 **Evidence (required before tick; append-only)**
 
+- 2026-06-27 - build 3 IPA entitlement inspection with `/usr/bin/codesign -d --entitlements :-` - exit 0; app and keyboard both include `group.com.thehumanworks.pasta`, `54MXM5JG3R.com.thehumanworks.pasta`, and `get-task-allow=false`.
+
 ## 6. Decisions · LIVE (append-only)
 
 - 2026-06-27 - The containing app is not the primary paste-anywhere UX. It owns
@@ -169,6 +180,10 @@ Scope changes stop execution and surface to the user.
   to block Xcode Cloud or device proof. This goal treats missing developer-team
   configuration as a blocker, not a reason to dilute the security model. Scope
   impact: none.
+- 2026-06-27 - User feedback found pasted join tokens did not work from the app
+  surface. Join now accepts raw tokens embedded in CLI or JSON text, and a
+  successful join no longer depends on immediate history refresh. Scope impact:
+  app-shell join UX only.
 
 ---
 

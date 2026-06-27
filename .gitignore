@@ -6,6 +6,8 @@ dist/
 docs-site/dist/
 docs-site/node_modules/
 ios/.build/
+ios/build/
+ios/.swiftpm/
 config.json
 auth.json
 secrets.json

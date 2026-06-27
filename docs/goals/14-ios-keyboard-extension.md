@@ -36,8 +36,8 @@ Scope changes stop execution and surface to the user.
   — *verify by:* Xcode Cloud build evidence plus simulator/device install and
   keyboard selection proof when available.
 - [ ] **DoD-2** — Normal typing, delete, return, space, shift/case, punctuation
-  access, and next-keyboard behavior are usable enough that Pasta is not a
-  one-button keyboard. — *verify by:* simulator/manual keyboard smoke.
+  access, and non-duplicated input-mode switching are usable enough that Pasta
+  is not a one-button keyboard. — *verify by:* simulator/manual keyboard smoke.
 - [ ] **DoD-3** — Without Full Access, the keyboard loads cached text history and
   inserts selected text clips into supported text fields. — *verify by:*
   simulator smoke in at least two host apps or test hosts.
@@ -75,18 +75,22 @@ Scope changes stop execution and surface to the user.
 - [ ] Add keyboard extension target and Info.plist.
 - [ ] Ensure the target is included in the Xcode Cloud workflow.
 - [ ] Implement basic keyboard layout and text document proxy interactions.
-- [ ] Include globe/next-keyboard behavior.
+- [ ] Avoid duplicate globe/input-mode controls while preserving normal typing.
 
 **Verification Contract**
 - *Check:* Keyboard target builds in Xcode Cloud and installs/types when a
   runnable artifact is available.
 - *Method:* Xcode Cloud build evidence plus simulator/device keyboard smoke.
 - *Expected:* Xcode Cloud builds the keyboard target; user can type ordinary text
-  and switch away from Pasta keyboard in behavioral smoke.
+  and no duplicate Pasta globe key appears in behavioral smoke.
 
 **Confidence:** 0 / 90 · **Depends on:** Goal 13 · **Closes:** DoD-1, DoD-2
 
 **Evidence (required before tick; append-only)**
+
+- 2026-06-27 - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0; keyboard extension target compiled into `Pasta.app/PlugIns/PastaKeyboard.appex`.
+- 2026-06-27 - `xcrun simctl spawn A5C6DC5D-CB65-4409-9CA8-3B0CD6709FE3 pluginkit -m -p com.apple.keyboard-service | rg 'com.thehumanworks.pasta.keyboard'` - exit 0; PluginKit registered `com.thehumanworks.pasta.keyboard(0.1.7)` after simulator install.
+- 2026-06-27 - feedback fix - pass by code review; `KeyboardViewController` now uses a 291pt default portrait keyboard height, four key rows, wider space bar, and no manual `next`/globe key path. `rg -n "advanceToNextInputMode|next|🌐|globe" ios/Keyboard/KeyboardViewController.swift` returns no matches.
 
 ---
 
@@ -107,6 +111,8 @@ Scope changes stop execution and surface to the user.
 
 **Evidence (required before tick; append-only)**
 
+- 2026-06-27 - code review - pass; standard-access path loads cached `PastaKeyboardClip` records from App Group storage and inserts selected text through `textDocumentProxy.insertText`; live network and pasteboard paths are separate buttons.
+
 ---
 
 ### T3 · Implement Full Access Live Actions · [ ]
@@ -124,6 +130,8 @@ Scope changes stop execution and surface to the user.
 **Confidence:** 0 / 90 · **Depends on:** T2 · **Closes:** DoD-4, DoD-6
 
 **Evidence (required before tick; append-only)**
+
+- 2026-06-27 - `rg -n "UIPasteboard|Timer|scenePhase|NotificationCenter|background|pasteboard|hasFullAccess" ios/App ios/Keyboard` - exit 0; keyboard pasteboard read is only in `publishClipboardText()` after a user-tapped Publish action, and `liveContext()` requires `hasFullAccess`.
 
 ---
 
@@ -170,6 +178,9 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - Self adversarial review found the largest UX risk is overstating
   "paste anywhere." This goal requires restricted-context proof and precise
   copy before completion. Scope impact: none.
+- 2026-06-27 - User feedback corrected the keyboard chrome contract: Pasta must
+  not add a duplicate visible globe key when iOS already presents the input-mode
+  switch control. Scope impact: keyboard layout and docs wording.
 
 ---
 

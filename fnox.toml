@@ -9,3 +9,6 @@ config = "prd"
 CLOUDFLARE_ACCOUNT_ID= { provider = "doppler", value = "CLOUDFLARE_ACCOUNT_ID" }
 CLOUDFLARE_API_KEY= { provider = "doppler", value = "CLOUDFLARE_API_KEY" }
 CLOUDFLARE_ACCOUNT_EMAIL= { provider = "doppler", value = "CLOUDFLARE_ACCOUNT_EMAIL" }
+APP_STORE_CONNECT_API_KEY_ID= { provider = "doppler", value = "APP_STORE_CONNECT_API_KEY_ID" }
+APP_STORE_CONNECT_API_P8= { provider = "doppler", value = "APP_STORE_CONNECT_API_P8" }
+APP_STORE_CONNECT_API_ISSUER_ID= { provider = "doppler", value = "APP_STORE_CONNECT_API_ISSUER_ID" }

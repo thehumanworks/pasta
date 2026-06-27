@@ -36,7 +36,7 @@ File Provider integration is a later add-on for file and directory history in Fi
 The keyboard is intentionally close to the stock iOS keyboard in daily use:
 
 - normal typing remains the default interaction;
-- the globe/next-keyboard key is always present;
+- Pasta does not add a duplicate globe key when iOS already presents the input-mode switch control;
 - Pasta controls live in a compact history strip and an expanded history drawer;
 - tapping a text item inserts it into the active text field;
 - long-pressing a history item opens actions such as preview, copy to iPhone clipboard, delete, or open in Pasta;
@@ -136,7 +136,7 @@ Do not replace this with a background clipboard monitor, P2P sync path, LAN disc
 
 - Custom keyboards insert strings through `UITextDocumentProxy.insertText`; they do not invoke the host app's Paste command.
 - Custom keyboards are unavailable in secure text fields, phone pads, and apps that reject third-party keyboards.
-- A custom keyboard is not the Apple keyboard plus a plugin slot. Pasta owns and maintains the keyboard UI, normal typing behavior, and next-keyboard key.
+- A custom keyboard is not the Apple keyboard plus a plugin slot. Pasta owns and maintains the keyboard UI and normal typing behavior while avoiding duplicate input-mode controls.
 - Network access, shared app-group storage, and pasteboard access from the keyboard require `RequestsOpenAccess` plus user-granted Full Access.
 - App Review expects the keyboard to remain functional without Full Access. Keep cached text history available through the containing app sync path.
 - iOS has no public always-on clipboard daemon for third-party apps. Publish from iOS must be user-initiated.

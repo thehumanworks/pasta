@@ -11,8 +11,18 @@ let package = Package(
     products: [
         .library(name: "PastaCore", targets: ["PastaCore"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/jedisct1/swift-sodium.git", from: "0.11.0")
+    ],
     targets: [
-        .target(name: "PastaCore"),
-        .testTarget(name: "PastaCoreTests", dependencies: ["PastaCore"])
+        .target(name: "PastaCore", dependencies: [
+            .product(name: "Clibsodium", package: "swift-sodium"),
+            .product(name: "Sodium", package: "swift-sodium")
+        ]),
+        .testTarget(
+            name: "PastaCoreTests",
+            dependencies: ["PastaCore"],
+            resources: [.process("Fixtures")]
+        )
     ]
 )
