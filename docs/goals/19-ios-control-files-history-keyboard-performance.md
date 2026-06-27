@@ -296,8 +296,8 @@ Verification Contract:
   local `main`; `50458ab Merge iOS keyboard number row fix` kept the
   KeyboardKit numeric mode while removing Pasta's alphabetic number row;
   release commit `21ecdce Prepare 0.1.9 release` bumped CLI and iOS versions to
-  `0.1.9` and iOS build number to `15`; final evidence commit `205e635` was
-  pushed to `origin/main`.
+  `0.1.9` and iOS build number to `15`; final evidence commits were pushed to
+  `origin/main`.
 - 2026-06-27 - `mise exec -- bun run check` - exit 0; Worker types generated,
   30 Bun tests passed, and 14 Vitest Worker tests passed.
 - 2026-06-27 - `swift test --package-path ios` - exit 0; 21 XCTest tests
@@ -321,8 +321,8 @@ Verification Contract:
   portable checks, release asset build, artifact upload, and GitHub release
   publish all succeeded.
 - 2026-06-27 - `git ls-remote origin refs/heads/main refs/tags/v0.1.9` - exit
-  0; `origin/main` points at `205e635` and tag `v0.1.9` points at release
-  commit `21ecdce`.
+  0; tag `v0.1.9` points at release commit `21ecdce`, and `origin/main`
+  includes the release and evidence commits.
 - 2026-06-27 - `gh release view v0.1.9 --repo thehumanworks/pasta` - exit 0;
   release URL `https://github.com/thehumanworks/pasta/releases/tag/v0.1.9`
   published 9 assets: `checksums.txt` plus 8 platform archives.
