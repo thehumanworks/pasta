@@ -167,7 +167,7 @@ private struct PastaKeyboardView: View {
             }
         )
         .keyboardToolbarStyle(.init(
-            backgroundColor: Color(red: 0.82, green: 0.84, blue: 0.87),
+            backgroundColor: PastaToolbarAppearance.shelfBackground,
             height: 44,
             minHeight: 44,
             maxHeight: 44
@@ -187,25 +187,26 @@ private struct PastaKeyboardToolbar: View {
             HStack(spacing: 6) {
                 if let statusMessage = model.statusMessage {
                     Text(statusMessage)
-                        .font(.caption)
-                        .foregroundStyle(.primary)
+                        .font(PastaToolbarAppearance.font)
+                        .foregroundStyle(PastaToolbarAppearance.foreground)
                         .lineLimit(1)
                         .padding(.horizontal, 10)
-                        .frame(height: 30)
-                        .background(Color.white)
+                        .frame(height: PastaToolbarAppearance.chipHeight)
+                        .background(PastaToolbarAppearance.chipBackground)
+                        .overlay(PastaToolbarAppearance.chipBorder)
                         .clipShape(RoundedRectangle(cornerRadius: 7))
                 }
 
                 Button(action: refresh) {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
-                .disabled(model.isRunningLiveAction)
+                .allowsHitTesting(!model.isRunningLiveAction)
                 .buttonStyle(PastaToolbarButtonStyle())
 
                 Button(action: publish) {
                     Label("Publish", systemImage: "square.and.arrow.up")
                 }
-                .disabled(model.isRunningLiveAction)
+                .allowsHitTesting(!model.isRunningLiveAction)
                 .buttonStyle(PastaToolbarButtonStyle())
 
                 Button(action: toggleExpanded) {
@@ -215,12 +216,13 @@ private struct PastaKeyboardToolbar: View {
 
                 if model.clips.isEmpty {
                     Text("Open Pasta to sync")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .font(PastaToolbarAppearance.font)
+                        .foregroundStyle(PastaToolbarAppearance.foreground)
                         .lineLimit(1)
                         .padding(.horizontal, 12)
-                        .frame(height: 30)
-                        .background(Color.white.opacity(0.72))
+                        .frame(height: PastaToolbarAppearance.chipHeight)
+                        .background(PastaToolbarAppearance.chipBackground)
+                        .overlay(PastaToolbarAppearance.chipBorder)
                         .clipShape(RoundedRectangle(cornerRadius: 7))
                 } else {
                     ForEach(model.visibleClips) { clip in
@@ -237,21 +239,37 @@ private struct PastaKeyboardToolbar: View {
             .padding(.horizontal, 6)
         }
         .frame(height: 36)
-        .background(Color(red: 0.82, green: 0.84, blue: 0.87))
+        .background(PastaToolbarAppearance.shelfBackground)
     }
 }
 
 private struct PastaToolbarButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.footnote)
-            .foregroundStyle(.primary)
+            .font(PastaToolbarAppearance.font)
+            .foregroundStyle(PastaToolbarAppearance.foreground)
             .lineLimit(1)
             .labelStyle(.titleAndIcon)
             .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(configuration.isPressed ? Color.white.opacity(0.7) : Color.white)
+            .frame(height: PastaToolbarAppearance.chipHeight)
+            .background(configuration.isPressed ? PastaToolbarAppearance.pressedChipBackground : PastaToolbarAppearance.chipBackground)
+            .overlay(PastaToolbarAppearance.chipBorder)
             .clipShape(RoundedRectangle(cornerRadius: 7))
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+private enum PastaToolbarAppearance {
+    static let shelfBackground = Color(red: 0.73, green: 0.76, blue: 0.81)
+    static let chipBackground = Color(red: 1, green: 1, blue: 1)
+    static let pressedChipBackground = Color(red: 0.88, green: 0.90, blue: 0.93)
+    static let foreground = Color(red: 0.01, green: 0.01, blue: 0.02)
+    static let border = Color(red: 0.57, green: 0.59, blue: 0.64)
+    static let font = Font.system(size: 15, weight: .semibold)
+    static let chipHeight: CGFloat = 31
+
+    static var chipBorder: some View {
+        RoundedRectangle(cornerRadius: 7).stroke(border, lineWidth: 1)
     }
 }
 

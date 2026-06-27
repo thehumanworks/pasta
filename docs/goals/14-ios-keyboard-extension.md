@@ -93,6 +93,10 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - feedback fix - pass by code review; `KeyboardViewController` now uses a 291pt default portrait keyboard height, four key rows, wider space bar, and no manual `next`/globe key path. `rg -n "advanceToNextInputMode|next|🌐|globe" ios/Keyboard/KeyboardViewController.swift` returns no matches.
 - 2026-06-27 - feedback fix - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0 after replacing the manual key grid with KeyboardKit 9.9.1; `Pasta.app/PlugIns/PastaKeyboard.appex` built and PluginKit registered the extension.
 - 2026-06-27 - feedback fix - pass by code review; KeyboardKit now owns keyboard layout, sizing, alphabetic/numeric/symbolic modes, callouts, and key action handling, while Pasta removes `nextKeyboard` from the generated layout to avoid a duplicate visible input-mode switch.
+- 2026-06-27 - action shelf contrast fix - pass by code review against attached feedback screenshot; `PastaKeyboardToolbar` now uses explicit high-contrast black text/icons on opaque white chips, a solid shelf background, chip borders, and `.allowsHitTesting` instead of disabled opacity for live action gating.
+- 2026-06-27 - action shelf contrast fix - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0; simulator install/launch plus `pluginkit -m -p com.apple.keyboard-service | rg 'com.thehumanworks.pasta.keyboard'` - exit 0 with `com.thehumanworks.pasta.keyboard(0.1.7)`.
+- 2026-06-27 - action shelf contrast fix - `swift test --package-path ios` - exit 0 with 14 tests passed and 1 live relay test skipped; `mise exec -- bun run test` - exit 0 with 30 Bun tests and 13 Vitest tests passed; `git diff --check` - exit 0.
+- 2026-06-27 - TestFlight build 5 - archive/export/upload passed; `inspect_ipa.sh ios/build/export-local/Pasta.ipa` confirmed `CFBundleVersion=5`, `ITSAppUsesNonExemptEncryption=false`, distribution profile, `get-task-allow=false`, and embedded `PastaKeyboard.appex`; App Store Connect build `d181b674-ce20-4413-aa5a-8881e13037c9` is `VALID` and internal beta group `internal` has access.
 
 ---
 
@@ -187,6 +191,10 @@ Scope changes stop execution and surface to the user.
   libraries for keyboard structure where feasible. Pasta now uses KeyboardKit
   for stock keyboard rendering and keeps only Pasta-specific toolbar/privacy
   behavior in app code. Scope impact: keyboard implementation dependency.
+- 2026-06-27 - User screenshot corrected the toolbar chrome contract: Pasta
+  action buttons must remain high-contrast and opaque over iOS keyboard chrome,
+  with no disabled-opacity blur for normal states. Scope impact: keyboard
+  toolbar styling and docs wording.
 
 ---
 

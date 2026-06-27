@@ -38,7 +38,7 @@ The keyboard is intentionally close to the stock iOS keyboard in daily use:
 - normal typing remains the default interaction;
 - Pasta does not add a duplicate globe key when iOS already presents the input-mode switch control;
 - letter, number (`123`), and symbol (`#+=`) keyboard modes are present so the keyboard remains usable for ordinary iOS text entry;
-- Pasta controls use an opaque compact history strip so action labels stay readable over iOS keyboard chrome;
+- Pasta controls use a high-contrast opaque compact history strip so action labels stay readable over iOS keyboard chrome;
 - Pasta controls live in a compact history strip and an expanded history drawer;
 - tapping a text item inserts it into the active text field;
 - long-pressing a history item opens actions such as preview, copy to iPhone clipboard, delete, or open in Pasta;
