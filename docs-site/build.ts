@@ -22,6 +22,12 @@ interface PageDoc {
   agentMd: string;
 }
 
+interface TocItem {
+  id: string;
+  text: string;
+  level: number;
+}
+
 function parseFrontmatter(raw: string): { meta: Record<string, string>; body: string } {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
   if (!match) return { meta: {}, body: raw };
@@ -65,9 +71,39 @@ async function loadPages(): Promise<PageDoc[]> {
   return pages.sort((a, b) => a.meta.nav_order - b.meta.nav_order);
 }
 
-function renderMarkdown(md: string, basePath: string): string {
+function slugifyHeading(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/&[a-z0-9#]+;/giu, "")
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-+|-+$/gu, "") || "section";
+}
+
+function plainText(html: string): string {
+  return html
+    .replace(/<[^>]*>/gu, "")
+    .replace(/&amp;/gu, "&")
+    .replace(/&lt;/gu, "<")
+    .replace(/&gt;/gu, ">")
+    .replace(/&quot;/gu, '"')
+    .trim();
+}
+
+function renderMarkdown(md: string, basePath: string): { html: string; toc: TocItem[] } {
   const html = marked.parse(md, { gfm: true, breaks: false }) as string;
-  return html.replace(/href="\/([^"]+)"/g, `href="${basePath}$1"`);
+  const seen = new Map<string, number>();
+  const toc: TocItem[] = [];
+  const anchored = html.replace(/<h([23])>([\s\S]*?)<\/h\1>/gu, (_match, levelText: string, inner: string) => {
+    const level = Number.parseInt(levelText, 10);
+    const text = plainText(inner);
+    const baseId = slugifyHeading(text);
+    const count = seen.get(baseId) ?? 0;
+    seen.set(baseId, count + 1);
+    const id = count === 0 ? baseId : `${baseId}-${count + 1}`;
+    toc.push({ id, text, level });
+    return `<h${level} id="${id}"><a class="heading-anchor" href="#${id}" aria-label="Link to ${escapeHtml(text)}">${inner}</a></h${level}>`;
+  });
+  return { html: anchored.replace(/href="\/([^"]+)"/g, `href="${basePath}$1"`), toc };
 }
 
 function escapeHtml(text: string): string {
@@ -85,6 +121,13 @@ function buildNav(pages: PageDoc[], activeSlug: string, basePath: string): strin
       const navIndex = String(index + 1).padStart(2, "0");
       return `<a class="nav-link${p.meta.slug === activeSlug ? " nav-link--active" : ""}" href="${basePath}${p.meta.slug}/"${active}><span class="nav-index" aria-hidden="true">${navIndex}</span>${escapeHtml(p.meta.title)}</a>`;
     })
+    .join("\n");
+}
+
+function buildToc(toc: TocItem[]): string {
+  if (toc.length === 0) return `<p class="toc-empty">No page sections</p>`;
+  return toc
+    .map((item) => `<a class="toc-link toc-link--level-${item.level}" href="#${item.id}">${escapeHtml(item.text)}</a>`)
     .join("\n");
 }
 
@@ -116,8 +159,8 @@ async function buildSite(): Promise<void> {
   const agentManifest: Array<{ slug: string; title: string; url: string; markdown_url: string; api_url: string }> = [];
 
   for (const page of pages) {
-    const humanHtml = renderMarkdown(page.humanMd, normalizedBase);
-    const agentHtml = renderMarkdown(page.agentMd, normalizedBase);
+    const humanRendered = renderMarkdown(page.humanMd, normalizedBase);
+    const agentRendered = renderMarkdown(page.agentMd, normalizedBase);
     const nav = buildNav(pages, page.meta.slug, normalizedBase);
     const agentMdPath = `${normalizedBase}agent/${page.meta.slug}.md`;
     const apiPath = `${normalizedBase}api/${page.meta.slug}.json`;
@@ -128,8 +171,10 @@ async function buildSite(): Promise<void> {
       .replaceAll("{{SLUG}}", page.meta.slug)
       .replaceAll("{{BASE}}", normalizedBase)
       .replaceAll("{{NAV}}", nav)
-      .replaceAll("{{HUMAN_HTML}}", humanHtml)
-      .replaceAll("{{AGENT_HTML}}", agentHtml)
+      .replaceAll("{{HUMAN_HTML}}", humanRendered.html)
+      .replaceAll("{{AGENT_HTML}}", agentRendered.html)
+      .replaceAll("{{HUMAN_TOC}}", buildToc(humanRendered.toc))
+      .replaceAll("{{AGENT_TOC}}", buildToc(agentRendered.toc))
       .replaceAll("{{AGENT_MD_URL}}", agentMdPath)
       .replaceAll("{{API_URL}}", apiPath);
 
@@ -172,14 +217,18 @@ async function buildSite(): Promise<void> {
   }
 
   const homePage = pages.find((p) => p.meta.slug === "quick-start") ?? pages[0];
+  const homeHumanRendered = renderMarkdown(homePage.humanMd, normalizedBase);
+  const homeAgentRendered = renderMarkdown(homePage.agentMd, normalizedBase);
   const homeHtml = template
     .replaceAll("{{TITLE}}", "Pasta Docs")
     .replaceAll("{{DESCRIPTION}}", "Encrypted clipboard relay for trusted desktops")
     .replaceAll("{{SLUG}}", "home")
     .replaceAll("{{BASE}}", basePath)
     .replaceAll("{{NAV}}", buildNav(pages, "quick-start", normalizedBase))
-    .replaceAll("{{HUMAN_HTML}}", renderMarkdown(homePage.humanMd, normalizedBase))
-    .replaceAll("{{AGENT_HTML}}", renderMarkdown(homePage.agentMd, normalizedBase))
+    .replaceAll("{{HUMAN_HTML}}", homeHumanRendered.html)
+    .replaceAll("{{AGENT_HTML}}", homeAgentRendered.html)
+    .replaceAll("{{HUMAN_TOC}}", buildToc(homeHumanRendered.toc))
+    .replaceAll("{{AGENT_TOC}}", buildToc(homeAgentRendered.toc))
     .replaceAll("{{AGENT_MD_URL}}", `${normalizedBase}agent/${homePage.meta.slug}.md`)
     .replaceAll("{{API_URL}}", `${normalizedBase}api/${homePage.meta.slug}.json`);
 

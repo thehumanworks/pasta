@@ -16,7 +16,7 @@ nav_order: 10
 | Request integrity | Ed25519 signatures + body hash |
 | Replay attacks | Timestamp window + nonce store |
 | Unauthorized pairing | Requires trusted device approval |
-| Noninteractive registration | Trusted-device join grants with short token TTL and expiring device lease |
+| Noninteractive registration | Trusted-device join grants with short token TTL and optional expiring device lease |
 
 ## Trust boundaries
 
@@ -37,9 +37,9 @@ Pasta keeps device auth in `$PASTA_HOME/auth.json` with `0600` permissions by de
 
 ## CI and sandbox tokens
 
-Join tokens are CI secrets. They are not short codes and should not be copied into logs. A token defaults to a 10-minute redemption window and one use. The device created by redemption defaults to a 24-hour lease, which is useful for Modal sandboxes and other temporary environments.
+Join tokens are CI secrets. They are not short codes and should not be copied into logs. A token defaults to a 10-minute redemption window and one use. The device created by redemption has no revocation TTL by default; add `--device-ttl 24h` for Modal sandboxes or other temporary environments that should auto-revoke.
 
-Cloudflare stores a redemption verifier and sealed group-key grant. It never receives the seal secret needed to decrypt that grant. Once the joined device's lease expires, signed requests trigger real revocation and fail before any clipboard operation.
+Cloudflare stores a redemption verifier and sealed group-key grant. It never receives the seal secret needed to decrypt that grant. Once an optional joined-device lease expires, signed requests trigger real revocation and fail before any clipboard operation.
 
 ## Reset
 
@@ -64,10 +64,10 @@ Cloudflare stores a redemption verifier and sealed group-key grant. It never rec
 ## Join grant controls
 
 - Token TTL default 10 minutes, max 24 hours.
-- Device TTL default 24 hours, max 30 days.
+- Device TTL default none, max 30 days when set.
 - `uses` default 1, max 10.
 - Worker never receives `sealSecret`.
-- Device expiry is enforced in Worker auth and converted to revoked state.
+- Device expiry, when set, is enforced in Worker auth and converted to revoked state.
 
 ## Do not implement
 

@@ -18,6 +18,7 @@
   --radius-sm: 4px;
   --shadow: 0 32px 100px rgba(0, 0, 0, 0.74);
   --sidebar-w: 280px;
+  --toc-w: 230px;
   --header-h: 68px;
 }
 
@@ -159,8 +160,8 @@ body {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
-  max-width: 1440px;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--toc-w);
+  max-width: 1680px;
   margin: 0 auto;
   min-height: calc(100vh - var(--header-h) - 48px);
 }
@@ -250,6 +251,58 @@ body {
 .content {
   min-width: 0;
   padding: 2rem 2.5rem 3rem;
+}
+
+.page-sidebar {
+  position: sticky;
+  top: var(--header-h);
+  align-self: start;
+  height: calc(100vh - var(--header-h));
+  padding: 2rem 1.25rem 1.5rem 0;
+  overflow-y: auto;
+}
+
+.page-sidebar-label {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.toc-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border);
+}
+
+.toc-link {
+  display: block;
+  padding: 0.25rem 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.toc-link:hover {
+  color: var(--text);
+}
+
+.toc-link--level-3 {
+  padding-left: 0.85rem;
+  color: var(--text-faint);
+  font-size: 0.76rem;
+}
+
+.toc-empty {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 0.78rem;
 }
 
 .masthead {
@@ -348,6 +401,17 @@ body {
   letter-spacing: 0;
   text-transform: uppercase;
   color: var(--text);
+}
+
+.heading-anchor {
+  color: inherit;
+  text-decoration: none;
+}
+
+.heading-anchor:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
 }
 
 .prose h3 {
@@ -502,6 +566,16 @@ body[data-audience="agent"] .audience-hint--agent {
 
 body[data-audience="human"] .audience-hint--agent {
   display: none;
+}
+
+@media (max-width: 1180px) {
+  .layout {
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  }
+
+  .page-sidebar {
+    display: none;
+  }
 }
 
 @media (max-width: 900px) {

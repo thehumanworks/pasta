@@ -74,7 +74,7 @@ Revoked devices cannot sign requests, publish, pull, or approve new pairings.
 For Modal, CI, and other temporary noninteractive environments, create a join grant from an already trusted device:
 
 ```bash
-pasta pair grant create --token-ttl 10m --device-ttl 24h --uses 1 --json
+pasta pair grant create --token-ttl 10m --uses 1 --json
 ```
 
 Store the returned `joinToken` as a CI secret. Inside the sandbox:
@@ -83,7 +83,7 @@ Store the returned `joinToken` as a CI secret. Inside the sandbox:
 pasta pair join --token "$PASTA_JOIN_TOKEN" --device-name "modal-${MODAL_TASK_ID:-sandbox}"
 ```
 
-Token TTL and device TTL are separate. The token defaults to a 10-minute redemption window. The joined device defaults to a 24-hour lease and is revoked when that lease expires. Device expiry starts when the token is redeemed, so a queued job does not lose runtime just because the token was minted a few minutes earlier.
+Token TTL and device TTL are separate. The token defaults to a 10-minute redemption window. The joined device has no revocation TTL by default and remains trusted until explicit revocation. Add `--device-ttl 24h` when the sandbox should auto-revoke after a Modal-style lifetime. Device expiry starts when the token is redeemed, so a queued job does not lose runtime just because the token was minted a few minutes earlier.
 
 See [CI & Sandbox Pairing](/ci-pairing/) for the full Human and Agent contract.
 
@@ -94,7 +94,7 @@ See [CI & Sandbox Pairing](/ci-pairing/) for the full Human and Agent contract.
 - Consume is **one-time** — the grant cannot be replayed.
 - Malicious pairing requests still need approval from a live trusted device.
 - Join grants are high-entropy, expiring, use-limited tokens created by a trusted device.
-- Devices created through join grants carry `device_expires_at` and are revoked after the lease.
+- Devices created through join grants can carry `device_expires_at` and are revoked after the lease when `--device-ttl` is set.
 
 ## Recovery
 
@@ -149,7 +149,7 @@ Approved devices get wrapped key rows in ClipboardSpace DO for audit/revocation.
 
 `MAX_OPEN_PAIRING_SESSIONS = 5` per account (protocol.ts).
 
-Join grant defaults: token TTL 10 minutes, device TTL 24 hours, uses 1. Server-side maximums: token TTL 24 hours, device TTL 30 days, uses 10.
+Join grant defaults: token TTL 10 minutes, no device TTL, uses 1. Server-side maximums: token TTL 24 hours, device TTL 30 days when set, uses 10.
 
 ## Noninteractive grant flow
 
@@ -158,10 +158,10 @@ See `/agent/ci-pairing.md` for the full contract. Summary:
 1. Trusted device runs `pair grant create`; CLI generates independent `redeemSecret` and `sealSecret`.
 2. Trusted device seals group key with a `sealSecret`-derived key and sends only `redeemSecretHash`, sealed grant, TTLs, and use limit to `POST /v1/pairing/grants`.
 3. Automation runs `pair join --token`; CLI sends `redeemSecret` and new device public keys to `POST /v1/pairing/grants/redeem`.
-4. Worker validates expiry/use count/hash, inserts active device with `device_expires_at = now + deviceTtlMs`, and returns the sealed group key.
+4. Worker validates expiry/use count/hash, inserts active device with `device_expires_at = NULL` by default or `now + deviceTtlMs` when `--device-ttl` is set, and returns the sealed group key.
 5. CLI decrypts with local `sealSecret`, stores normal auth, and never sends `sealSecret` to Cloudflare.
 
-Expired joined devices are lazily revoked in Worker auth before any signed operation succeeds.
+Joined devices with `device_expires_at` are lazily revoked in Worker auth after expiry before any signed operation succeeds.
 
 ## Test coverage
 

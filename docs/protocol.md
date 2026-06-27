@@ -72,7 +72,7 @@ The Worker rejects stale timestamps outside five minutes, bad body hashes, unkno
 | `pair request` | `POST /v1/pairing/open` | none | temporary session, short-code hash, new-device public keys | pending session | D1 `pairing_sessions` |
 | `devices approve` | `POST /v1/pairing/approve` | device signature | short-code hash, wrapped group-key grant | approved new device | D1 `devices`, D1 pairing row, DO `wrapped_keys` |
 | `pair consume` | `POST /v1/pairing/consume` | none | session id and short-code hash | wrapped group key once | D1 `consumed_at` |
-| `pair grant create` | `POST /v1/pairing/grants` | device signature | grant id, redemption verifier, sealed group-key grant, token TTL, device TTL, use limit | stored join grant | D1 `pairing_grants` |
+| `pair grant create` | `POST /v1/pairing/grants` | device signature | grant id, redemption verifier, sealed group-key grant, token TTL, optional device TTL, use limit | stored join grant | D1 `pairing_grants` |
 | `pair join` | `POST /v1/pairing/grants/redeem` | grant proof | grant id, redeem secret, new-device public keys | registered leased device plus sealed group-key grant | D1 `devices`, D1 grant use count |
 | `pair grant revoke` | `POST /v1/pairing/grants/:grantId/revoke` | device signature | grant id | unused grant revoked | D1 `revoked_at` |
 | `devices list` | `GET /v1/devices` | device signature | empty signed request | device metadata only | D1 `last_seen_at` |
@@ -87,7 +87,7 @@ Join grants let an existing trusted device approve a future CI or sandbox device
 - account-scoped `redeem_secret_hash`
 - sealed group-key grant
 - `token_expires_at`
-- `device_ttl_ms`
+- optional `device_ttl_ms`
 - `max_uses`
 - optional label
 
@@ -96,16 +96,16 @@ The token contains independent `redeem_secret` and `seal_secret` values. `pair j
 Defaults:
 
 - Token TTL: 10 minutes.
-- Device TTL: 24 hours.
+- Device TTL: none.
 - Uses: 1.
 
 Server bounds:
 
 - Token TTL max: 24 hours.
-- Device TTL max: 30 days.
+- Device TTL max when set: 30 days.
 - Uses max: 10.
 
-The device TTL starts at redemption time. A joined device receives `device_expires_at = redeemed_at + device_ttl_ms`. Worker auth treats that field as real revocation: after expiry, the next valid signed request marks the device revoked, records `revoked_at`, revokes any active DO wrapped-key row, and rejects before copy, paste, history, approval, grant creation, or reset logic runs.
+By default, a joined device has `device_expires_at = NULL` and remains trusted until explicit revocation. When the grant creator sets a device TTL, it starts at redemption time and the joined device receives `device_expires_at = redeemed_at + device_ttl_ms`. Worker auth treats that field as real revocation: after expiry, the next valid signed request marks the device revoked, records `revoked_at`, revokes any active DO wrapped-key row, and rejects before copy, paste, history, approval, grant creation, or reset logic runs.
 
 ## Reset
 

@@ -16,7 +16,7 @@ Make device onboarding clean enough that users do not manually carry long IDs or
 - Pairing requires an existing trusted device unless this is the first bootstrap device.
 - Pairing code/QR is temporary and insufficient by itself without approval.
 - Noninteractive join grants are temporary, high-entropy, and created only by an existing trusted device.
-- Join-grant devices are leased devices; expiry becomes real revocation, not just display metadata.
+- Join-grant devices are permanent by default, and optional device TTL expiry becomes real revocation, not just display metadata.
 - Durable account IDs and routing IDs are hidden from normal UX.
 - Existing devices wrap group keys for new devices; the relay never sees raw group keys.
 - Revoked devices cannot publish, pull, approve, or receive new wrapped keys.
@@ -141,12 +141,12 @@ Verification Contract:
 - No Cloudflare auth in MVP.
 - No manual long ID entry in normal UX.
 - 2026-06-26 - Pairing UX carries temporary ticket/code/QR material only; existing device approval wraps the group key and the relay never receives raw group keys. Scope impact: none.
-- 2026-06-27 - CI/sandbox pairing uses trusted-device join grants instead of Cloudflare auth or copied local auth files. Token TTL gates redemption; device TTL gates actual device trust and becomes revocation at auth time. Scope impact: extends pairing without changing central-service or E2E encryption boundaries.
+- 2026-06-27 - CI/sandbox pairing uses trusted-device join grants instead of Cloudflare auth or copied local auth files. Token TTL gates redemption; optional device TTL gates actual device trust and becomes revocation at auth time. Scope impact: extends pairing without changing central-service or E2E encryption boundaries.
 
 ## 7. Learnings
 
 - Good UX here is approval ceremony plus local secret storage, not simplifying cryptography.
-- Noninteractive UX needs two clocks: a short token TTL for setup safety and a device TTL for sandbox lifetime. Modal-style 24-hour devices are handled by default without a scheduler because auth lazily revokes expired devices.
+- Noninteractive UX needs separate clocks: a short token TTL for setup safety and an optional device TTL for sandbox lifetime. Modal-style 24-hour devices are handled with `--device-ttl 24h` without a scheduler because auth lazily revokes expired devices.
 
 ## 8. Skills
 

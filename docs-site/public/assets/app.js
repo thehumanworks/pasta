@@ -4,6 +4,7 @@
   const buttons = document.querySelectorAll(".audience-btn");
   const humanPanel = document.querySelector('[data-audience-panel="human"]');
   const agentPanel = document.querySelector('[data-audience-panel="agent"]');
+  const tocPanels = document.querySelectorAll("[data-audience-toc]");
 
   function setAudience(audience) {
     const value = audience === "agent" ? "agent" : "human";
@@ -15,6 +16,9 @@
     });
     humanPanel?.classList.toggle("hidden", value !== "human");
     agentPanel?.classList.toggle("hidden", value !== "agent");
+    tocPanels.forEach((panel) => {
+      panel.classList.toggle("hidden", panel.dataset.audienceToc !== value);
+    });
     try {
       localStorage.setItem(STORAGE_KEY, value);
     } catch {

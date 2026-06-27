@@ -171,7 +171,6 @@ On an existing trusted device, create a one-use token:
 ```bash
 pasta pair grant create \
   --token-ttl 10m \
-  --device-ttl 24h \
   --uses 1 \
   --label modal-smoke \
   --json
@@ -186,7 +185,7 @@ export PASTA_HOME="${RUNNER_TEMP:-/tmp}/pasta"
 pasta pair join --token "$PASTA_JOIN_TOKEN" --device-name "modal-${MODAL_TASK_ID:-sandbox}"
 ```
 
-The token TTL controls how long the token may be redeemed. It defaults to 10 minutes and is overridable with `--token-ttl`. The device TTL controls when the registered sandbox device is revoked. It defaults to 24 hours and starts at redemption time, which matches Modal-style sandboxes that may live for a day.
+The token TTL controls how long the token may be redeemed. It defaults to 10 minutes and is overridable with `--token-ttl`. By default, the registered device has no revocation TTL and remains trusted until manual revocation. Add `--device-ttl 24h` when you want a Modal-style sandbox device to auto-revoke after its expected lifetime; the device TTL starts at redemption time.
 
 Cloudflare receives only grant metadata, a redemption verifier, and a sealed group-key grant. It never receives the raw group key or the seal secret needed to decrypt that grant.
 

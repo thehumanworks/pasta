@@ -87,9 +87,9 @@ The Worker rejects requests outside a **5-minute** timestamp window, with bad bo
 Join grants are for CI and sandbox devices. A trusted device creates a high-entropy token with two clocks:
 
 - Token TTL: default 10 minutes, maximum 24 hours. Controls redemption.
-- Device TTL: default 24 hours, maximum 30 days. Controls automatic revocation of the joined device.
+- Device TTL: default none, maximum 30 days when set. Controls optional automatic revocation of the joined device.
 
-The joined device's expiry is calculated at redemption time. Worker auth treats `device_expires_at` as real revocation: once expired, the next valid signed request marks the device row revoked and is rejected before clipboard operations run.
+When a device TTL is set, the joined device's expiry is calculated at redemption time. Worker auth treats `device_expires_at` as real revocation: once expired, the next valid signed request marks the device row revoked and is rejected before clipboard operations run. Without a device TTL, `device_expires_at` is null and the joined device remains trusted until explicit revocation.
 
 <!-- @agent -->
 ## Source of truth
@@ -110,7 +110,7 @@ LARGE_PAYLOAD_MAX_BYTES = 50 * 1024 * 1024
 MAX_OPEN_PAIRING_SESSIONS = 5
 JOIN_GRANT_TOKEN_TTL_MS = 10 * 60 * 1000
 JOIN_GRANT_TOKEN_TTL_MAX_MS = 24 * 60 * 60 * 1000
-JOIN_GRANT_DEVICE_TTL_MS = 24 * 60 * 60 * 1000
+JOIN_GRANT_DEVICE_TTL_MS = null
 JOIN_GRANT_DEVICE_TTL_MAX_MS = 30 * 24 * 60 * 60 * 1000
 JOIN_GRANT_MAX_USES = 10
 DEFAULT_HISTORY_LIMIT = 20
@@ -156,7 +156,7 @@ interface PairingGrantCreateRequest {
   sealedGroupKey: string;
   keyVersion: number;
   tokenExpiresAt: number;
-  deviceTtlMs: number;
+  deviceTtlMs: number | null;
   maxUses: number;
 }
 ```
@@ -172,9 +172,9 @@ interface PairingGrantRedeemRequest extends DevicePublicKeys {
 }
 ```
 
-`PairingGrantRedeemResponse` includes `accountId`, `routingId`, `deviceId`, `sealedGroupKey`, `keyVersion`, `deviceExpiresAt`, and `redeemedAt`.
+`PairingGrantRedeemResponse` includes `accountId`, `routingId`, `deviceId`, `sealedGroupKey`, `keyVersion`, nullable `deviceExpiresAt`, and `redeemedAt`.
 
-Worker redemption must atomically check expiry/use count/hash and insert the device with `device_expires_at = now + device_ttl_ms`.
+Worker redemption must atomically check expiry/use count/hash and insert the device with `device_expires_at = NULL` when `device_ttl_ms` is null, otherwise `now + device_ttl_ms`.
 
 ## Canonical request helper
 

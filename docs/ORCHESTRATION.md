@@ -140,7 +140,7 @@ For each goal:
 - Backend: Workers integration tests prove signed auth, D1 registry, DO sequencing, no plaintext storage, pairing, revoke, and retention alarms.
 - CLI: local text copy/paste/pull works with mock and real backend paths.
 - Pairing: two clean device profiles can pair without typing a durable account ID or high-entropy secret.
-- CI pairing: a clean noninteractive profile can join with `PASTA_JOIN_TOKEN`, use the clipboard before `device_expires_at`, and fail with revoked-device auth after expiry.
+- CI pairing: a clean noninteractive profile can join with `PASTA_JOIN_TOKEN`; default joins remain trusted until explicit revocation, while joins created with `--device-ttl` use the clipboard before `device_expires_at` and fail with revoked-device auth after expiry.
 - Distribution: `bunx --bun -p github:thehumanworks/pasta pasta --version` works from a clean cache after public repo/package shape exists.
 - Cross-platform: macOS, Linux, Windows smoke at least `--version`, `doctor`, and the supported clipboard adapter path.
 

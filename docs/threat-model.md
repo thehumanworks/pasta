@@ -39,7 +39,7 @@
 - Pairing requires existing-device approval and X25519-wrapped group-key grants.
 - Pairing short codes are stored hashed, expire, and can be consumed once.
 - Noninteractive join grants require signed trusted-device creation, high-entropy token redemption, short token TTL, use limits, and token-sealed group-key grants that Cloudflare cannot decrypt.
-- Devices created by join grants carry `device_expires_at`; auth converts expiry into revoked state and rejects the request before clipboard operations.
+- Devices created by join grants can carry `device_expires_at`; auth converts expiry into revoked state and rejects the request before clipboard operations.
 - Revoked devices cannot publish, pull, approve, or receive new wrapped keys.
 
 ## Accepted Leakage
