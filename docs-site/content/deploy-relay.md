@@ -11,7 +11,7 @@ nav_order: 11
 | Resource | Purpose |
 | --- | --- |
 | D1 `pasta-registry` | Accounts, devices, pairing, nonces |
-| DO `ClipboardSpace` | Clip sequence, history, wrapped keys |
+| DO `ClipboardSpace` | Clip ids, display sequence, history, wrapped keys |
 | R2 `pasta-blobs` | Encrypted files |
 
 ## Deploy

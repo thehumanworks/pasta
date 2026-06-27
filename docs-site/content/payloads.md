@@ -56,10 +56,10 @@ Run `pasta payload-plan` for the live JSON contract.
 ## R2 key format
 
 ```
-spaces/{routing_id}/clips/{seq}/{payload_id}
+spaces/{routing_id}/clips/{clip_id}/{payload_id}
 ```
 
-`payload_id` is random base64url — never derived from filename or content hash.
+`payload_id` is random base64url — never derived from filename or content hash. `clip_id` is the stable clip identity; `seq` is only a gap-free display number.
 
 ## Retention
 
@@ -87,8 +87,8 @@ LARGE_PAYLOAD_MAX_BYTES = 50 * 1024 * 1024
 3. `POST /v1/files`
 
 `paste` for file clips:
-1. Resolve seq from arg or `GET /v1/clips/latest`
-2. `GET /v1/files/:seq` → `{ clip, ciphertext }`
+1. Resolve display seq from history or use `GET /v1/clips/latest`
+2. `GET /v1/files/:clipId` → `{ clip, ciphertext }`
 3. `decryptStoredBytes` → `Bun.write(out ?? originalName, bytes)`
 
 ## Image path
@@ -100,7 +100,7 @@ LARGE_PAYLOAD_MAX_BYTES = 50 * 1024 * 1024
 ## Worker file upload sequence
 
 1. Validate signed `EncryptedClip` envelope
-2. DO reserves metadata + assigns seq + r2 key
+2. DO reserves metadata + assigns display seq + clipId-based r2 key
 3. Worker writes encrypted bytes to R2 (`env.BLOBS`)
 4. R2 failure → rollback DO row
 5. Success → retention alarm + 201 `{ clip }`

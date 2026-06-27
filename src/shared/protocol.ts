@@ -59,13 +59,13 @@ export const PROTOCOL_ENDPOINTS: ProtocolEndpoint[] = [
     path: "/v1/clips",
     auth: "device-signature",
     request: "encrypted text envelope and metadata",
-    response: "assigned sequence and stored clip metadata",
+    response: "stored clip metadata with gap-free display sequence",
     mutation: "Durable Object clips insert"
   },
   {
     command: "paste",
     method: "GET",
-    path: "/v1/clips/latest or /v1/clips/:seq",
+    path: "/v1/clips/latest or /v1/clips/:clipId",
     auth: "device-signature",
     request: "empty signed request",
     response: "opaque encrypted envelope and metadata",
@@ -76,16 +76,16 @@ export const PROTOCOL_ENDPOINTS: ProtocolEndpoint[] = [
     method: "GET",
     path: "/v1/clips/history",
     auth: "device-signature",
-    request: "before/limit query",
+    request: "before clipId/limit query",
     response: "ordered encrypted clip metadata",
     mutation: "D1 device last_seen_at"
   },
   {
     command: "history delete",
     method: "DELETE",
-    path: "/v1/clips/:seq",
+    path: "/v1/clips/:clipId",
     auth: "device-signature",
-    request: "selected sequence",
+    request: "selected clipId",
     response: "delete count and deleted object count",
     mutation: "Durable Object clip row delete, optional R2 object delete"
   },

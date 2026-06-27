@@ -27,6 +27,7 @@ import {
   JOIN_GRANT_TOKEN_TTL_MS,
   LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES,
   LARGE_PAYLOAD_MAX_BYTES,
+  MAX_HISTORY_LIMIT,
   PASTA_VERSION,
   PROTOCOL_ENDPOINTS,
   type BootstrapRequest,
@@ -233,7 +234,7 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
           {
             inlineThresholdBytes: LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES,
             maxBytes: LARGE_PAYLOAD_MAX_BYTES,
-            r2KeyFormat: "spaces/{routing_id}/clips/{seq}/{payload_id}",
+            r2KeyFormat: "spaces/{routing_id}/clips/{clip_id}/{payload_id}",
             finalizeSemantics: "upload encrypted blob first, then signed finalize stores metadata in DO"
           },
           null,
@@ -363,11 +364,21 @@ async function pasteCommand(
   const out = option(argv, "--out");
   const config = await readConfig(paths.configPath);
   const client = clientFor(config, secrets, deps);
-  const seq = option(argv, "--seq");
-  if (mode === "file" && seq) {
-    const payload = await fetchFilePayload(config, secrets, client, Number.parseInt(seq, 10));
+  const seqArg = option(argv, "--seq");
+  const selectedSeq = seqArg ? parseSeq(seqArg) : null;
+  if (seqArg && selectedSeq === null) {
+    io.stderr("--seq must be a positive integer\n");
+    return ExitCode.usage;
+  }
+  if (mode === "file" && selectedSeq !== null) {
+    const selected = await resolveClipBySeq(client, selectedSeq);
+    if (!selected) {
+      io.stderr(`no history entry ${selectedSeq}\n`);
+      return ExitCode.unavailable;
+    }
+    const payload = await fetchFilePayload(config, secrets, client, selected.clipId);
     if (payload.clip.payloadKind !== "file") {
-      io.stderr(`latest clip is ${payload.clip.payloadKind}, not file\n`);
+      io.stderr(`history entry ${selectedSeq} is ${payload.clip.payloadKind}, not file\n`);
       return ExitCode.unavailable;
     }
     if (clipIsDirectoryBundle(payload.clip)) {
@@ -377,9 +388,9 @@ async function pasteCommand(
     }
     return ExitCode.ok;
   }
-  const clip = await fetchClip(client, seq);
+  const clip = await fetchClip(client, selectedSeq);
   if (!clip) {
-    io.stderr(`no remote ${mode === "auto" ? "clip" : `${mode} clip`}\n`);
+    io.stderr(selectedSeq === null ? `no remote ${mode === "auto" ? "clip" : `${mode} clip`}\n` : `no history entry ${selectedSeq}\n`);
     return ExitCode.unavailable;
   }
   if (mode === "image" && !clipIsImageLike(clip)) {
@@ -405,7 +416,7 @@ async function pasteCommand(
   }
 
   const bytes = clip.storageKind === "r2" || !clip.ciphertext
-    ? (await fetchFilePayload(config, secrets, client, clip.seq)).bytes
+    ? (await fetchFilePayload(config, secrets, client, clip.clipId)).bytes
     : await decryptStoredBytes(config, secrets, clip);
   if (clipIsDirectoryBundle(clip)) {
     await unzipDirectoryBundle(bytes, out ?? await defaultOutputPath(config, secrets, clip));
@@ -423,12 +434,17 @@ async function pasteCommand(
   return ExitCode.ok;
 }
 
-async function fetchClip(client: ApiClient, seq: string | undefined): Promise<StoredClip | null> {
-  if (seq) {
-    const response = await client.request<{ clip: StoredClip }>("GET", `/v1/clips/${Number.parseInt(seq, 10)}`);
-    return response.clip;
+async function fetchClip(client: ApiClient, seq: number | null): Promise<StoredClip | null> {
+  if (seq !== null) {
+    const selected = await resolveClipBySeq(client, seq);
+    return selected ? fetchClipById(client, selected.clipId) : null;
   }
   const response = await client.request<{ clip: StoredClip | null }>("GET", "/v1/clips/latest");
+  return response.clip;
+}
+
+async function fetchClipById(client: ApiClient, clipId: string): Promise<StoredClip> {
+  const response = await client.request<{ clip: StoredClip }>("GET", `/v1/clips/${encodeURIComponent(clipId)}`);
   return response.clip;
 }
 
@@ -436,13 +452,34 @@ async function fetchFilePayload(
   config: PastaConfig,
   secrets: SecretStore,
   client: ApiClient,
-  seq: number
+  clipId: string
 ): Promise<{ clip: StoredClip; bytes: Uint8Array }> {
-  const response = await client.request<{ clip: StoredClip; ciphertext: string }>("GET", `/v1/files/${seq}`);
+  const response = await client.request<{ clip: StoredClip; ciphertext: string }>("GET", `/v1/files/${encodeURIComponent(clipId)}`);
   return {
     clip: response.clip,
     bytes: await decryptStoredBytes(config, secrets, { ...response.clip, ciphertext: response.ciphertext })
   };
+}
+
+async function resolveClipBySeq(client: ApiClient, seq: number): Promise<StoredClip | null> {
+  let beforeClipId: string | null = null;
+  for (let page = 0; page < 1_000; page += 1) {
+    const clips = await fetchHistoryPage(client, beforeClipId);
+    if (clips.length === 0) return null;
+    const found = clips.find((clip) => clip.seq === seq);
+    if (found) return found;
+    const newest = clips[0]!.seq;
+    const oldest = clips[clips.length - 1]!.seq;
+    if (seq > newest || seq > oldest) return null;
+    beforeClipId = clips[clips.length - 1]!.clipId;
+  }
+  throw new Error("history resolution exceeded page limit");
+}
+
+async function fetchHistoryPage(client: ApiClient, beforeClipId: string | null): Promise<StoredClip[]> {
+  const before = beforeClipId ? `&before=${encodeURIComponent(beforeClipId)}` : "";
+  const response = await client.request<{ clips: StoredClip[] }>("GET", `/v1/clips/history?limit=${MAX_HISTORY_LIMIT}${before}`);
+  return response.clips;
 }
 
 async function bootstrap(
@@ -571,12 +608,17 @@ async function historyCommand(
   if (argv[0] === "paste") {
     const seq = parseSeq(argv[1]);
     if (seq === null) return ExitCode.usage;
-    const response = await client.request<{ clip: StoredClip }>("GET", `/v1/clips/${seq}`);
-    if (response.clip.payloadKind !== "text") {
+    const selected = await resolveClipBySeq(client, seq);
+    if (!selected) {
+      io.stderr(`no history entry ${seq}\n`);
+      return ExitCode.unavailable;
+    }
+    const clip = await fetchClipById(client, selected.clipId);
+    if (clip.payloadKind !== "text") {
       io.stderr(`history paste only supports text clips; use pasta paste --seq ${seq} --out <path>\n`);
       return ExitCode.usage;
     }
-    const plaintext = await decryptStored(config, secrets, response.clip);
+    const plaintext = await decryptStored(config, secrets, clip);
     if (argv.includes("--clipboard")) {
       await clipboard.writeText(plaintext);
     } else {
@@ -587,7 +629,12 @@ async function historyCommand(
   if (argv[0] === "delete") {
     const seq = parseSeq(argv[1]);
     if (seq === null) return ExitCode.usage;
-    const response = await client.request<{ deleted: number; deletedObjects: number }>("DELETE", `/v1/clips/${seq}`);
+    const selected = await resolveClipBySeq(client, seq);
+    if (!selected) {
+      io.stderr(`no history entry ${seq}\n`);
+      return ExitCode.unavailable;
+    }
+    const response = await client.request<{ deleted: number; deletedObjects: number }>("DELETE", `/v1/clips/${encodeURIComponent(selected.clipId)}`);
     if (response.deleted === 0) {
       io.stderr(`no history entry ${seq}\n`);
       return ExitCode.unavailable;

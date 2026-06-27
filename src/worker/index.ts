@@ -92,9 +92,9 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === "POST" && url.pathname === "/v1/files") {
     return publishFile(env, auth, parseJson<EncryptedClip>(bodyText));
   }
-  const fileMatch = url.pathname.match(/^\/v1\/files\/(\d+)$/u);
+  const fileMatch = url.pathname.match(/^\/v1\/files\/([^/]+)$/u);
   if (request.method === "GET" && fileMatch?.[1]) {
-    return getFile(env, auth, Number.parseInt(fileMatch[1], 10));
+    return getFile(env, auth, decodeURIComponent(fileMatch[1]));
   }
   if (request.method === "GET" && url.pathname === "/v1/clips/latest") {
     const latest = await space(env, auth).getLatest(actorOf(auth));
@@ -102,18 +102,18 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   if (request.method === "GET" && url.pathname === "/v1/clips/history") {
     const limit = clampHistoryLimit(url.searchParams.get("limit"));
-    const before = url.searchParams.get("before");
-    const beforeSeq = before ? Number.parseInt(before, 10) : null;
-    const history = await space(env, auth).listHistory(actorOf(auth), limit, Number.isSafeInteger(beforeSeq) ? beforeSeq : null);
+    const beforeClipId = url.searchParams.get("before");
+    const history = await space(env, auth).listHistory(actorOf(auth), limit, beforeClipId);
     return json({ clips: history });
   }
-  const clipMatch = url.pathname.match(/^\/v1\/clips\/(\d+)$/u);
+  const clipMatch = url.pathname.match(/^\/v1\/clips\/([^/]+)$/u);
   if (request.method === "DELETE" && clipMatch?.[1]) {
-    const result = await space(env, auth).deleteHistoryClip(actorOf(auth), Number.parseInt(clipMatch[1], 10));
-    return json({ seq: Number.parseInt(clipMatch[1], 10), ...result });
+    const clipId = decodeURIComponent(clipMatch[1]);
+    const result = await space(env, auth).deleteHistoryClip(actorOf(auth), clipId);
+    return json({ clipId, ...result });
   }
   if (request.method === "GET" && clipMatch?.[1]) {
-    const clip = await space(env, auth).getClip(actorOf(auth), Number.parseInt(clipMatch[1], 10));
+    const clip = await space(env, auth).getClip(actorOf(auth), decodeURIComponent(clipMatch[1]));
     return clip ? json({ clip }) : json({ error: "not_found" }, 404);
   }
   if (request.method === "GET" && url.pathname === "/v1/devices") {
@@ -200,7 +200,7 @@ async function publishFile(env: Env, auth: AuthContext, clip: EncryptedClip): Pr
       }
     });
   } catch (error) {
-    await space(env, auth).deleteClip(actor, stored.seq, stored.clipId);
+    await space(env, auth).deleteClip(actor, stored.clipId);
     throw error;
   }
   if (stored.expiresAt !== null) {
@@ -209,8 +209,8 @@ async function publishFile(env: Env, auth: AuthContext, clip: EncryptedClip): Pr
   return json({ clip: stored }, 201);
 }
 
-async function getFile(env: Env, auth: AuthContext, seq: number): Promise<Response> {
-  const clip = await space(env, auth).getClip(actorOf(auth), seq);
+async function getFile(env: Env, auth: AuthContext, clipId: string): Promise<Response> {
+  const clip = await space(env, auth).getClip(actorOf(auth), clipId);
   if (!clip || !clip.r2Key) return json({ error: "not_found" }, 404);
   const object = await env.BLOBS.get(clip.r2Key);
   if (!object) return json({ error: "blob_missing" }, 404);
@@ -545,6 +545,7 @@ async function rememberNonce(env: Env, accountId: string, deviceId: string, nonc
 
 function validateClip(auth: AuthContext, clip: EncryptedClip): void {
   requireString(clip.clipId, "clipId");
+  requireClipId(clip.clipId);
   requireString(clip.originDeviceId, "originDeviceId");
   requireString(clip.mime, "mime");
   requireString(clip.nonce, "nonce");
@@ -562,6 +563,7 @@ function validateClip(auth: AuthContext, clip: EncryptedClip): void {
 
 function validateFileClip(auth: AuthContext, clip: EncryptedClip): void {
   requireString(clip.clipId, "clipId");
+  requireClipId(clip.clipId);
   requireString(clip.originDeviceId, "originDeviceId");
   requireString(clip.mime, "mime");
   requireString(clip.nonce, "nonce");
@@ -608,6 +610,12 @@ function parseJson<T>(bodyText: string): T {
 function requireString(value: unknown, name: string): asserts value is string {
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`${name} is required`);
+  }
+}
+
+function requireClipId(value: string): void {
+  if (!/^clip_[A-Za-z0-9_-]+$/u.test(value)) {
+    throw new Error("clipId must be clip_ base64url");
   }
 }
 

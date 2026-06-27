@@ -291,11 +291,17 @@ describe("CLI", () => {
       }
       if (path === "/v1/clips/latest") return { clip: clips.at(-1) ?? null };
       if (path.startsWith("/v1/clips/history")) return { clips: [...clips].reverse() };
-      if (method === "DELETE" && path === "/v1/clips/1") {
-        const deleted = clips.splice(0, 1).length;
+      if (method === "DELETE" && path.startsWith("/v1/clips/")) {
+        const clipId = decodeURIComponent(path.split("/").at(-1)!);
+        const index = clips.findIndex((clip) => clip.clipId === clipId);
+        const deleted = index === -1 ? 0 : clips.splice(index, 1).length;
+        for (let clipIndex = 0; clipIndex < clips.length; clipIndex += 1) clips[clipIndex]!.seq = clipIndex + 1;
         return { deleted, deletedObjects: 0 };
       }
-      if (path === "/v1/clips/1") return { clip: clips[0] };
+      if (method === "GET" && path.startsWith("/v1/clips/")) {
+        const clipId = decodeURIComponent(path.split("/").at(-1)!);
+        return { clip: clips.find((clip) => clip.clipId === clipId) };
+      }
       throw new Error(`unexpected ${method} ${path}`);
     });
     const clipboard = new MemoryClipboardAdapter("alpha");
@@ -324,8 +330,11 @@ describe("CLI", () => {
     expect(await runCli(["daemon", "--once"], deps)).toBe(0);
     expect(JSON.parse(output.join("")).published).toBe(0);
     output.length = 0;
+    const deletedClipId = clips[0]!.clipId;
     expect(await runCli(["history", "delete", "1"], deps)).toBe(0);
     expect(output.join("")).toContain("deleted 1");
+    expect(client.calls.some((call) => call.method === "DELETE" && call.path === `/v1/clips/${deletedClipId}`)).toBe(true);
+    expect(client.calls.some((call) => call.method === "DELETE" && call.path === "/v1/clips/1")).toBe(false);
   });
 
   it("copies and pastes inline image clipboard bytes", async () => {
@@ -373,7 +382,7 @@ describe("CLI", () => {
     await writeConfig(config, paths.configPath);
     let nextSeq = 1;
     const clips: StoredClip[] = [];
-    const storedFiles = new Map<number, { clip: StoredClip; ciphertext: string }>();
+    const storedFiles = new Map<string, { clip: StoredClip; ciphertext: string }>();
     const client = new MockApiClient(({ method, path, body }) => {
       if (method === "POST" && path === "/v1/clips") {
         const clip = { ...(body as StoredClip), seq: nextSeq++ };
@@ -382,15 +391,15 @@ describe("CLI", () => {
       }
       if (method === "POST" && path === "/v1/files") {
         const source = body as StoredClip;
-        const clip = { ...source, seq: nextSeq++, ciphertext: "", storageKind: "r2" as const, r2Key: `spaces/test/${nextSeq}/payload` };
+        const clip = { ...source, seq: nextSeq++, ciphertext: "", storageKind: "r2" as const, r2Key: `spaces/test/clips/${source.clipId}/payload` };
         clips.push(clip);
-        storedFiles.set(clip.seq, { clip, ciphertext: source.ciphertext });
+        storedFiles.set(clip.clipId, { clip, ciphertext: source.ciphertext });
         return { clip };
       }
       if (path === "/v1/clips/latest") return { clip: clips.at(-1) ?? null };
       if (path.startsWith("/v1/clips/history")) return { clips: [...clips].reverse() };
-      if (path.startsWith("/v1/clips/")) return { clip: clips.find((clip) => clip.seq === Number(path.split("/").at(-1))) };
-      if (method === "GET" && path.startsWith("/v1/files/")) return storedFiles.get(Number(path.split("/").at(-1)));
+      if (path.startsWith("/v1/clips/")) return { clip: clips.find((clip) => clip.clipId === decodeURIComponent(path.split("/").at(-1)!)) };
+      if (method === "GET" && path.startsWith("/v1/files/")) return storedFiles.get(decodeURIComponent(path.split("/").at(-1)!));
       throw new Error(`unexpected ${method} ${path}`);
     });
     const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
@@ -501,14 +510,15 @@ describe("CLI", () => {
 
       output.length = 0;
       expect(await runCli(["copy", dirPath], deps)).toBe(0);
-      const dirSeq = clips.at(-1)?.seq;
+      const dirClip = clips.at(-1)!;
+      const dirSeq = dirClip.seq;
       expect(clips.at(-1)?.payloadKind).toBe("file");
       expect(clips.at(-1)?.mime).toBe(DIRECTORY_BUNDLE_MIME);
       expect(JSON.stringify(clips.at(-1))).not.toContain(paths.home);
       expect(JSON.stringify(clips.at(-1))).not.toContain("project-folder");
       expect(JSON.stringify(clips.at(-1))).not.toContain("child.txt");
       expect(output.join("")).toContain("published directory");
-      const encryptedDirectory = storedFiles.get(dirSeq!)!;
+      const encryptedDirectory = storedFiles.get(dirClip.clipId)!;
       const zipBytes = decryptBytesClip(groupKey, config.accountId, config.routingId, { ...encryptedDirectory.clip, ciphertext: encryptedDirectory.ciphertext });
       expect(Array.from(zipBytes.slice(0, 4))).toEqual([0x50, 0x4b, 0x03, 0x04]);
       expect(await runCli(["paste"], deps)).toBe(0);
@@ -537,12 +547,16 @@ describe("CLI", () => {
     const client = new MockApiClient(({ method, path, body }) => {
       if (method === "POST" && path === "/v1/files") {
         const source = body as StoredClip;
-        const stored = { ...source, seq: storedFiles.length + 1, ciphertext: "", storageKind: "r2" as const, r2Key: `spaces/test/${storedFiles.length + 1}/payload` };
+        const stored = { ...source, seq: storedFiles.length + 1, ciphertext: "", storageKind: "r2" as const, r2Key: `spaces/test/clips/${source.clipId}/payload` };
         storedFiles.push({ clip: stored, ciphertext: source.ciphertext });
         return { clip: stored };
       }
       if (path === "/v1/clips/latest") return { clip: storedFiles.at(-1)?.clip ?? null };
-      if (method === "GET" && path.startsWith("/v1/files/")) return storedFiles[Number(path.split("/").at(-1)) - 1];
+      if (path.startsWith("/v1/clips/history")) return { clips: storedFiles.map((entry) => entry.clip).reverse() };
+      if (method === "GET" && path.startsWith("/v1/files/")) {
+        const clipId = decodeURIComponent(path.split("/").at(-1)!);
+        return storedFiles.find((entry) => entry.clip.clipId === clipId);
+      }
       throw new Error(`unexpected ${method} ${path}`);
     });
     const small = join(paths.home, "small.bin");
@@ -613,7 +627,7 @@ describe("CLI", () => {
     };
     expect(plan.inlineThresholdBytes).toBe(512 * 1024);
     expect(plan.maxBytes).toBe(50 * 1024 * 1024);
-    expect(plan.r2KeyFormat).toBe("spaces/{routing_id}/clips/{seq}/{payload_id}");
+    expect(plan.r2KeyFormat).toBe("spaces/{routing_id}/clips/{clip_id}/{payload_id}");
     expect(plan.finalizeSemantics).toContain("signed finalize");
   });
 

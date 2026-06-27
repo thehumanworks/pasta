@@ -82,6 +82,7 @@ flowchart LR
 15. [Native iOS publish surfaces](docs/goals/15-ios-publish-surfaces.md)
 16. [Native iOS binary and File Provider handoff](docs/goals/16-ios-binary-file-provider-handoff.md)
 17. [Native iOS integration and release readiness](docs/goals/17-ios-integration-release-readiness.md)
+18. [ClipId identity and gap-free sequence metadata](docs/goals/18-clipid-sequence-refactor.md)
 
 ## Native iOS Expansion
 

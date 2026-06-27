@@ -87,8 +87,8 @@ DO SQLite:
 
 ```sql
 clips(
-  seq INTEGER PRIMARY KEY AUTOINCREMENT,
-  clip_id TEXT NOT NULL UNIQUE,
+  clip_id TEXT PRIMARY KEY,
+  seq INTEGER NOT NULL UNIQUE,
   origin_device_id TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   expires_at INTEGER,
@@ -124,7 +124,7 @@ Core Worker endpoints:
 - `POST /v1/clips`
 - `GET /v1/clips/latest`
 - `GET /v1/clips/history?before=&limit=`
-- `GET /v1/clips/:seq`
+- `GET /v1/clips/:clipId`
 - `GET /v1/devices`
 - `POST /v1/devices/:deviceId/revoke`
 - Optional `GET /v1/events`

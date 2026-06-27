@@ -106,7 +106,7 @@ argv[0] routes to handlers. Inject deps via `CliDeps`: `io`, `paths`, `secrets`,
 | `copy` text/clipboard image | `POST /v1/clips` | signed |
 | `copy <path>` file/image path | `POST /v1/files` | signed |
 | `paste`, `history` | `GET /v1/clips/*` | signed |
-| `paste` file payload | `GET /v1/files/:seq` | signed |
+| `paste` file payload | `GET /v1/files/:clipId` | signed |
 | `pair request` | `POST /v1/pairing/open` | none |
 | `devices approve` | `POST /v1/pairing/approve` | signed |
 | `pair consume` | `POST /v1/pairing/consume` | none |
@@ -124,14 +124,14 @@ Full table: `PROTOCOL_ENDPOINTS` in `src/shared/protocol.ts` or `pasta protocol`
 ```
 plaintext → encryptTextClip|encryptBytesClip (shared/crypto.ts)
          → client.request POST
-         → StoredClip with seq
+         → StoredClip with clipId and display seq
 ```
 
 ## Pull pipeline
 
 ```
-GET latest|seq → StoredClip → decryptTextClip|decryptBytesClip
-              → stdout | clipboard.write*
+GET latest|clipId → StoredClip → decryptTextClip|decryptBytesClip
+                  → stdout | clipboard.write*
 ```
 
 ## Pairing state machine

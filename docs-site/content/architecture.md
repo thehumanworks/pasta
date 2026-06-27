@@ -44,7 +44,7 @@ flowchart LR
 
 **One Durable Object per clipboard space.** Each encrypted space has a `routing_id` that selects its DO instance. The routing id is internal — not a user-facing secret, but it partitions storage after reset.
 
-**Registry vs state.** D1 holds accounts, devices, pairing sessions, and request nonces. The DO holds append-only clip metadata, sequence numbers, and wrapped group-key grants.
+**Registry vs state.** D1 holds accounts, devices, pairing sessions, and request nonces. The DO holds encrypted clip metadata, stable clip ids, gap-free display sequence numbers, and wrapped group-key grants.
 
 **Inline vs R2.** Text and small payloads live inline in the DO. Files and large binary payloads go to R2 as encrypted bytes; the DO stores pointers and metadata only.
 
@@ -54,12 +54,12 @@ flowchart LR
 2. Client encrypts with the local group key; builds AAD from account, routing, clip metadata.
 3. Signed `POST /v1/clips` hits the Worker.
 4. Worker verifies signature, nonce, timestamp, device status.
-5. DO assigns monotonic `seq`, stores ciphertext envelope.
+5. DO stores the ciphertext envelope under `clipId` and assigns display `seq`.
 6. Response returns metadata (still ciphertext on the wire from Cloudflare's perspective — the body is encrypted).
 
 ## Request flow: paste
 
-1. Signed `GET /v1/clips/latest` (or `/v1/clips/:seq`).
+1. Signed `GET /v1/clips/latest` (or `/v1/clips/:clipId` after resolving a display sequence from history).
 2. Worker returns stored envelope.
 3. CLI decrypts locally with group key; writes stdout or OS clipboard.
 4. Optional: records hash in config so daemon won't echo the paste back upstream.
@@ -97,7 +97,7 @@ Routes `/v1/*` paths. Auth middleware for signed routes:
 ## ClipboardSpace DO (`src/worker/clipboard-space.ts`)
 
 SQLite-backed DO state:
-- Clip rows: seq, ciphertext (inline) or r2 pointer, AAD hash, payload kind, expiry
+- Clip rows: clipId, display seq, ciphertext (inline) or r2 pointer, AAD hash, payload kind, expiry
 - Wrapped group keys per device (pairing)
 - Retention alarms for expired clips + R2 cleanup
 
@@ -111,7 +111,7 @@ SQLite-backed DO state:
 
 ## File upload path
 
-`POST /v1/files` → DO reserves seq + r2 key → Worker writes encrypted bytes to R2 → rollback DO row on R2 failure → schedule retention alarm.
+`POST /v1/files` → DO reserves clipId/display seq + clipId-based R2 key → Worker writes encrypted bytes to R2 → rollback DO row on R2 failure → schedule retention alarm.
 
 ## Tests
 

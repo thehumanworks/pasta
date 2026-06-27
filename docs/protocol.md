@@ -9,8 +9,8 @@ Pasta uses a central HTTPS relay only. Devices encrypt clipboard payloads locall
 - `account_id`: stable account registry key stored in D1.
 - `routing_id`: internal Durable Object routing name. It is not secret and is not an auth boundary.
 - `device_id`: device-scoped identifier registered under an account.
-- `clip_id`: client-generated opaque clip identifier.
-- `seq`: Durable Object assigned append-only sequence number.
+- `clip_id`: client-generated opaque clip identifier. This is the stable identity for clip/file routes, Durable Object rows, R2 keys, and client caches.
+- `seq`: gap-free display metadata assigned by the Durable Object. It is always `1..N`, higher means newer, and remaining rows are renumbered after delete or retention cleanup.
 
 ## Crypto
 
@@ -65,10 +65,10 @@ The Worker rejects stale timestamps outside five minutes, bad body hashes, unkno
 | CLI command | Method/path | Auth | Request | Response | Mutation |
 | --- | --- | --- | --- | --- | --- |
 | `bootstrap` | `POST /v1/accounts/bootstrap` | none | first-device public keys, account/routing/device metadata | registered account/device | D1 `accounts`, `devices` |
-| `copy` | `POST /v1/clips` or `POST /v1/files` | device signature | encrypted text envelope, image/file bytes, or client-zipped directory bundle | assigned `seq` and clip metadata | Durable Object `clips`, optional R2 object |
-| `paste` | `GET /v1/clips/latest` or `/v1/clips/:seq` | device signature | empty signed request | encrypted clip | D1 `last_seen_at` |
-| `history` | `GET /v1/clips/history` | device signature | `before`, `limit` query | encrypted clip list | D1 `last_seen_at` |
-| `history delete` | `DELETE /v1/clips/:seq` | device signature | selected sequence | delete count and deleted object count | DO clip row delete, optional R2 object delete |
+| `copy` | `POST /v1/clips` or `POST /v1/files` | device signature | encrypted text envelope, image/file bytes, or client-zipped directory bundle | clip metadata with display `seq` | Durable Object `clips`, optional R2 object |
+| `paste` | `GET /v1/clips/latest` or `/v1/clips/:clipId` | device signature | empty signed request | encrypted clip | D1 `last_seen_at` |
+| `history` | `GET /v1/clips/history` | device signature | `before` clipId, `limit` query | encrypted clip list with display `seq` | D1 `last_seen_at` |
+| `history delete` | `DELETE /v1/clips/:clipId` | device signature | selected clip id | delete count and deleted object count | DO clip row delete, optional R2 object delete |
 | `pair request` | `POST /v1/pairing/open` | none | temporary session, short-code hash, new-device public keys | pending session | D1 `pairing_sessions` |
 | `devices approve` | `POST /v1/pairing/approve` | device signature | short-code hash, wrapped group-key grant | approved new device | D1 `devices`, D1 pairing row, DO `wrapped_keys` |
 | `pair consume` | `POST /v1/pairing/consume` | none | session id and short-code hash | wrapped group key once | D1 `consumed_at` |
@@ -112,3 +112,7 @@ By default, a joined device has `device_expires_at = NULL` and remains trusted u
 ## Reset
 
 Reset creates a new encrypted space and local group key. Old remote ciphertext may remain until retention cleanup, but it is no longer reachable through the new `routing_id` and cannot be decrypted after local keys are deleted. Reset does not delete unrelated local secrets.
+
+## Clip Schema Replacement
+
+The current Durable Object clip schema is a clean replacement: `clip_id` is the primary key, `seq` is mutable display metadata, and old numeric clip/file URL shapes are not supported. Deploying this schema to an existing space drops the old clip table, so existing remote history becomes empty. Old R2 objects may remain as unreachable ciphertext until operator cleanup, but no plaintext or raw keys are exposed.

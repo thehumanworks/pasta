@@ -17,8 +17,8 @@ Protocol version aligns with **`pasta 0.1.7`**. Run `pasta protocol` for the liv
 | `account_id` | Stable account row in D1 |
 | `routing_id` | Selects Durable Object instance (not secret) |
 | `device_id` | Per-device registry entry |
-| `clip_id` | Client-generated opaque clip id |
-| `seq` | DO-assigned append-only sequence |
+| `clip_id` | Client-generated opaque clip id; stable route/storage/cache identity |
+| `seq` | Gap-free display metadata; `1..N`, higher is newer |
 
 ## Encryption
 
@@ -64,7 +64,7 @@ The Worker rejects requests outside a **5-minute** timestamp window, with bad bo
 | --- | --- | --- |
 | Bootstrap | `POST /v1/accounts/bootstrap` | None |
 | Publish clip | `POST /v1/clips` | Signed |
-| Latest / by seq | `GET /v1/clips/latest`, `/v1/clips/:seq` | Signed |
+| Latest / by id | `GET /v1/clips/latest`, `/v1/clips/:clipId` | Signed |
 | History | `GET /v1/clips/history` | Signed |
 | Open pairing | `POST /v1/pairing/open` | None |
 | Approve pairing | `POST /v1/pairing/approve` | Signed |
@@ -76,7 +76,7 @@ The Worker rejects requests outside a **5-minute** timestamp window, with bad bo
 | Revoke device | `POST /v1/devices/:id/revoke` | Signed |
 | Reset space | `POST /v1/reset` | Signed |
 | Upload file | `POST /v1/files` | Signed |
-| Download file | `GET /v1/files/:seq` | Signed |
+| Download file | `GET /v1/files/:clipId` | Signed |
 
 ## Reset semantics
 
@@ -123,7 +123,11 @@ MAX_HISTORY_LIMIT = 100
 
 Fields: `clipId`, `originDeviceId`, `createdAt`, `expiresAt`, `payloadKind` (`text`|`image`|`file`), `mime`, `byteLen`, `keyVersion`, `nonce`, `aadHash`, `ciphertext`, optional `storageKind`, `payloadId`, `r2Key`.
 
-`StoredClip` adds `seq`.
+`StoredClip` adds display `seq`. `clipId` remains the stable identity for API paths, R2 keys, and client caches.
+
+## Clip schema replacement
+
+The Worker uses the replacement Durable Object clip schema: `clip_id` is the primary key, `seq` is mutable display metadata, and old numeric clip/file URL shapes are intentionally unsupported. Deploying this schema clears existing DO clip history for a space. Old R2 objects may remain as unreachable ciphertext until operator cleanup.
 
 ## AAD construction
 

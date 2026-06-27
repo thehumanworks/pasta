@@ -98,7 +98,7 @@ For richer iOS presentation, Pasta stores additional display hints in encrypted 
 - `textFallback` when a user intentionally attaches one
 - `sourcePlatform` and optional `sourceApp`
 
-Cloudflare still sees only the existing routing metadata: kind, MIME, byte length, device, sequence, and timing.
+Cloudflare still sees only the existing routing metadata: kind, MIME, byte length, device, display sequence, and timing.
 
 ## Footguns
 
@@ -437,7 +437,7 @@ Do not store the group key or private keys in `UserDefaults`, app-group files, l
 2. Use `NSItemProvider` / Transferable loading for text, URL, image, file URL, or data.
 3. Normalize to Pasta payload kinds without exposing local paths:
    - encrypt basename/display name as metadata;
-   - keep Worker-visible metadata to kind, MIME, byte length, timing, device, sequence.
+   - keep Worker-visible metadata to kind, MIME, byte length, timing, device, display sequence.
 4. For large files, use extension-safe temporary files and background upload only when needed.
 5. Complete or fail the extension request with a concise result.
 
@@ -450,7 +450,7 @@ Implement narrow intents:
 - `OpenPastaHistoryIntent`
 - `SearchPastaHistoryIntent`
 
-Do not expose every app screen as an intent. Keep entities small: clip sequence, display title, kind, created time, and insertability.
+Do not expose every app screen as an intent. Keep entities small: clip id, display sequence, display title, kind, created time, and insertability.
 
 ## Binary and directory handling
 

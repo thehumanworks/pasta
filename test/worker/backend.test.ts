@@ -91,6 +91,55 @@ describe("Worker backend", () => {
     expect(JSON.stringify(dump)).toContain(clip.ciphertext);
   });
 
+  it("uses clipId routes and renumbers display sequences after delete and retention", async () => {
+    const device = await bootstrap();
+    const groupKey = generateGroupKey();
+    const publishText = async (label: string, expiresAt: number | null = null): Promise<StoredClip> => {
+      const clip = encryptTextClip({
+        accountId: device.accountId,
+        routingId: device.routingId,
+        originDeviceId: device.deviceId,
+        plaintext: label,
+        groupKey,
+        keyVersion: 1,
+        clipId: `clip_${label}`,
+        expiresAt
+      });
+      const response = await signedFetch(device, "POST", "/v1/clips", clip);
+      await expectStatus(response, 201);
+      return (await response.json() as { clip: StoredClip }).clip;
+    };
+
+    const one = await publishText("one");
+    const two = await publishText("two");
+    const three = await publishText("three");
+    expect([one.seq, two.seq, three.seq]).toEqual([1, 2, 3]);
+    await expectStatus(await signedFetch(device, "GET", `/v1/clips/${three.clipId}`), 200);
+    expect((await signedFetch(device, "GET", `/v1/clips/${three.seq}`)).status).toBe(404);
+
+    const deleted = await signedFetch(device, "DELETE", `/v1/clips/${two.clipId}`);
+    await expectStatus(deleted, 200);
+    expect(await deleted.json()).toMatchObject({ clipId: two.clipId, deleted: 1, deletedObjects: 0 });
+    const afterDelete = await (await signedFetch(device, "GET", "/v1/clips/history?limit=10")).json() as { clips: StoredClip[] };
+    expect(afterDelete.clips.map((clip) => [clip.clipId, clip.seq])).toEqual([
+      [three.clipId, 2],
+      [one.clipId, 1]
+    ]);
+
+    const cleanupNow = Date.now() + 60_000;
+    await publishText("expired", cleanupNow - 1);
+    const four = await publishText("four");
+    expect(four.seq).toBe(4);
+    const retention = await env.CLIPBOARD.getByName(device.routingId).runRetention(cleanupNow);
+    expect(retention).toMatchObject({ deletedClips: 1, deletedObjects: 0 });
+    const afterRetention = await (await signedFetch(device, "GET", "/v1/clips/history?limit=10")).json() as { clips: StoredClip[] };
+    expect(afterRetention.clips.map((clip) => [clip.clipId, clip.seq])).toEqual([
+      [four.clipId, 3],
+      [three.clipId, 2],
+      [one.clipId, 1]
+    ]);
+  });
+
   it("uploads and downloads file payloads through R2 with bounded sizes", async () => {
     const device = await bootstrap();
     const groupKey = generateGroupKey();
@@ -110,11 +159,11 @@ describe("Worker backend", () => {
     await expectStatus(publish, 201);
     const stored = await publish.json() as { clip: StoredClip };
     expect(stored.clip.storageKind).toBe("r2");
-    expect(stored.clip.r2Key).toContain(`/clips/${stored.clip.seq}/`);
+    expect(stored.clip.r2Key).toContain(`/clips/${stored.clip.clipId}/`);
     const dump = await env.CLIPBOARD.getByName(device.routingId).debugDump();
     expect(JSON.stringify(dump)).not.toContain(clip.ciphertext);
     expect(JSON.stringify(dump)).not.toContain("report.pdf");
-    const download = await signedFetch(device, "GET", `/v1/files/${stored.clip.seq}`);
+    const download = await signedFetch(device, "GET", `/v1/files/${stored.clip.clipId}`);
     await expectStatus(download, 200);
     const body = await download.json() as { clip: StoredClip; ciphertext: string };
     expect(decryptBytesClip(groupKey, device.accountId, device.routingId, { ...body.clip, ciphertext: body.ciphertext })).toEqual(medium);
@@ -136,17 +185,18 @@ describe("Worker backend", () => {
     const imageStored = await imagePublish.json() as { clip: StoredClip };
     expect(imageStored.clip.payloadKind).toBe("image");
     expect(imageStored.clip.storageKind).toBe("r2");
-    const imageDownload = await signedFetch(device, "GET", `/v1/files/${imageStored.clip.seq}`);
+    expect((await signedFetch(device, "GET", `/v1/files/${imageStored.clip.seq}`)).status).toBe(404);
+    const imageDownload = await signedFetch(device, "GET", `/v1/files/${imageStored.clip.clipId}`);
     await expectStatus(imageDownload, 200);
     const imageBody = await imageDownload.json() as { clip: StoredClip; ciphertext: string };
     expect(imageBody.clip.payloadKind).toBe("image");
     expect(decryptBytesClip(groupKey, device.accountId, device.routingId, { ...imageBody.clip, ciphertext: imageBody.ciphertext })).toEqual(imageBytes);
     expect(await env.BLOBS.get(imageStored.clip.r2Key!)).toBeTruthy();
-    const deletedImage = await signedFetch(device, "DELETE", `/v1/clips/${imageStored.clip.seq}`);
+    const deletedImage = await signedFetch(device, "DELETE", `/v1/clips/${imageStored.clip.clipId}`);
     await expectStatus(deletedImage, 200);
-    expect(await deletedImage.json()).toMatchObject({ seq: imageStored.clip.seq, deleted: 1, deletedObjects: 1 });
+    expect(await deletedImage.json()).toMatchObject({ clipId: imageStored.clip.clipId, deleted: 1, deletedObjects: 1 });
     expect(await env.BLOBS.get(imageStored.clip.r2Key!)).toBeNull();
-    expect((await signedFetch(device, "GET", `/v1/files/${imageStored.clip.seq}`)).status).toBe(404);
+    expect((await signedFetch(device, "GET", `/v1/files/${imageStored.clip.clipId}`)).status).toBe(404);
 
     const expiredClip = encryptBytesClip({
       accountId: device.accountId,
@@ -167,7 +217,7 @@ describe("Worker backend", () => {
     const stub = env.CLIPBOARD.getByName(device.routingId);
     expect(await stub.runRetention(Date.now())).toMatchObject({ deletedClips: 1, deletedObjects: 1 });
     expect(await env.BLOBS.get(expiredStored.clip.r2Key!)).toBeNull();
-    expect((await signedFetch(device, "GET", `/v1/files/${expiredStored.clip.seq}`)).status).toBe(404);
+    expect((await signedFetch(device, "GET", `/v1/files/${expiredStored.clip.clipId}`)).status).toBe(404);
     expect(await stub.runRetention(Date.now())).toMatchObject({ deletedClips: 0, deletedObjects: 0 });
     expect(await env.BLOBS.get(expiredStored.clip.r2Key!)).toBeNull();
 

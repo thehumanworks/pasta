@@ -41,6 +41,8 @@ interface ClipRow extends Record<string, SqlStorageValue> {
   metadata_ciphertext: string | null;
 }
 
+const CLIPS_SCHEMA_VERSION = "2";
+
 export class ClipboardSpace extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -59,13 +61,15 @@ export class ClipboardSpace extends DurableObject<Env> {
     if (clip.payloadKind !== "text" && clip.payloadKind !== "image") {
       throw new Error("unsupported payload kind");
     }
+    const seq = this.nextSeq();
     this.ctx.storage.sql.exec(
       `INSERT INTO clips (
-        clip_id, origin_device_id, created_at, expires_at, payload_kind, mime,
+        clip_id, seq, origin_device_id, created_at, expires_at, payload_kind, mime,
         byte_len, key_version, nonce, aad_hash, inline_ciphertext,
         metadata_nonce, metadata_ciphertext
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       clip.clipId,
+      seq,
       actor.deviceId,
       clip.createdAt,
       clip.expiresAt,
@@ -94,13 +98,16 @@ export class ClipboardSpace extends DurableObject<Env> {
     if (clip.payloadKind !== "file" && clip.payloadKind !== "image") {
       throw new Error("unsupported R2 payload kind");
     }
+    const seq = this.nextSeq();
+    const r2Key = `spaces/${actor.routingId}/clips/${clip.clipId}/${payloadId}`;
     this.ctx.storage.sql.exec(
       `INSERT INTO clips (
-        clip_id, origin_device_id, created_at, expires_at, payload_kind, mime,
+        clip_id, seq, origin_device_id, created_at, expires_at, payload_kind, mime,
         byte_len, key_version, nonce, aad_hash, inline_ciphertext, storage_kind,
         payload_id, r2_key, finalized_at, metadata_nonce, metadata_ciphertext
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 'r2', ?, '', ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 'r2', ?, ?, ?, ?, ?)`,
       clip.clipId,
+      seq,
       actor.deviceId,
       clip.createdAt,
       clip.expiresAt,
@@ -111,17 +118,12 @@ export class ClipboardSpace extends DurableObject<Env> {
       clip.nonce,
       clip.aadHash,
       payloadId,
+      r2Key,
       Date.now(),
       clip.metadata?.nonce ?? null,
       clip.metadata?.ciphertext ?? null
     );
-    const inserted = this.ctx.storage.sql
-      .exec<ClipRow>("SELECT * FROM clips WHERE clip_id = ?", clip.clipId)
-      .toArray()[0];
-    if (!inserted) throw new Error("clip insert failed");
-    const r2Key = `spaces/${actor.routingId}/clips/${inserted.seq}/${payloadId}`;
-    this.ctx.storage.sql.exec("UPDATE clips SET r2_key = ? WHERE seq = ?", r2Key, inserted.seq);
-    const row = this.ctx.storage.sql.exec<ClipRow>("SELECT * FROM clips WHERE seq = ?", inserted.seq).toArray()[0];
+    const row = this.ctx.storage.sql.exec<ClipRow>("SELECT * FROM clips WHERE clip_id = ?", clip.clipId).toArray()[0];
     if (!row) throw new Error("clip insert failed");
     return rowToClip(row);
   }
@@ -132,23 +134,24 @@ export class ClipboardSpace extends DurableObject<Env> {
     return { ok: true };
   }
 
-  deleteClip(actor: Actor, seq: number, clipId: string): { deleted: number } {
+  deleteClip(actor: Actor, clipId: string): { deleted: number } {
     this.initializeSchema();
     const row = this.ctx.storage.sql
-      .exec<ClipRow>("SELECT * FROM clips WHERE seq = ? AND clip_id = ? LIMIT 1", seq, clipId)
+      .exec<ClipRow>("SELECT * FROM clips WHERE clip_id = ? LIMIT 1", clipId)
       .toArray()[0];
     if (!row) return { deleted: 0 };
     if (row.origin_device_id !== actor.deviceId) {
       throw new Error("origin device mismatch");
     }
-    this.ctx.storage.sql.exec("DELETE FROM clips WHERE seq = ? AND clip_id = ?", seq, clipId);
+    this.ctx.storage.sql.exec("DELETE FROM clips WHERE clip_id = ?", clipId);
+    this.renumberClips();
     return { deleted: 1 };
   }
 
-  async deleteHistoryClip(_actor: Actor, seq: number): Promise<{ deleted: number; deletedObjects: number }> {
+  async deleteHistoryClip(_actor: Actor, clipId: string): Promise<{ deleted: number; deletedObjects: number }> {
     this.initializeSchema();
     const row = this.ctx.storage.sql
-      .exec<ClipRow>("SELECT * FROM clips WHERE seq = ? LIMIT 1", seq)
+      .exec<ClipRow>("SELECT * FROM clips WHERE clip_id = ? LIMIT 1", clipId)
       .toArray()[0];
     if (!row) return { deleted: 0, deletedObjects: 0 };
     let deletedObjects = 0;
@@ -156,22 +159,31 @@ export class ClipboardSpace extends DurableObject<Env> {
       await this.env.BLOBS.delete(row.r2_key);
       deletedObjects = 1;
     }
-    this.ctx.storage.sql.exec("DELETE FROM clips WHERE seq = ?", seq);
+    this.ctx.storage.sql.exec("DELETE FROM clips WHERE clip_id = ?", clipId);
+    this.renumberClips();
     await this.scheduleNextAlarm();
     return { deleted: 1, deletedObjects };
   }
 
-  getLatest(_actor: Actor): StoredClip | null {
+  async getLatest(_actor: Actor): Promise<StoredClip | null> {
     this.initializeSchema();
+    await this.cleanupExpired(Date.now());
     const row = this.ctx.storage.sql
       .exec<ClipRow>("SELECT * FROM clips WHERE expires_at IS NULL OR expires_at > ? ORDER BY seq DESC LIMIT 1", Date.now())
       .toArray()[0];
     return row ? rowToClip(row) : null;
   }
 
-  listHistory(_actor: Actor, limit: number, beforeSeq: number | null): StoredClip[] {
+  async listHistory(_actor: Actor, limit: number, beforeClipId: string | null): Promise<StoredClip[]> {
     this.initializeSchema();
+    await this.cleanupExpired(Date.now());
     const boundedLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+    const beforeSeq = beforeClipId
+      ? this.ctx.storage.sql
+          .exec<Pick<ClipRow, "seq">>("SELECT seq FROM clips WHERE clip_id = ? LIMIT 1", beforeClipId)
+          .toArray()[0]?.seq ?? null
+      : null;
+    if (beforeClipId && beforeSeq === null) return [];
     const rows =
       beforeSeq === null
         ? this.ctx.storage.sql
@@ -192,12 +204,13 @@ export class ClipboardSpace extends DurableObject<Env> {
     return rows.map(rowToClip);
   }
 
-  getClip(_actor: Actor, seq: number): StoredClip | null {
+  async getClip(_actor: Actor, clipId: string): Promise<StoredClip | null> {
     this.initializeSchema();
+    await this.cleanupExpired(Date.now());
     const row = this.ctx.storage.sql
       .exec<ClipRow>(
-        "SELECT * FROM clips WHERE seq = ? AND (expires_at IS NULL OR expires_at > ?) LIMIT 1",
-        seq,
+        "SELECT * FROM clips WHERE clip_id = ? AND (expires_at IS NULL OR expires_at > ?) LIMIT 1",
+        clipId,
         Date.now()
       )
       .toArray()[0];
@@ -241,6 +254,9 @@ export class ClipboardSpace extends DurableObject<Env> {
       }
     }
     this.ctx.storage.sql.exec("DELETE FROM clips WHERE expires_at IS NOT NULL AND expires_at <= ?", now);
+    if (expiredRows.length > 0) {
+      this.renumberClips();
+    }
     await this.scheduleNextAlarm();
     return { deletedClips: expiredRows.length, deletedObjects };
   }
@@ -267,9 +283,18 @@ export class ClipboardSpace extends DurableObject<Env> {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+    `);
+    const schemaVersion = this.ctx.storage.sql
+      .exec<{ value: string }>("SELECT value FROM meta WHERE key = 'schema_version' LIMIT 1")
+      .toArray()[0]?.value ?? null;
+    if (schemaVersion !== CLIPS_SCHEMA_VERSION) {
+      this.ctx.storage.sql.exec("DROP TABLE IF EXISTS clips");
+      this.ctx.storage.sql.exec("INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)", CLIPS_SCHEMA_VERSION);
+    }
+    this.ctx.storage.sql.exec(`
       CREATE TABLE IF NOT EXISTS clips (
-        seq INTEGER PRIMARY KEY AUTOINCREMENT,
-        clip_id TEXT NOT NULL UNIQUE,
+        clip_id TEXT PRIMARY KEY,
+        seq INTEGER NOT NULL UNIQUE,
         origin_device_id TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         expires_at INTEGER,
@@ -287,6 +312,7 @@ export class ClipboardSpace extends DurableObject<Env> {
         metadata_nonce TEXT,
         metadata_ciphertext TEXT
       );
+      CREATE INDEX IF NOT EXISTS idx_clips_seq ON clips(seq);
       CREATE INDEX IF NOT EXISTS idx_clips_created_at ON clips(created_at);
       CREATE INDEX IF NOT EXISTS idx_clips_expires_at ON clips(expires_at);
       CREATE TABLE IF NOT EXISTS wrapped_keys (
@@ -296,21 +322,21 @@ export class ClipboardSpace extends DurableObject<Env> {
         created_at INTEGER NOT NULL,
         revoked_at INTEGER
       );
-      INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1');
     `);
-    this.addColumnIfMissing("clips", "storage_kind", "TEXT NOT NULL DEFAULT 'inline'");
-    this.addColumnIfMissing("clips", "payload_id", "TEXT");
-    this.addColumnIfMissing("clips", "r2_key", "TEXT");
-    this.addColumnIfMissing("clips", "finalized_at", "INTEGER");
-    this.addColumnIfMissing("clips", "metadata_nonce", "TEXT");
-    this.addColumnIfMissing("clips", "metadata_ciphertext", "TEXT");
   }
 
-  private addColumnIfMissing(table: string, column: string, definition: string): void {
-    try {
-      this.ctx.storage.sql.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-    } catch {
-      // Column already exists.
+  private nextSeq(): number {
+    return this.ctx.storage.sql
+      .exec<{ next_seq: number }>("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM clips")
+      .toArray()[0]?.next_seq ?? 1;
+  }
+
+  private renumberClips(): void {
+    const rows = this.ctx.storage.sql
+      .exec<Pick<ClipRow, "clip_id">>("SELECT clip_id FROM clips ORDER BY seq ASC")
+      .toArray();
+    for (let index = 0; index < rows.length; index += 1) {
+      this.ctx.storage.sql.exec("UPDATE clips SET seq = ? WHERE clip_id = ?", index + 1, rows[index]!.clip_id);
     }
   }
 

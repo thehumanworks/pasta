@@ -9,13 +9,13 @@
 - Wrapped group-key grants.
 - Join grant tokens and sealed group-key grants.
 - Ciphertext history.
-- Account, routing, device, timing, sequence, MIME, and byte-length metadata.
+- Account, routing, device, timing, display sequence, MIME, and byte-length metadata.
 
 ## Trust Boundaries
 
 - Device boundary: plaintext and raw group keys exist only locally.
 - Worker boundary: verifies signatures, routes requests, and reads/writes D1 registry rows.
-- Durable Object boundary: stores encrypted clip sequence/history and wrapped-key grants.
+- Durable Object boundary: stores encrypted clip history, stable clip ids, display sequences, and wrapped-key grants.
 - D1 boundary: stores registry, device public keys, request nonces, pairing session metadata, join-grant verifiers, and device expiry metadata.
 - R2 boundary: reserved for future encrypted blobs only.
 

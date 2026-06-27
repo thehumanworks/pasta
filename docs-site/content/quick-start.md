@@ -79,7 +79,7 @@ pasta daemon              # polls clipboard every 750ms
 ## Mental model
 
 - **Your devices** hold plaintext and the group encryption key (cached in local Pasta auth storage).
-- **The relay** stores ciphertext, sequence numbers, and pairing metadata — never plaintext.
+- **The relay** stores ciphertext, clip ids, display sequence numbers, and pairing metadata — never plaintext.
 - **Paste is pull-based** — nothing syncs continuously unless you run the daemon on the publishing side.
 - **Lost all devices?** Run `pasta reset --yes` from any remaining trusted device. Old history becomes unreadable. There is no secret recovery.
 
