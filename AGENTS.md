@@ -33,3 +33,8 @@ These project-local instructions apply to this repository.
 - Shell/keybinding integration comes before global OS hotkeys or OS services.
 - Keep implementation changes narrow to the active goal.
 - Do not store secrets in config files, logs, fixtures, or docs.
+
+## Delivery
+
+- Every task in this repository ends with the verified changes committed on `main` and pushed to `origin/main` unless the user explicitly asks not to publish.
+- Before committing, run the strongest practical verification for the touched surface and include any blocker in the final response.

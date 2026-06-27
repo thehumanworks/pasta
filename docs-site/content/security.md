@@ -16,6 +16,7 @@ nav_order: 10
 | Request integrity | Ed25519 signatures + body hash |
 | Replay attacks | Timestamp window + nonce store |
 | Unauthorized pairing | Requires trusted device approval |
+| Noninteractive registration | Trusted-device join grants with short token TTL and expiring device lease |
 
 ## Trust boundaries
 
@@ -34,6 +35,12 @@ nav_order: 10
 
 Pasta keeps device auth in `$PASTA_HOME/auth.json` with `0600` permissions by default. OS credential storage is disabled unless you opt in with `$PASTA_HOME/settings.json` or an environment variable such as `PASTA_AUTH_STORE=keychain`. This keeps SSH and other noninteractive terminals working without sending secrets to the relay or storing them in `config.json`.
 
+## CI and sandbox tokens
+
+Join tokens are CI secrets. They are not short codes and should not be copied into logs. A token defaults to a 10-minute redemption window and one use. The device created by redemption defaults to a 24-hour lease, which is useful for Modal sandboxes and other temporary environments.
+
+Cloudflare stores a redemption verifier and sealed group-key grant. It never receives the seal secret needed to decrypt that grant. Once the joined device's lease expires, signed requests trigger real revocation and fail before any clipboard operation.
+
 ## Reset
 
 `pasta reset --yes` rotates keys and routing id. Old ciphertext becomes undecryptable.
@@ -51,7 +58,16 @@ Pasta keeps device auth in `$PASTA_HOME/auth.json` with `0600` permissions by de
 | Request signing | `cli/client.ts`, Worker auth |
 | Nonce replay | D1 nonces |
 | Pairing hash | `hashShortCode` |
+| Join grant seal | `sealJoinGrant` / `openJoinGrant` |
 | Revocation | D1 + DO |
+
+## Join grant controls
+
+- Token TTL default 10 minutes, max 24 hours.
+- Device TTL default 24 hours, max 30 days.
+- `uses` default 1, max 10.
+- Worker never receives `sealSecret`.
+- Device expiry is enforced in Worker auth and converted to revoked state.
 
 ## Do not implement
 

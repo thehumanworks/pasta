@@ -8,6 +8,7 @@ Pasta is intentionally central-service based. P2P, LAN discovery, SSH, tailnets,
 
 - Text clipboard copy, paste, history, and daemon polling.
 - Pairing with a short code or terminal QR, approved by an existing device.
+- Noninteractive CI/sandbox pairing through expiring join grants created by a trusted device.
 - Device listing, revocation, and encrypted-space reset.
 - macOS PNG image clipboard copy/paste through unified `copy`/`paste` commands.
 - Bounded image/file payloads up to 50 MiB through the R2-backed API path.
@@ -160,6 +161,34 @@ Revoke a device:
 ```bash
 pasta devices revoke dev_example
 ```
+
+## Pair A CI Or Sandbox Device
+
+Use a join grant when the new device cannot wait for an interactive approval ceremony, such as a CI job or Modal sandbox.
+
+On an existing trusted device, create a one-use token:
+
+```bash
+pasta pair grant create \
+  --token-ttl 10m \
+  --device-ttl 24h \
+  --uses 1 \
+  --label modal-smoke \
+  --json
+```
+
+Store the returned `joinToken` in your CI secret store as `PASTA_JOIN_TOKEN`.
+
+Inside the noninteractive environment:
+
+```bash
+export PASTA_HOME="${RUNNER_TEMP:-/tmp}/pasta"
+pasta pair join --token "$PASTA_JOIN_TOKEN" --device-name "modal-${MODAL_TASK_ID:-sandbox}"
+```
+
+The token TTL controls how long the token may be redeemed. It defaults to 10 minutes and is overridable with `--token-ttl`. The device TTL controls when the registered sandbox device is revoked. It defaults to 24 hours and starts at redemption time, which matches Modal-style sandboxes that may live for a day.
+
+Cloudflare receives only grant metadata, a redemption verifier, and a sealed group-key grant. It never receives the raw group key or the seal secret needed to decrypt that grant.
 
 ## Text Clipboard Examples
 

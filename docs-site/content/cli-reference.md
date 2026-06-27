@@ -29,11 +29,15 @@ pasta --version
 | `pair ticket` | Print `pasta://pair?...` URL + terminal QR |
 | `pair request --ticket <url> [--device-name <name>]` | Open pairing session; prints short code + QR |
 | `pair consume` | Finish pairing after approval; unwrap group key |
+| `pair grant create [--token-ttl <duration>] [--device-ttl <duration>] [--uses <n>] [--label <text>] [--json]` | Trusted device creates noninteractive join token |
+| `pair grant revoke <grantId>` | Revoke an unused join grant |
+| `pair join --token <token> [--device-name <name>]` | Noninteractive device registration for CI/sandboxes |
 | `devices list` | Tab-separated device id, status, name |
 | `devices approve <code>` | Trusted device approves pending pair |
 | `devices revoke <deviceId>` | Revoke a device |
 
 Pairing ticket contains **endpoint, account, routing** — not the group key.
+Join grants default to a 10-minute token TTL, 24-hour device TTL, and one use.
 
 ## Text clipboard
 
@@ -105,6 +109,9 @@ argv[0] routes to handlers. Inject deps via `CliDeps`: `io`, `paths`, `secrets`,
 | `pair request` | `POST /v1/pairing/open` | none |
 | `devices approve` | `POST /v1/pairing/approve` | signed |
 | `pair consume` | `POST /v1/pairing/consume` | none |
+| `pair grant create` | `POST /v1/pairing/grants` | signed |
+| `pair grant revoke` | `POST /v1/pairing/grants/:id/revoke` | signed |
+| `pair join` | `POST /v1/pairing/grants/redeem` | grant proof |
 | `devices list` | `GET /v1/devices` | signed |
 | `devices revoke` | `POST /v1/devices/:id/revoke` | signed |
 | `reset` | `POST /v1/reset` | signed |
@@ -134,6 +141,14 @@ GET latest|seq → StoredClip → decryptTextClip|decryptBytesClip
 
 Short code: `makeShortCode()` → `hashShortCode(code, accountId)` stored server-side.
 
+## Join grant state machine
+
+1. `pair grant create` on trusted device → generate `grantId`, `redeemSecret`, `sealSecret`; seal group key locally; signed create request stores only `redeemSecretHash`, sealed grant, TTLs, use count.
+2. Secret manager receives opaque `joinToken`; token is never written to Pasta config.
+3. `pair join --token` in CI → generate normal device keys; redeem using `redeemSecret`; Worker inserts active device with `device_expires_at`.
+4. CLI decrypts sealed grant using local `sealSecret`, stores group key and device private keys, writes config with `deviceExpiresAt`.
+5. Worker auth lazily revokes device once `device_expires_at <= now`.
+
 ## Daemon (`src/cli/daemon.ts`)
 
 `runDaemonLoop(clipboard, publishFn, getLastRemoteHash, { intervalMs, once, dryRun })` returns JSON result on stdout.
@@ -147,4 +162,6 @@ Tests inject `CliDeps` with mock `ApiClient`, `SecretStore`, `ClipboardAdapter`.
 - `LARGE_PAYLOAD_MAX_BYTES` = 50 MiB
 - `LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES` = 512 KiB
 - `REQUEST_TOLERANCE_MS` = 5 min
+- Join grant token TTL default 10 min, max 24 h
+- Join grant device TTL default 24 h, max 30 d
 - History default limit 20, max 100

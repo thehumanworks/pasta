@@ -30,6 +30,8 @@ Protocol version aligns with **`pasta 0.1.5`**. Run `pasta protocol` for the liv
 
 **Pairing grants:** X25519 ECDH → HKDF-SHA256 → XChaCha20-Poly1305 wrapped group key for the new device.
 
+**Join grants:** A trusted device seals the group key with a token-derived seal key for noninteractive registration. The Worker stores the sealed grant and a redemption verifier, but never sees the raw group key or the seal secret.
+
 **Short codes:** User-visible codes are hashed with account context before storage; raw codes never persist server-side.
 
 ## Signed request headers
@@ -67,6 +69,9 @@ The Worker rejects requests outside a **5-minute** timestamp window, with bad bo
 | Open pairing | `POST /v1/pairing/open` | None |
 | Approve pairing | `POST /v1/pairing/approve` | Signed |
 | Consume pairing | `POST /v1/pairing/consume` | None |
+| Create join grant | `POST /v1/pairing/grants` | Signed |
+| Redeem join grant | `POST /v1/pairing/grants/redeem` | Grant proof |
+| Revoke join grant | `POST /v1/pairing/grants/:id/revoke` | Signed |
 | List devices | `GET /v1/devices` | Signed |
 | Revoke device | `POST /v1/devices/:id/revoke` | Signed |
 | Reset space | `POST /v1/reset` | Signed |
@@ -76,6 +81,15 @@ The Worker rejects requests outside a **5-minute** timestamp window, with bad bo
 ## Reset semantics
 
 `POST /v1/reset` with `{ confirm: "RESET", newRoutingId }` rotates the encrypted space. Old ciphertext may remain until retention cleanup but is unreachable under the new routing id and undecryptable without the old group key.
+
+## Noninteractive join grants
+
+Join grants are for CI and sandbox devices. A trusted device creates a high-entropy token with two clocks:
+
+- Token TTL: default 10 minutes, maximum 24 hours. Controls redemption.
+- Device TTL: default 24 hours, maximum 30 days. Controls automatic revocation of the joined device.
+
+The joined device's expiry is calculated at redemption time. Worker auth treats `device_expires_at` as real revocation: once expired, the next valid signed request marks the device row revoked and is rejected before clipboard operations run.
 
 <!-- @agent -->
 ## Source of truth
@@ -94,6 +108,11 @@ REQUEST_NONCE_TTL_MS = 10 * 60 * 1000
 TEXT_INLINE_LIMIT_BYTES = 512 * 1024
 LARGE_PAYLOAD_MAX_BYTES = 50 * 1024 * 1024
 MAX_OPEN_PAIRING_SESSIONS = 5
+JOIN_GRANT_TOKEN_TTL_MS = 10 * 60 * 1000
+JOIN_GRANT_TOKEN_TTL_MAX_MS = 24 * 60 * 60 * 1000
+JOIN_GRANT_DEVICE_TTL_MS = 24 * 60 * 60 * 1000
+JOIN_GRANT_DEVICE_TTL_MAX_MS = 30 * 24 * 60 * 60 * 1000
+JOIN_GRANT_MAX_USES = 10
 DEFAULT_HISTORY_LIMIT = 20
 MAX_HISTORY_LIMIT = 100
 ```
@@ -120,8 +139,42 @@ Decrypt must verify AAD hash before releasing plaintext.
 | `decryptTextClip` / `decryptBytesClip` | Pull |
 | `wrapGroupKey` / `unwrapGroupKey` | Pairing |
 | `makeShortCode` / `hashShortCode` | Pairing UX |
+| `createJoinGrantToken` / `parseJoinGrantToken` | CI join token envelope |
+| `sealJoinGrant` / `openJoinGrant` | Token-sealed group key |
 
 Noble libraries: `@noble/ciphers`, `@noble/curves`, `@noble/hashes`.
+
+## Join grant request types
+
+`PairingGrantCreateRequest`:
+
+```typescript
+interface PairingGrantCreateRequest {
+  grantId: string;
+  label?: string;
+  redeemSecretHash: string;
+  sealedGroupKey: string;
+  keyVersion: number;
+  tokenExpiresAt: number;
+  deviceTtlMs: number;
+  maxUses: number;
+}
+```
+
+`PairingGrantRedeemRequest`:
+
+```typescript
+interface PairingGrantRedeemRequest extends DevicePublicKeys {
+  grantId: string;
+  redeemSecret: string;
+  newDeviceId: string;
+  newDeviceName: string;
+}
+```
+
+`PairingGrantRedeemResponse` includes `accountId`, `routingId`, `deviceId`, `sealedGroupKey`, `keyVersion`, `deviceExpiresAt`, and `redeemedAt`.
+
+Worker redemption must atomically check expiry/use count/hash and insert the device with `device_expires_at = now + device_ttl_ms`.
 
 ## Canonical request helper
 

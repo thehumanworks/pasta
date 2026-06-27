@@ -1,6 +1,6 @@
 # Pasta Protocol Spec
 
-Version: `pasta 0.1.2`
+Version: `pasta 0.1.5`
 
 Pasta uses a central HTTPS relay only. Devices encrypt clipboard payloads locally, sign every authenticated request with an app-owned Ed25519 device key, and route state to one Cloudflare Durable Object per encrypted clipboard space. The relay never receives clipboard plaintext or raw group keys.
 
@@ -17,6 +17,7 @@ Pasta uses a central HTTPS relay only. Devices encrypt clipboard payloads locall
 - Device request signing: Ed25519 over the canonical request string.
 - Clipboard payloads: XChaCha20-Poly1305 with a 32-byte group key and 24-byte nonce.
 - Pairing grants: X25519 shared secret, HKDF-SHA256, XChaCha20-Poly1305 wrapped group key.
+- Join grants: a trusted device seals the group key with a token-derived seal key for CI/sandbox registration; the relay stores only sealed grant data and a redemption verifier.
 - Short codes: temporary user-visible codes hashed with account context before storage.
 
 AAD for text clips is canonical JSON:
@@ -71,9 +72,40 @@ The Worker rejects stale timestamps outside five minutes, bad body hashes, unkno
 | `pair request` | `POST /v1/pairing/open` | none | temporary session, short-code hash, new-device public keys | pending session | D1 `pairing_sessions` |
 | `devices approve` | `POST /v1/pairing/approve` | device signature | short-code hash, wrapped group-key grant | approved new device | D1 `devices`, D1 pairing row, DO `wrapped_keys` |
 | `pair consume` | `POST /v1/pairing/consume` | none | session id and short-code hash | wrapped group key once | D1 `consumed_at` |
+| `pair grant create` | `POST /v1/pairing/grants` | device signature | grant id, redemption verifier, sealed group-key grant, token TTL, device TTL, use limit | stored join grant | D1 `pairing_grants` |
+| `pair join` | `POST /v1/pairing/grants/redeem` | grant proof | grant id, redeem secret, new-device public keys | registered leased device plus sealed group-key grant | D1 `devices`, D1 grant use count |
+| `pair grant revoke` | `POST /v1/pairing/grants/:grantId/revoke` | device signature | grant id | unused grant revoked | D1 `revoked_at` |
 | `devices list` | `GET /v1/devices` | device signature | empty signed request | device metadata only | D1 `last_seen_at` |
 | `devices revoke` | `POST /v1/devices/:deviceId/revoke` | device signature | target device | revocation metadata | D1 revoked status, DO wrapped-key revocation |
 | `reset` | `POST /v1/reset` | device signature | `confirm: RESET`, new routing id | new encrypted space metadata | D1 `routing_id`, `reset_at` |
+
+## Noninteractive Join Grants
+
+Join grants let an existing trusted device approve a future CI or sandbox device without an interactive short-code step. The trusted device creates a high-entropy token and sends the relay only:
+
+- `grant_id`
+- account-scoped `redeem_secret_hash`
+- sealed group-key grant
+- `token_expires_at`
+- `device_ttl_ms`
+- `max_uses`
+- optional label
+
+The token contains independent `redeem_secret` and `seal_secret` values. `pair join` sends only the redeem secret to the Worker. The seal secret stays local and decrypts the sealed group-key grant after redemption.
+
+Defaults:
+
+- Token TTL: 10 minutes.
+- Device TTL: 24 hours.
+- Uses: 1.
+
+Server bounds:
+
+- Token TTL max: 24 hours.
+- Device TTL max: 30 days.
+- Uses max: 10.
+
+The device TTL starts at redemption time. A joined device receives `device_expires_at = redeemed_at + device_ttl_ms`. Worker auth treats that field as real revocation: after expiry, the next valid signed request marks the device revoked, records `revoked_at`, revokes any active DO wrapped-key row, and rejects before copy, paste, history, approval, grant creation, or reset logic runs.
 
 ## Reset
 
