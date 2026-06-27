@@ -245,14 +245,7 @@ private final class PastaKeyboardLayoutCache: ObservableObject {
             return cachedLayout
         }
 
-        var layout = service.keyboardLayout(for: keyboardContext)
-        if keyboardContext.keyboardType == .alphabetic {
-            let config = layout.deviceConfiguration ?? .standard(for: keyboardContext)
-            let numberRow = KeyboardAction.Row(characters: "1234567890").map {
-                $0.standardLayoutItem(for: config)
-            }
-            layout.itemRows.insert(numberRow, at: 0)
-        }
+        let layout = service.keyboardLayout(for: keyboardContext)
 
         cachedKey = key
         cachedLayout = layout

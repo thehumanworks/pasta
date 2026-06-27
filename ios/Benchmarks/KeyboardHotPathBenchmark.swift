@@ -32,10 +32,7 @@ final class KeyboardLayoutCache {
         if self.key == key, let layout {
             return layout
         }
-        var generated = makeBaseLayout(for: key)
-        if key.keyboardType == 0 {
-            generated.rows.insert(numberRow(), at: 0)
-        }
+        let generated = makeBaseLayout(for: key)
         self.key = key
         self.layout = generated
         return generated
@@ -134,10 +131,7 @@ if mode == "baseline" || mode == "both" {
         var checksum = 0
         for i in 0..<iterations {
             let key = layoutKeys[i % layoutKeys.count]
-            var layout = makeBaseLayout(for: key)
-            if key.keyboardType == 0 {
-                layout.rows.insert(numberRow(), at: 0)
-            }
+            let layout = makeBaseLayout(for: key)
             checksum &+= layoutChecksum(layout)
         }
         return checksum
@@ -235,10 +229,6 @@ func makeBaseLayout(for key: LayoutKey) -> KeyboardLayout {
     }
     rows.append(controlRow)
     return KeyboardLayout(rows: rows)
-}
-
-func numberRow() -> [LayoutItem] {
-    "1234567890".map { LayoutItem(action: String($0), width: 10) }
 }
 
 func layoutChecksum(_ layout: KeyboardLayout) -> Int {

@@ -47,7 +47,8 @@ The keyboard is intentionally close to the stock iOS keyboard in daily use:
 
 - normal typing remains the default interaction;
 - KeyboardKit renders the keyboard-switch (globe) key whenever iOS requires it, so users always have a way to switch keyboards; Pasta no longer strips it;
-- letter, number (`123`), and symbol (`#+=`) keyboard modes are present so the keyboard remains usable for ordinary iOS text entry;
+- the letter keyboard uses KeyboardKit's stock letter rows without a Pasta-added top number row; digits appear when the user switches to the number keyboard with `123`;
+- number (`123`) and symbol (`#+=`) keyboard modes remain present so the keyboard remains usable for ordinary iOS text entry;
 - letter keys follow iOS-style case behavior: lowercase in normal typing, single-shift uppercase, and caps lock only through the standard shift interaction;
 - Pasta's actions live in KeyboardKit's native top toolbar slot around KeyboardKit's own autocomplete view, so suggestions and autocorrect remain visible above the keys;
 - compact side action icons stay transparent and match the native suggestion-row height and centering;
@@ -176,12 +177,13 @@ Observable finished state:
 - History rows and keyboard cache entries keep stable `clipId` as identity. The user-facing `seq` is display metadata only, and cache refresh saves only decrypted text clips for keyboard insertion after history refresh or delete.
 - The keyboard typing path keeps KeyboardKit as the input owner. Pasta does not remove features, reintroduce sibling toolbar strips, publish ordinary keystrokes, silently read pasteboard, or change layout behavior to gain speed.
 - Keyboard latency has a committed benchmark or XCTest performance check that exercises representative insert/delete/shift/punctuation paths. The final report includes baseline and optimized numbers from the same command on the same machine.
+- The alphabetic keyboard does not add a Pasta-owned top number row. Number keys appear through KeyboardKit's normal numeric/symbol mode when the user taps `123`, so alpha/numeric toggling keeps the expected row count.
 
 Keyboard performance proof for this release:
 
-- Observed root cause: Pasta-owned helper work around KeyboardKit did avoidable work on typing-sensitive paths. The SwiftUI wrapper rebuilt Pasta's augmented KeyboardKit layout, including the extra number row, on repeated body evaluations, and the autocomplete service recreated `UITextChecker` plus its available-language lookup per autocomplete request.
-- Implemented fix: cache the structural layout augmentation by keyboard type, orientation, screen size, device class, input-mode-switch requirement, and locale; reuse the `UITextChecker` and available-language set for autocomplete.
-- Benchmark: `swift ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 40000 --mode both` reports `baseline.total: 5544.615 ms`, `optimized.total: 2266.839 ms`, and `59.116% faster` with matching checksums.
+- Observed root cause: Pasta-owned helper work around KeyboardKit did avoidable work on typing-sensitive paths. The SwiftUI wrapper rebuilt Pasta's structural KeyboardKit layout on repeated body evaluations, and the autocomplete service recreated `UITextChecker` plus its available-language lookup per autocomplete request.
+- Implemented fix: cache the structural KeyboardKit layout by keyboard type, orientation, screen size, device class, input-mode-switch requirement, and locale; reuse the `UITextChecker` and available-language set for autocomplete.
+- Benchmark: `swift ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 40000 --mode both` reports `baseline.total: 5091.245 ms`, `optimized.total: 2175.182 ms`, and `57.276% faster` with matching checksums after the alphabetic number row removal.
 
 Non-goals:
 
@@ -235,15 +237,15 @@ The current visual contract is Grammarly-style composition:
 - The toolbar height stays at the native suggestion-row height (`48pt`), so icons, separators, and suggestions share one vertical rhythm.
 - The extension host backgrounds stay clear. Pasta must not apply a full-keyboard `.keyboardBackground` surface.
 - KeyboardKit still owns the globe, dictation key, space, return, delete, shift/case, callouts, number/symbol modes, and key gestures.
-- Pasta may add a number row by inserting standard `KeyboardAction.character` layout items into the generated alphabetic layout, but those items must use KeyboardKit's standard `KeyboardLayout.DeviceConfiguration`.
+- Pasta must not add a top number row to the generated alphabetic layout. Number keys belong in KeyboardKit's normal numeric/symbol mode after the user taps `123`.
 
 The final proof screenshot for this iteration is:
 
 `ios/build/screenshots/pasta-device-native-autocomplete-toolbar.png`
 
 It shows the live Messages keyboard host on the iPhone Air with compact Pasta
-side icons, KeyboardKit autocomplete suggestions (`I'm`, `It's`, `It`), a
-number row, and no app-painted full-keyboard background path in code.
+side icons, KeyboardKit autocomplete suggestions (`I'm`, `It's`, `It`), and no
+app-painted full-keyboard background path in code.
 
 ### Root cause, not just symptom
 
