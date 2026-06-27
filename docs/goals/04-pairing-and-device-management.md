@@ -117,8 +117,7 @@ Verification Contract:
 **Evidence:**
 - 2026-06-26 - live local smoke `devices revoke <dev2>` - exit 0; subsequent dev2 `paste` failed and Worker log returned `GET /v1/clips/latest 403 Forbidden`.
 - 2026-06-26 - `mise exec -- bun run test` - exit 0; Worker tests reject revoked device requests.
-- 2026-06-27 - local Worker smoke `bootstrap` -> `pair grant create --json` -> clean `pair join --token` -> joined `copy` -> trusted `paste` - exit 0; pasted `ci grant smoke`.
-- 2026-06-27 - `mise exec -- bunx vitest run test/worker/backend.test.ts` - exit 0; expired join-grant device is marked `revoked` and rejected with `expired_device` on its next signed request.
+- 2026-06-27 - `mise exec -- bun run test:worker` - exit 0; expired join-grant device is marked `revoked` and rejected with `expired_device` on its next signed request.
 
 ### T5 - Reset Flow - [x]
 
