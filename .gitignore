@@ -5,6 +5,7 @@ coverage/
 dist/
 docs-site/dist/
 docs-site/node_modules/
+ios/.build/
 config.json
 auth.json
 secrets.json

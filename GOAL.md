@@ -4,7 +4,7 @@ title: "Pasta MVP"
 status: "done"
 confidence_floor: 90
 created: "2026-06-26"
-updated: "2026-06-26"
+updated: "2026-06-27"
 ---
 
 # Goal: Pasta MVP
@@ -75,6 +75,37 @@ flowchart LR
 8. [GitHub release artifacts](docs/goals/08-github-release-artifacts.md)
 9. [Image copy reliability and history delete](docs/goals/09-image-copy-and-history-delete.md)
 10. [Directory copy/paste](docs/goals/10-directory-copy-paste.md)
+11. [Native iOS build environment](docs/goals/11-ios-build-environment.md)
+12. [Native iOS shared core](docs/goals/12-ios-shared-core.md)
+13. [Native iOS app shell pairing and history](docs/goals/13-ios-app-shell-pairing-history.md)
+14. [Native iOS keyboard extension](docs/goals/14-ios-keyboard-extension.md)
+15. [Native iOS publish surfaces](docs/goals/15-ios-publish-surfaces.md)
+16. [Native iOS binary and File Provider handoff](docs/goals/16-ios-binary-file-provider-handoff.md)
+17. [Native iOS integration and release readiness](docs/goals/17-ios-integration-release-readiness.md)
+
+## Native iOS Expansion
+
+The native iOS expansion follows the accepted keyboard-centered UX contract in
+`docs-site/content/native-ios.md` and ADR
+`docs/adrs/0001-native-ios-keyboard-centered.md`.
+
+Current proposed implementation order:
+
+1. Goal 11 creates the native iOS workspace seed, ADR, and goal stack.
+2. Goal 12 ports Pasta protocol, crypto, signed requests, models, and secure
+   storage to Swift.
+3. Goal 13 adds the containing app for pairing, history, explicit clipboard
+   import/export, and extension cache population.
+4. Goal 14 adds the keyboard extension for normal typing and text history
+   insertion where iOS allows third-party keyboards.
+5. Goal 15 adds Share extension and App Intents publish surfaces.
+6. Goal 16 completes image, file, directory, and File Provider handoff decisions.
+7. Goal 17 proves end-to-end integration, device/simulator behavior, review copy,
+   and release readiness.
+
+Goals 11-17 are not a change to the completed desktop MVP scope. They are the
+native iOS expansion queue and require user confirmation of each goal's DoD and
+Tasks before execution ticks begin.
 
 ## Research Pack
 
@@ -93,11 +124,15 @@ Current verified state:
 - Goal 06 completed binary payloads and hardening after the text MVP public distribution proof. Image clipboard smoke is live on macOS; Linux/Windows image clipboard behavior remains a documented platform assumption for this environment.
 - Goal 07 completed the unified `copy`/`paste` image and file UX follow-up; old binary commands were removed after the follow-up no-compatibility requirement.
 - Goal 10 completed the directory path copy/paste follow-up: `pasta copy <directory>` bundles regular directory contents as an encrypted zip-backed file payload, and `pasta paste` extracts the directory locally.
+- Native iOS UX research is recorded in `docs-site/content/native-ios.md` and published in the docs site. The well-founded UX choice is a keyboard-centered iOS app: custom keyboard for text insertion, containing app for setup/history/trust, Share extension for publish, App Intents for command surfaces, and binary/file/directory handoff outside direct text insertion.
+- The native iOS build environment seed is under `ios/` as a SwiftPM `PastaCore` package. Goal 11 is the active native iOS setup goal awaiting DoD/Task scope confirmation before GDD execution ticks.
 
 The latest completed follow-up is directory copy/paste. Release artifact verification remains a later distribution action:
 
 ```bash
 python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/08-github-release-artifacts.md
+python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" --author docs/goals/11-ios-build-environment.md
+swift test --package-path ios
 mise exec -- bun run test
 mise exec -- bunx tsc --noEmit
 ```

@@ -27,8 +27,12 @@ Use the `moo` MCP server as the coordination plane. The first Moo MCP call in a 
 Current active goal:
 
 ```bash
-python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" docs/goals/06-binary-payloads-and-hardening.md
+python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" --author docs/goals/11-ios-build-environment.md
 ```
+
+Native iOS expansion starts at Goal 11. Goals 12-17 remain blocked until their
+prerequisite goals have verified evidence and the user confirms the DoD + Tasks
+for execution.
 
 ## Moo Agent Orchestration
 
@@ -41,9 +45,9 @@ Historical initial fanout:
 3. `scout-02-backend`: read-only Cloudflare Worker/Durable Object scout for Goal 02 interfaces and blockers.
 4. `scout-03-cli`: read-only Bun CLI/daemon scout for Goal 03 interfaces and platform constraints.
 
-Those sessions are obsolete once Goals 01-05 are checkpointed done. For Goal 06,
-use narrow sessions for payload design review, platform clipboard research, and
-R2/retention implementation review.
+Those sessions are obsolete once Goals 01-10 are checkpointed done. For native
+iOS goals, use narrow sessions only when the user asks for delegated work or the
+current goal is explicitly split into independent review/verification slices.
 
 Spawn each session with `moo_create_session` using `workspace: "pasta"`, a descriptive `name`, and `agent: "codex"` unless a task explicitly needs another installed agent runtime. Send the full task brief with `moo_send_input` after creation. Each brief must include:
 
@@ -108,6 +112,17 @@ Work goals in this order:
 4. `docs/goals/04-pairing-and-device-management.md`
 5. `docs/goals/05-distribution-and-terminal-integration.md`
 6. `docs/goals/06-binary-payloads-and-hardening.md`
+7. `docs/goals/07-unified-copy-paste-ux.md`
+8. `docs/goals/08-github-release-artifacts.md`
+9. `docs/goals/09-image-copy-and-history-delete.md`
+10. `docs/goals/10-directory-copy-paste.md`
+11. `docs/goals/11-ios-build-environment.md`
+12. `docs/goals/12-ios-shared-core.md`
+13. `docs/goals/13-ios-app-shell-pairing-history.md`
+14. `docs/goals/14-ios-keyboard-extension.md`
+15. `docs/goals/15-ios-publish-surfaces.md`
+16. `docs/goals/16-ios-binary-file-provider-handoff.md`
+17. `docs/goals/17-ios-integration-release-readiness.md`
 
 Do not start a blocked goal until its dependency goal has enough verified output to unblock it. If a goal is still marked `blocked` but its dependencies have landed, update the status and explain the evidence in that goal's Decisions or Learnings section.
 
