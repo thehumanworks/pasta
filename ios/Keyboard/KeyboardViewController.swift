@@ -155,22 +155,18 @@ private struct PastaKeyboardView: View {
             collapsedView: { $0.view },
             emojiKeyboard: { $0.view },
             toolbar: { _ in
-                Keyboard.Toolbar {
-                    PastaKeyboardToolbar(
-                        model: toolbarModel,
-                        insertClip: insertClip,
-                        refresh: refresh,
-                        publish: publish,
-                        toggleExpanded: toggleExpanded
-                    )
-                }
+                PastaKeyboardToolbar(
+                    model: toolbarModel,
+                    insertClip: insertClip,
+                    refresh: refresh,
+                    publish: publish,
+                    toggleExpanded: toggleExpanded
+                )
             }
         )
-        .keyboardToolbarStyle(.init(
-            backgroundColor: PastaToolbarAppearance.shelfBackground,
-            height: 44,
-            minHeight: 44,
-            maxHeight: 44
+        .autocompleteToolbarStyle(.init(
+            height: PastaToolbarAppearance.shelfHeight,
+            padding: 0
         ))
     }
 }
@@ -238,8 +234,9 @@ private struct PastaKeyboardToolbar: View {
             }
             .padding(.horizontal, 6)
         }
-        .frame(height: 36)
+        .frame(height: PastaToolbarAppearance.shelfHeight)
         .background(PastaToolbarAppearance.shelfBackground)
+        .clipped()
     }
 }
 
@@ -266,6 +263,7 @@ private enum PastaToolbarAppearance {
     static let foreground = Color(red: 0.01, green: 0.01, blue: 0.02)
     static let border = Color(red: 0.57, green: 0.59, blue: 0.64)
     static let font = Font.system(size: 15, weight: .semibold)
+    static let shelfHeight: CGFloat = 36
     static let chipHeight: CGFloat = 31
 
     static var chipBorder: some View {

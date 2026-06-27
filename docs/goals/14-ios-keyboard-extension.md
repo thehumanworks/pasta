@@ -97,6 +97,10 @@ Scope changes stop execution and surface to the user.
 - 2026-06-27 - action shelf contrast fix - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0; simulator install/launch plus `pluginkit -m -p com.apple.keyboard-service | rg 'com.thehumanworks.pasta.keyboard'` - exit 0 with `com.thehumanworks.pasta.keyboard(0.1.7)`.
 - 2026-06-27 - action shelf contrast fix - `swift test --package-path ios` - exit 0 with 14 tests passed and 1 live relay test skipped; `mise exec -- bun run test` - exit 0 with 30 Bun tests and 13 Vitest tests passed; `git diff --check` - exit 0.
 - 2026-06-27 - TestFlight build 5 - archive/export/upload passed; `inspect_ipa.sh ios/build/export-local/Pasta.ipa` confirmed `CFBundleVersion=5`, `ITSAppUsesNonExemptEncryption=false`, distribution profile, `get-task-allow=false`, and embedded `PastaKeyboard.appex`; App Store Connect build `d181b674-ce20-4413-aa5a-8881e13037c9` is `VALID` and internal beta group `internal` has access.
+- 2026-06-27 - top bar removal fix - pass by code review against attached feedback screenshot; `KeyboardView` now renders `PastaKeyboardToolbar` directly and pins `autocompleteToolbarStyle` to the same 36pt shelf height, removing the nested 44pt `Keyboard.Toolbar` container that painted a separate strip above the action buttons.
+- 2026-06-27 - top bar removal fix - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -derivedDataPath ios/build/DerivedData CODE_SIGNING_ALLOWED=NO build` - exit 0; simulator install/launch plus `pluginkit -m -p com.apple.keyboard-service | rg 'com.thehumanworks.pasta.keyboard'` - exit 0 with `com.thehumanworks.pasta.keyboard(0.1.7)`.
+- 2026-06-27 - top bar removal fix - `swift test --package-path ios` - exit 0 with 14 tests passed and 1 live relay test skipped; `mise exec -- bun run test` - exit 0 with 30 Bun tests and 13 Vitest tests passed; `git diff --check` - exit 0.
+- 2026-06-27 - TestFlight build 6 - archive/export/upload passed; `inspect_ipa.sh ios/build/export-local/Pasta.ipa` confirmed `CFBundleVersion=6`, `ITSAppUsesNonExemptEncryption=false`, distribution profile, `get-task-allow=false`, and embedded `PastaKeyboard.appex`; App Store Connect build `24127bd0-4625-4e17-97ef-ce8451a32369` is `VALID` and internal beta group `internal` has access.
 
 ---
 
@@ -195,6 +199,9 @@ Scope changes stop execution and surface to the user.
   action buttons must remain high-contrast and opaque over iOS keyboard chrome,
   with no disabled-opacity blur for normal states. Scope impact: keyboard
   toolbar styling and docs wording.
+- 2026-06-27 - User screenshot corrected the toolbar container contract: Pasta
+  action buttons should not sit under a separate visible top strip. Scope impact:
+  toolbar composition only.
 
 ---
 
