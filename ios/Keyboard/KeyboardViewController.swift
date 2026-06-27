@@ -15,7 +15,7 @@ final class KeyboardViewController: KeyboardInputViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .clear
+        view.backgroundColor = UIColor(Color.keyboardBackground)
         enableExperimentalKeyboardTypeChangeTracking()
         reloadClips()
         setup(for: .pasta) { [weak self] _ in
@@ -168,26 +168,18 @@ private struct PastaKeyboardView: View {
             collapsedView: { $0.view },
             emojiKeyboard: { $0.view },
             toolbar: { _ in
-                Keyboard.Toolbar {
-                    PastaKeyboardToolbar(
-                        model: toolbarModel,
-                        insertClip: insertClip,
-                        refresh: refresh,
-                        publish: publish,
-                        toggleExpanded: toggleExpanded
-                    )
-                }
+                PastaKeyboardToolbar(
+                    model: toolbarModel,
+                    insertClip: insertClip,
+                    refresh: refresh,
+                    publish: publish,
+                    toggleExpanded: toggleExpanded
+                )
             }
         )
         .keyboardViewStyle(.init(background: .color(.keyboardBackground)))
         .autocompleteToolbarStyle(.init(height: PastaToolbarAppearance.shelfHeight, padding: 0))
-        .keyboardToolbarStyle(.init(
-            backgroundColor: PastaToolbarAppearance.shelfBackground,
-            height: PastaToolbarAppearance.shelfHeight,
-            minHeight: PastaToolbarAppearance.shelfHeight
-        ))
         .keyboardInputToolbarDisplayMode(.none)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .id(keyboardLayoutIdentifier)
     }
 
@@ -217,6 +209,20 @@ private struct PastaKeyboardToolbar: View {
     let toggleExpanded: () -> Void
 
     var body: some View {
+        ZStack(alignment: .topLeading) {
+            PastaToolbarAppearance.shelfBackground
+            scrollRow
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: PastaToolbarAppearance.shelfHeight)
+        .background(alignment: .top) {
+            PastaToolbarAppearance.shelfBackground
+                .frame(height: PastaToolbarAppearance.shelfHeight + PastaToolbarAppearance.topBleed)
+                .offset(y: -PastaToolbarAppearance.topBleed)
+        }
+    }
+
+    private var scrollRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .center, spacing: 0) {
                 if let statusMessage = model.statusMessage {
@@ -230,26 +236,30 @@ private struct PastaKeyboardToolbar: View {
                     PastaToolbarDivider()
                 }
 
-                Button(action: refresh) {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .allowsHitTesting(!model.isRunningLiveAction)
-                .buttonStyle(PastaToolbarButtonStyle())
+                PastaToolbarActionButton(
+                    title: "Refresh",
+                    systemImage: "arrow.clockwise",
+                    isEnabled: !model.isRunningLiveAction,
+                    action: refresh
+                )
 
                 PastaToolbarDivider()
 
-                Button(action: publish) {
-                    Label("Publish", systemImage: "square.and.arrow.up")
-                }
-                .allowsHitTesting(!model.isRunningLiveAction)
-                .buttonStyle(PastaToolbarButtonStyle())
+                PastaToolbarActionButton(
+                    title: "Publish",
+                    systemImage: "square.and.arrow.up",
+                    isEnabled: !model.isRunningLiveAction,
+                    action: publish
+                )
 
                 PastaToolbarDivider()
 
-                Button(action: toggleExpanded) {
-                    Label(model.showsExpandedHistory ? "Less" : "All", systemImage: model.showsExpandedHistory ? "chevron.up" : "list.bullet")
-                }
-                .buttonStyle(PastaToolbarButtonStyle())
+                PastaToolbarActionButton(
+                    title: model.showsExpandedHistory ? "Less" : "All",
+                    systemImage: model.showsExpandedHistory ? "chevron.up" : "list.bullet",
+                    isEnabled: true,
+                    action: toggleExpanded
+                )
 
                 if model.clips.isEmpty {
                     PastaToolbarDivider()
@@ -275,29 +285,37 @@ private struct PastaKeyboardToolbar: View {
             }
             .frame(height: PastaToolbarAppearance.shelfHeight)
         }
+        .contentMargins(.zero, for: .scrollContent)
         .scrollClipDisabled()
         .frame(height: PastaToolbarAppearance.shelfHeight)
-        .frame(maxWidth: .infinity)
-        .background(PastaToolbarAppearance.shelfBackground)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 }
 
-private struct PastaToolbarButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(PastaToolbarAppearance.font)
+private struct PastaToolbarActionButton: View {
+    let title: String
+    let systemImage: String
+    let isEnabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: systemImage)
+                    .font(PastaToolbarAppearance.font)
+                    .symbolRenderingMode(.monochrome)
+                Text(title)
+                    .font(PastaToolbarAppearance.font)
+            }
             .foregroundColor(PastaToolbarAppearance.foreground)
             .lineLimit(1)
-            .labelStyle(.titleAndIcon)
             .padding(.horizontal, 13)
             .frame(height: PastaToolbarAppearance.shelfHeight)
-            .frame(maxHeight: .infinity)
-            .background(
-                configuration.isPressed
-                    ? PastaToolbarAppearance.pressedSegmentBackground
-                    : PastaToolbarAppearance.shelfBackground
-            )
-            .contentShape(Rectangle())
+            .frame(maxHeight: .infinity, alignment: .center)
+            .background(PastaToolbarAppearance.shelfBackground)
+        }
+        .buttonStyle(.plain)
+        .allowsHitTesting(isEnabled)
     }
 }
 
@@ -338,6 +356,8 @@ private enum PastaToolbarAppearance {
     static let font = Font.system(size: 17, weight: .semibold)
     static let shelfHeight: CGFloat = 60
     static let separatorHeight: CGFloat = 36
+    /// Paints the seam above the shelf where the extension host leaves a narrow strip.
+    static let topBleed: CGFloat = 10
 }
 
 private struct PastaKeyboardToolbarModel {
