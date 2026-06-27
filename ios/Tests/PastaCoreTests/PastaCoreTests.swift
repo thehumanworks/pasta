@@ -99,6 +99,61 @@ final class PastaCoreVectorTests: XCTestCase {
         )
     }
 
+    func testBytesClipEncryptionAndDecryptionMatchTypeScriptVector() throws {
+        let vectors = try loadVectors()
+        let expected = vectors.bytesClip.clip
+        let encrypted = try PastaCrypto.encryptBytesClip(BytesClipEncryptionInput(
+            accountId: vectors.bytesClip.accountId,
+            routingId: vectors.bytesClip.routingId,
+            originDeviceId: expected.originDeviceId,
+            bytes: vectors.bytesClip.bytes,
+            payloadKind: expected.payloadKind,
+            mime: expected.mime,
+            groupKey: vectors.bytesClip.groupKey,
+            keyVersion: expected.keyVersion,
+            clipId: expected.clipId,
+            createdAt: expected.createdAt,
+            expiresAt: expected.expiresAt,
+            nonce: expected.nonce
+        ))
+        XCTAssertEqual(encrypted, expected)
+        XCTAssertEqual(
+            try PastaCrypto.decryptBytesClip(
+                groupKey: vectors.bytesClip.groupKey,
+                accountId: vectors.bytesClip.accountId,
+                routingId: vectors.bytesClip.routingId,
+                clip: expected
+            ),
+            vectors.bytesClip.bytes
+        )
+    }
+
+    func testEncryptedMetadataNameRoundTripsWithoutPlaintextInEnvelope() throws {
+        let groupKey = PastaEncoding.base64URLEncode(Array(repeating: UInt8(9), count: 32))
+        let encrypted = try PastaCrypto.encryptBytesClip(BytesClipEncryptionInput(
+            accountId: "acct_meta",
+            routingId: "space_meta",
+            originDeviceId: "dev_meta",
+            bytes: [1, 2, 3],
+            payloadKind: "file",
+            mime: "application/pdf",
+            groupKey: groupKey,
+            clipId: "clip_meta",
+            createdAt: 1,
+            nonce: PastaEncoding.base64URLEncode(Array(repeating: UInt8(2), count: 24)),
+            metadata: ClipMetadata(name: "Secret Plan.pdf")
+        ))
+        let envelope = try PastaEncoding.stableJSONString(encrypted)
+        XCTAssertFalse(envelope.contains("Secret Plan.pdf"))
+        let metadata = try PastaCrypto.decryptClipMetadata(
+            groupKey: groupKey,
+            accountId: "acct_meta",
+            routingId: "space_meta",
+            clip: encrypted
+        )
+        XCTAssertEqual(metadata?.name, "Secret Plan.pdf")
+    }
+
     func testGroupKeyWrapMatchesTypeScriptVector() throws {
         let vectors = try loadVectors()
         let wrapped = try PastaCrypto.wrapGroupKey(
@@ -183,6 +238,254 @@ final class PastaCoreStorageTests: XCTestCase {
     }
 }
 
+final class PastaCoreFileAPITests: XCTestCase {
+    override func tearDown() {
+        MockURLProtocol.handler = nil
+        super.tearDown()
+    }
+
+    func testPublishFileUsesSignedPostFilesRequestWithEncryptedMetadata() async throws {
+        let config = testConfiguration()
+        let signing = try PastaCrypto.generateSigningKeyPair(seed: Array(repeating: UInt8(7), count: 32))
+        let groupKey = PastaEncoding.base64URLEncode(Array(repeating: UInt8(9), count: 32))
+        let client = PastaAPIClient(session: mockSession())
+
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/v1/files")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "pasta-account-id"), config.accountId)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "pasta-device-id"), config.deviceId)
+            XCTAssertNotNil(request.value(forHTTPHeaderField: "pasta-signature"))
+            let body = try requestBodyData(request)
+            let bodyText = String(data: body, encoding: .utf8) ?? ""
+            XCTAssertFalse(bodyText.contains("secret-report.pdf"))
+            let clip = try JSONDecoder().decode(EncryptedClip.self, from: body)
+            XCTAssertEqual(clip.payloadKind, "file")
+            XCTAssertEqual(clip.mime, "application/octet-stream")
+            XCTAssertEqual(clip.originDeviceId, config.deviceId)
+            XCTAssertNotNil(clip.metadata)
+            let stored = StoredClip(
+                seq: 11,
+                clipId: clip.clipId,
+                originDeviceId: clip.originDeviceId,
+                createdAt: clip.createdAt,
+                expiresAt: clip.expiresAt,
+                payloadKind: clip.payloadKind,
+                mime: clip.mime,
+                byteLen: clip.byteLen,
+                keyVersion: clip.keyVersion,
+                nonce: clip.nonce,
+                aadHash: clip.aadHash,
+                ciphertext: "",
+                storageKind: "r2",
+                payloadId: "payload_test",
+                r2Key: "spaces/\(config.routingId)/clips/\(clip.clipId)/payload_test",
+                metadata: clip.metadata
+            )
+            return try jsonResponse(status: 201, body: TestClipResponse(clip: stored), url: request.url!)
+        }
+
+        let published = try await client.publishFile(
+            bytes: [1, 2, 3, 4],
+            fileName: "secret-report.pdf",
+            mime: "application/octet-stream",
+            configuration: config,
+            groupKey: groupKey,
+            signingPrivateKey: signing.privateKey
+        )
+
+        XCTAssertEqual(published.seq, 11)
+        XCTAssertEqual(published.storageKind, "r2")
+        XCTAssertEqual(published.payloadKind, "file")
+    }
+
+    func testDownloadFileUsesSignedClipIdPathAndDecryptsBytes() async throws {
+        let config = testConfiguration()
+        let signing = try PastaCrypto.generateSigningKeyPair(seed: Array(repeating: UInt8(7), count: 32))
+        let groupKey = PastaEncoding.base64URLEncode(Array(repeating: UInt8(9), count: 32))
+        let bytes: [UInt8] = [80, 97, 115, 116, 97]
+        let encrypted = try PastaCrypto.encryptBytesClip(BytesClipEncryptionInput(
+            accountId: config.accountId,
+            routingId: config.routingId,
+            originDeviceId: config.deviceId,
+            bytes: bytes,
+            payloadKind: "file",
+            mime: "application/octet-stream",
+            groupKey: groupKey,
+            clipId: "clip_download",
+            createdAt: 1782475200002,
+            nonce: PastaEncoding.base64URLEncode(Array(repeating: UInt8(6), count: 24)),
+            metadata: ClipMetadata(name: "from-ios.bin")
+        ))
+        let stored = StoredClip(
+            seq: 12,
+            clipId: encrypted.clipId,
+            originDeviceId: encrypted.originDeviceId,
+            createdAt: encrypted.createdAt,
+            expiresAt: encrypted.expiresAt,
+            payloadKind: encrypted.payloadKind,
+            mime: encrypted.mime,
+            byteLen: encrypted.byteLen,
+            keyVersion: encrypted.keyVersion,
+            nonce: encrypted.nonce,
+            aadHash: encrypted.aadHash,
+            ciphertext: "",
+            storageKind: "r2",
+            payloadId: "payload_download",
+            r2Key: "spaces/\(config.routingId)/clips/\(encrypted.clipId)/payload_download",
+            metadata: encrypted.metadata
+        )
+        let client = PastaAPIClient(session: mockSession())
+
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/v1/files/clip_download")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "pasta-body-sha256"), PastaEncoding.sha256Base64URL(""))
+            XCTAssertNotNil(request.value(forHTTPHeaderField: "pasta-signature"))
+            return try jsonResponse(
+                status: 200,
+                body: TestFileClipResponse(clip: stored, ciphertext: encrypted.ciphertext),
+                url: request.url!
+            )
+        }
+
+        let downloaded = try await client.downloadFile(
+            clipId: encrypted.clipId,
+            configuration: config,
+            groupKey: groupKey,
+            signingPrivateKey: signing.privateKey
+        )
+
+        XCTAssertEqual(downloaded.bytes, bytes)
+        XCTAssertEqual(downloaded.metadata?.name, "from-ios.bin")
+        XCTAssertEqual(downloaded.suggestedFileName, "from-ios.bin")
+    }
+
+    func testTemporaryFileStoreStagesSanitizedNameAndCleansUp() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PastaCoreTests-\(UUID().uuidString)", isDirectory: true)
+        let store = try PastaTemporaryFileStore(directory: directory)
+        let staged = try store.stageFile(bytes: [1, 2, 3], suggestedName: "../unsafe/name.txt")
+        XCTAssertEqual(staged.deletingLastPathComponent(), directory)
+        XCTAssertEqual(staged.lastPathComponent, "name.txt")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: staged.path))
+        try store.cleanup()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+    }
+}
+
+final class PastaCoreFileClipTests: XCTestCase {
+    func testBytesClipEncryptionRoundTripsPayloadAndEncryptedNameMetadata() throws {
+        let groupKey = try PastaCrypto.generateGroupKey()
+        let bytes = Array("file payload".utf8)
+        let clip = try PastaCrypto.encryptBytesClip(BytesClipEncryptionInput(
+            accountId: "acct_file",
+            routingId: "space_file",
+            originDeviceId: "dev_file",
+            bytes: bytes,
+            payloadKind: "file",
+            mime: "application/pdf",
+            groupKey: groupKey,
+            metadata: ClipMetadata(name: "report.pdf")
+        ))
+
+        XCTAssertEqual(clip.payloadKind, "file")
+        XCTAssertEqual(clip.mime, "application/pdf")
+        XCTAssertEqual(clip.byteLen, bytes.count)
+        XCTAssertEqual(
+            try PastaCrypto.decryptBytesClip(
+                groupKey: groupKey,
+                accountId: "acct_file",
+                routingId: "space_file",
+                clip: clip
+            ),
+            bytes
+        )
+        XCTAssertEqual(
+            try PastaCrypto.decryptClipMetadata(
+                groupKey: groupKey,
+                accountId: "acct_file",
+                routingId: "space_file",
+                clip: clip
+            )?.name,
+            "report.pdf"
+        )
+        XCTAssertFalse(clip.metadata?.ciphertext.contains("report") ?? true)
+    }
+
+    func testTemporaryFileStoreStagesAndCleansPlaintextExport() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("PastaCoreTests-\(UUID().uuidString)", isDirectory: true)
+        let store = try PastaTemporaryFileStore(directory: root)
+        let staged = try store.stageFile(
+            bytes: Array("exported".utf8),
+            suggestedName: "../unsafe:name.pdf",
+            fallbackName: "fallback.bin"
+        )
+
+        XCTAssertEqual(staged.lastPathComponent, "unsafe-name.pdf")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: staged.path))
+        try store.cleanup()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+}
+
+final class PastaAPIFileTests: XCTestCase {
+    override func tearDown() {
+        PastaMockURLProtocol.handler = nil
+        super.tearDown()
+    }
+
+    func testPublishFilePostsEncryptedClipToFileEndpoint() async throws {
+        let keyMaterial = try PastaCrypto.generateDeviceKeyMaterial()
+        let groupKey = try PastaCrypto.generateGroupKey()
+        let configuration = PastaDeviceConfiguration(
+            endpoint: URL(string: "https://pasta.example")!,
+            accountId: "acct_file",
+            routingId: "space_file",
+            deviceId: "dev_file",
+            deviceName: "iPhone",
+            verifyPublicKey: keyMaterial.signing.publicKey,
+            wrapPublicKey: keyMaterial.wrapping.publicKey,
+            keyVersion: 1
+        )
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [PastaMockURLProtocol.self]
+        let client = PastaAPIClient(session: URLSession(configuration: sessionConfiguration))
+
+        PastaMockURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/v1/files")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "pasta-account-id"), "acct_file")
+            let body = try XCTUnwrap(request.pastaTestBodyData())
+            let clip = try JSONDecoder().decode(EncryptedClip.self, from: body)
+            XCTAssertEqual(clip.payloadKind, "file")
+            XCTAssertEqual(clip.mime, "text/plain")
+            XCTAssertEqual(clip.byteLen, 5)
+            XCTAssertFalse(String(data: body, encoding: .utf8)?.contains("notes.txt") ?? true)
+
+            let clipJSON = try XCTUnwrap(String(data: body, encoding: .utf8))
+            let responseJSON = #"{"clip":{"seq":1,\#(clipJSON.dropFirst())}"#
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: request.url!,
+                statusCode: 201,
+                httpVersion: nil,
+                headerFields: ["content-type": "application/json"]
+            ))
+            return (response, Data(responseJSON.utf8))
+        }
+
+        let clip = try await client.publishFile(
+            bytes: Array("hello".utf8),
+            fileName: "notes.txt",
+            mime: "text/plain",
+            configuration: configuration,
+            groupKey: groupKey,
+            signingPrivateKey: keyMaterial.signing.privateKey
+        )
+        XCTAssertEqual(clip.seq, 1)
+        XCTAssertEqual(clip.payloadKind, "file")
+    }
+}
+
 final class PastaCoreLiveRelayTests: XCTestCase {
     func testLiveRelayJoinPublishAndHistoryWhenTokenProvided() async throws {
         guard let rawToken = ProcessInfo.processInfo.environment["PASTA_IOS_JOIN_TOKEN"],
@@ -222,11 +525,65 @@ final class PastaCoreLiveRelayTests: XCTestCase {
     }
 }
 
+private final class PastaMockURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let handler = Self.handler else {
+            client?.urlProtocol(self, didFailWithError: PastaAPIError.missingClip)
+            return
+        }
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
+private extension URLRequest {
+    func pastaTestBodyData() -> Data? {
+        if let httpBody {
+            return httpBody
+        }
+        guard let stream = httpBodyStream else {
+            return nil
+        }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count > 0 {
+                data.append(buffer, count: count)
+            } else {
+                break
+            }
+        }
+        return data.isEmpty ? nil : data
+    }
+}
+
 private struct PastaVectors: Decodable {
     let base64Url: Base64Vector
     let stableJson: StableJSONVector
     let signedRequest: SignedRequestVector
     let textClip: TextClipVector
+    let bytesClip: BytesClipVector
     let wrappedGroupKey: WrappedGroupKeyVector
     let joinGrant: JoinGrantVector
 }
@@ -254,6 +611,14 @@ private struct TextClipVector: Decodable {
     let routingId: String
     let groupKey: String
     let plaintext: String
+    let clip: EncryptedClip
+}
+
+private struct BytesClipVector: Decodable {
+    let accountId: String
+    let routingId: String
+    let groupKey: String
+    let bytes: [UInt8]
     let clip: EncryptedClip
 }
 
@@ -306,4 +671,98 @@ private enum StableValue: Encodable {
             try container.encodeNil()
         }
     }
+}
+
+private struct TestClipResponse: Encodable {
+    let clip: StoredClip
+}
+
+private struct TestFileClipResponse: Encodable {
+    let clip: StoredClip
+    let ciphertext: String
+}
+
+private final class MockURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let handler = Self.handler else {
+            client?.urlProtocol(self, didFailWithError: PastaAPIError.invalidURL)
+            return
+        }
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
+private func mockSession() -> URLSession {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [MockURLProtocol.self]
+    return URLSession(configuration: configuration)
+}
+
+private func testConfiguration() -> PastaDeviceConfiguration {
+    PastaDeviceConfiguration(
+        endpoint: URL(string: "https://relay.example")!,
+        accountId: "acct_test",
+        routingId: "space_test",
+        deviceId: "dev_test",
+        deviceName: "iPhone",
+        verifyPublicKey: "verify_public",
+        wrapPublicKey: "wrap_public",
+        keyVersion: 1
+    )
+}
+
+private func jsonResponse<T: Encodable>(status: Int, body: T, url: URL) throws -> (HTTPURLResponse, Data) {
+    let data = try JSONEncoder().encode(body)
+    let response = HTTPURLResponse(
+        url: url,
+        statusCode: status,
+        httpVersion: nil,
+        headerFields: ["content-type": "application/json"]
+    )!
+    return (response, data)
+}
+
+private func requestBodyData(_ request: URLRequest) throws -> Data {
+    if let body = request.httpBody {
+        return body
+    }
+    guard let stream = request.httpBodyStream else {
+        return Data()
+    }
+    stream.open()
+    defer { stream.close() }
+    var data = Data()
+    let bufferSize = 4096
+    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+    defer { buffer.deallocate() }
+    while stream.hasBytesAvailable {
+        let read = stream.read(buffer, maxLength: bufferSize)
+        if read < 0 {
+            throw stream.streamError ?? CocoaError(.fileReadUnknown)
+        }
+        if read == 0 {
+            break
+        }
+        data.append(buffer, count: read)
+    }
+    return data
 }

@@ -11,6 +11,7 @@ public enum PastaCryptoError: Error, Equatable {
     case cryptoFailed
     case unsupportedPayloadKind
     case aadMismatch
+    case payloadTooLarge
 }
 
 public struct PastaKeyPair: Equatable, Sendable {
@@ -60,6 +61,52 @@ public struct TextClipEncryptionInput: Equatable, Sendable {
     }
 }
 
+public struct BytesClipEncryptionInput: Equatable, Sendable {
+    public let accountId: String
+    public let routingId: String
+    public let originDeviceId: String
+    public let bytes: [UInt8]
+    public let payloadKind: String
+    public let mime: String
+    public let groupKey: String
+    public let keyVersion: Int
+    public let clipId: String?
+    public let createdAt: Int64?
+    public let expiresAt: Int64?
+    public let nonce: String?
+    public let metadata: ClipMetadata?
+
+    public init(
+        accountId: String,
+        routingId: String,
+        originDeviceId: String,
+        bytes: [UInt8],
+        payloadKind: String,
+        mime: String,
+        groupKey: String,
+        keyVersion: Int = 1,
+        clipId: String? = nil,
+        createdAt: Int64? = nil,
+        expiresAt: Int64? = nil,
+        nonce: String? = nil,
+        metadata: ClipMetadata? = nil
+    ) {
+        self.accountId = accountId
+        self.routingId = routingId
+        self.originDeviceId = originDeviceId
+        self.bytes = bytes
+        self.payloadKind = payloadKind
+        self.mime = mime
+        self.groupKey = groupKey
+        self.keyVersion = keyVersion
+        self.clipId = clipId
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
+        self.nonce = nonce
+        self.metadata = metadata
+    }
+}
+
 public enum PastaCrypto {
 
     public static func generateGroupKey() throws -> String {
@@ -104,47 +151,32 @@ public enum PastaCrypto {
     }
 
     public static func encryptTextClip(_ input: TextClipEncryptionInput) throws -> EncryptedClip {
-        let plaintextBytes = PastaEncoding.bytes(input.plaintext)
-        let nonce = try input.nonce.map(PastaEncoding.base64URLDecode)
-        let clipId = try input.clipId ?? "clip_\(PastaEncoding.randomBase64URL(byteCount: 16))"
-        let createdAt = input.createdAt ?? Int64(Date().timeIntervalSince1970 * 1000)
-        let aad = ClipAAD(
-            accountId: input.accountId,
-            routingId: input.routingId,
-            clipId: clipId,
-            originDeviceId: input.originDeviceId,
-            createdAt: createdAt,
-            payloadKind: "text",
-            mime: PastaCore.textMime,
-            byteLen: plaintextBytes.count,
-            keyVersion: input.keyVersion
-        )
-        let aadBytes = PastaEncoding.bytes(try PastaEncoding.stableJSONString(aad))
-        let groupKey = try PastaEncoding.base64URLDecode(input.groupKey)
-        let encrypted: (authenticatedCipherText: Bytes, nonce: Bytes)?
-        if let nonce {
-            encrypted = encryptWithNonce(message: plaintextBytes, key: groupKey, nonce: nonce, additionalData: aadBytes)
-        } else {
-            encrypted = Sodium().aead.xchacha20poly1305ietf.encrypt(
-                message: plaintextBytes,
-                secretKey: groupKey,
-                additionalData: aadBytes
+        try encryptInlineClip(
+            BytesClipEncryptionInput(
+                accountId: input.accountId,
+                routingId: input.routingId,
+                originDeviceId: input.originDeviceId,
+                bytes: PastaEncoding.bytes(input.plaintext),
+                payloadKind: "text",
+                mime: PastaCore.textMime,
+                groupKey: input.groupKey,
+                keyVersion: input.keyVersion,
+                clipId: input.clipId,
+                createdAt: input.createdAt,
+                expiresAt: input.expiresAt,
+                nonce: input.nonce
             )
-        }
-        guard let encrypted else { throw PastaCryptoError.cryptoFailed }
-        return EncryptedClip(
-            clipId: clipId,
-            originDeviceId: input.originDeviceId,
-            createdAt: createdAt,
-            expiresAt: input.expiresAt,
-            payloadKind: "text",
-            mime: PastaCore.textMime,
-            byteLen: plaintextBytes.count,
-            keyVersion: input.keyVersion,
-            nonce: PastaEncoding.base64URLEncode(encrypted.nonce),
-            aadHash: clipAADHash(aad),
-            ciphertext: PastaEncoding.base64URLEncode(encrypted.authenticatedCipherText)
         )
+    }
+
+    public static func encryptBytesClip(_ input: BytesClipEncryptionInput) throws -> EncryptedClip {
+        guard input.payloadKind == "file" || input.payloadKind == "image" else {
+            throw PastaCryptoError.unsupportedPayloadKind
+        }
+        guard input.bytes.count <= PastaCore.largePayloadMaxBytes else {
+            throw PastaCryptoError.payloadTooLarge
+        }
+        return try encryptInlineClip(input)
     }
 
     public static func decryptTextClip(
@@ -165,6 +197,108 @@ public enum PastaCrypto {
             throw PastaCryptoError.cryptoFailed
         }
         return try PastaEncoding.string(decrypted)
+    }
+
+    public static func decryptBytesClip(
+        groupKey: String,
+        accountId: String,
+        routingId: String,
+        clip: EncryptedClip
+    ) throws -> [UInt8] {
+        guard clip.payloadKind == "file" || clip.payloadKind == "image" else { throw PastaCryptoError.unsupportedPayloadKind }
+        let aad = aadForClip(accountId: accountId, routingId: routingId, clip: clip)
+        guard clipAADHash(aad) == clip.aadHash else { throw PastaCryptoError.aadMismatch }
+        guard let decrypted = Sodium().aead.xchacha20poly1305ietf.decrypt(
+            authenticatedCipherText: try PastaEncoding.base64URLDecode(clip.ciphertext),
+            secretKey: try PastaEncoding.base64URLDecode(groupKey),
+            nonce: try PastaEncoding.base64URLDecode(clip.nonce),
+            additionalData: PastaEncoding.bytes(try PastaEncoding.stableJSONString(aad))
+        ) else {
+            throw PastaCryptoError.cryptoFailed
+        }
+        return decrypted
+    }
+
+    public static func decryptClipMetadata(
+        groupKey: String,
+        accountId: String,
+        routingId: String,
+        clip: EncryptedClip
+    ) throws -> ClipMetadata? {
+        guard let metadata = clip.metadata else { return nil }
+        guard let decrypted = Sodium().aead.xchacha20poly1305ietf.decrypt(
+            authenticatedCipherText: try PastaEncoding.base64URLDecode(metadata.ciphertext),
+            secretKey: try PastaEncoding.base64URLDecode(groupKey),
+            nonce: try PastaEncoding.base64URLDecode(metadata.nonce),
+            additionalData: try metadataAADBytes(accountId: accountId, routingId: routingId, clip: clip)
+        ) else {
+            throw PastaCryptoError.cryptoFailed
+        }
+        return try JSONDecoder().decode(ClipMetadata.self, from: Data(decrypted))
+    }
+
+    private static func encryptInlineClip(_ input: BytesClipEncryptionInput) throws -> EncryptedClip {
+        let nonce = try input.nonce.map(PastaEncoding.base64URLDecode)
+        let clipId = try input.clipId ?? "clip_\(PastaEncoding.randomBase64URL(byteCount: 16))"
+        let createdAt = input.createdAt ?? Int64(Date().timeIntervalSince1970 * 1000)
+        let aad = ClipAAD(
+            accountId: input.accountId,
+            routingId: input.routingId,
+            clipId: clipId,
+            originDeviceId: input.originDeviceId,
+            createdAt: createdAt,
+            payloadKind: input.payloadKind,
+            mime: input.mime,
+            byteLen: input.bytes.count,
+            keyVersion: input.keyVersion
+        )
+        let aadBytes = PastaEncoding.bytes(try PastaEncoding.stableJSONString(aad))
+        let groupKey = try PastaEncoding.base64URLDecode(input.groupKey)
+        let encrypted: (authenticatedCipherText: Bytes, nonce: Bytes)?
+        if let nonce {
+            encrypted = encryptWithNonce(message: input.bytes, key: groupKey, nonce: nonce, additionalData: aadBytes)
+        } else {
+            encrypted = Sodium().aead.xchacha20poly1305ietf.encrypt(
+                message: input.bytes,
+                secretKey: groupKey,
+                additionalData: aadBytes
+            )
+        }
+        guard let encrypted else { throw PastaCryptoError.cryptoFailed }
+        let clip = EncryptedClip(
+            clipId: clipId,
+            originDeviceId: input.originDeviceId,
+            createdAt: createdAt,
+            expiresAt: input.expiresAt,
+            payloadKind: input.payloadKind,
+            mime: input.mime,
+            byteLen: input.bytes.count,
+            keyVersion: input.keyVersion,
+            nonce: PastaEncoding.base64URLEncode(encrypted.nonce),
+            aadHash: clipAADHash(aad),
+            ciphertext: PastaEncoding.base64URLEncode(encrypted.authenticatedCipherText)
+        )
+        guard let metadata = input.metadata else { return clip }
+        return EncryptedClip(
+            clipId: clip.clipId,
+            originDeviceId: clip.originDeviceId,
+            createdAt: clip.createdAt,
+            expiresAt: clip.expiresAt,
+            payloadKind: clip.payloadKind,
+            mime: clip.mime,
+            byteLen: clip.byteLen,
+            keyVersion: clip.keyVersion,
+            nonce: clip.nonce,
+            aadHash: clip.aadHash,
+            ciphertext: clip.ciphertext,
+            metadata: try encryptClipMetadata(
+                groupKey: input.groupKey,
+                accountId: input.accountId,
+                routingId: input.routingId,
+                clip: clip,
+                metadata: metadata
+            )
+        )
     }
 
     public static func wrapGroupKey(
@@ -228,6 +362,36 @@ public enum PastaCrypto {
 
     public static func clipAADHash(_ aad: ClipAAD) -> String {
         (try? PastaEncoding.sha256Base64URL(PastaEncoding.stableJSONString(aad))) ?? ""
+    }
+
+    private static func encryptClipMetadata(
+        groupKey: String,
+        accountId: String,
+        routingId: String,
+        clip: EncryptedClip,
+        metadata: ClipMetadata
+    ) throws -> EncryptedClipMetadata {
+        let nonce = try PastaEncoding.randomBytes(count: 24)
+        guard let encrypted = encryptWithNonce(
+            message: PastaEncoding.bytes(try PastaEncoding.stableJSONString(metadata)),
+            key: try PastaEncoding.base64URLDecode(groupKey),
+            nonce: nonce,
+            additionalData: try metadataAADBytes(accountId: accountId, routingId: routingId, clip: clip)
+        ) else {
+            throw PastaCryptoError.cryptoFailed
+        }
+        return EncryptedClipMetadata(
+            nonce: PastaEncoding.base64URLEncode(encrypted.nonce),
+            ciphertext: PastaEncoding.base64URLEncode(encrypted.authenticatedCipherText)
+        )
+    }
+
+    private static func metadataAADBytes(accountId: String, routingId: String, clip: EncryptedClip) throws -> [UInt8] {
+        let aad = ClipMetadataAAD(
+            purpose: "pasta.clip-metadata.v1",
+            clip: aadForClip(accountId: accountId, routingId: routingId, clip: clip)
+        )
+        return PastaEncoding.bytes(try PastaEncoding.stableJSONString(aad))
     }
 
     public static func parseJoinGrantToken(_ token: String) throws -> JoinGrantToken {
@@ -390,6 +554,11 @@ private struct WrappedGroupKeyEnvelope: Codable {
     let senderWrapPublicKey: String
     let nonce: String
     let ciphertext: String
+}
+
+private struct ClipMetadataAAD: Codable {
+    let purpose: String
+    let clip: ClipAAD
 }
 
 private struct JoinGrantAAD: Codable {

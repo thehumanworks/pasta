@@ -1,8 +1,11 @@
 import PastaCore
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 struct PastaRootView: View {
     @EnvironmentObject private var model: PastaAppModel
+    @State private var isImportingFile = false
 
     var body: some View {
         NavigationStack {
@@ -54,6 +57,43 @@ struct PastaRootView: View {
                     }
                 }
 
+                Section("Files") {
+                    Button {
+                        isImportingFile = true
+                    } label: {
+                        Label("Import File", systemImage: "doc.badge.plus")
+                    }
+                    .disabled(model.configuration == nil || model.isBusy)
+
+                    if model.historyClips.contains(where: \.isExportable) {
+                        ForEach(model.historyClips.filter(\.isExportable)) { clip in
+                            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(clip.title)
+                                        .font(.headline)
+                                        .lineLimit(1)
+                                    Text("\(clip.payloadKind) - \(clip.mime) - \(clip.byteLen) bytes")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                Button {
+                                    Task { await model.prepareExport(clip) }
+                                } label: {
+                                    Label("Export", systemImage: "square.and.arrow.up")
+                                        .labelStyle(.iconOnly)
+                                }
+                                .disabled(model.isBusy)
+                            }
+                        }
+                    } else {
+                        Text("No remote file clips.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section("Keyboard Cache") {
                     HStack {
                         Button {
@@ -88,6 +128,20 @@ struct PastaRootView: View {
                 }
             }
             .navigationTitle("Pasta")
+            .fileImporter(
+                isPresented: $isImportingFile,
+                allowedContentTypes: [.item],
+                allowsMultipleSelection: false
+            ) { result in
+                guard case .success(let urls) = result, let url = urls.first else { return }
+                Task { await model.publishSelectedFile(url) }
+            }
+            .sheet(item: $model.preparedExport, onDismiss: {
+                model.cleanupPreparedExport()
+            }) { export in
+                PastaShareSheet(activityItems: [export.url])
+                    .ignoresSafeArea()
+            }
             .toolbar {
                 ToolbarItem(placement: .bottomBar) {
                     Text(model.status)
@@ -97,4 +151,14 @@ struct PastaRootView: View {
             }
         }
     }
+}
+
+private struct PastaShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

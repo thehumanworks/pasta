@@ -58,6 +58,35 @@
       "ciphertext": "1lKk2wV9EQKG45L1HSXXBNRTdxfAry3sJYsfbdNhhDapODKw"
     }
   },
+  "bytesClip": {
+    "accountId": "acct_vector",
+    "routingId": "space_vector",
+    "groupKey": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk",
+    "bytes": [
+      80,
+      65,
+      83,
+      84,
+      65,
+      0,
+      1,
+      2,
+      255
+    ],
+    "clip": {
+      "clipId": "clip_vector_file",
+      "originDeviceId": "dev_vector",
+      "createdAt": 1782475200001,
+      "expiresAt": null,
+      "payloadKind": "file",
+      "mime": "application/octet-stream",
+      "byteLen": 9,
+      "keyVersion": 1,
+      "nonce": "CAgICAgICAgICAgICAgICAgICAgICAgI",
+      "aadHash": "YC8vSY3UkTbKxuSN1qoz60VNQFAKc4tUA3MX9zEaJcg",
+      "ciphertext": "r67d5y3almOeya1RfLWbag_zYMVbybjCrw"
+    }
+  },
   "wrappedGroupKey": {
     "groupKey": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk",
     "senderPrivateKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",

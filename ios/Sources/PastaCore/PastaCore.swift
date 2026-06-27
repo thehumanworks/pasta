@@ -11,6 +11,7 @@ public enum PastaCore {
     public static let minimumSupportedIOSMajorVersion = 17
     public static let textMime = "text/plain; charset=utf-8"
     public static let defaultHistoryLimit = 20
+    public static let largePayloadMaxBytes = 50 * 1024 * 1024
 }
 
 public enum PastaIOSSurface: String, CaseIterable, Sendable {
@@ -56,5 +57,53 @@ public struct PastaKeyboardClip: Codable, Equatable, Identifiable, Sendable {
         self.title = title
         self.text = text
         self.createdAt = createdAt
+    }
+}
+
+public struct PastaHistoryClip: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { clipId }
+    public let seq: Int
+    public let clipId: String
+    public let title: String
+    public let payloadKind: String
+    public let mime: String
+    public let byteLen: Int
+    public let createdAt: Int64
+    public let text: String?
+
+    public var resolvedKind: PastaResolvedClipKind {
+        if payloadKind == "text" { return .text }
+        if payloadKind == "image" { return .image }
+        if payloadKind == "file", mime == PastaCore.directoryBundleMIME { return .directoryBundle }
+        return .file
+    }
+
+    public var isExportable: Bool {
+        switch resolvedKind {
+        case .image, .file, .directoryBundle:
+            return true
+        case .text:
+            return false
+        }
+    }
+
+    public init(
+        seq: Int,
+        clipId: String,
+        title: String,
+        payloadKind: String,
+        mime: String,
+        byteLen: Int,
+        createdAt: Int64,
+        text: String? = nil
+    ) {
+        self.seq = seq
+        self.clipId = clipId
+        self.title = title
+        self.payloadKind = payloadKind
+        self.mime = mime
+        self.byteLen = byteLen
+        self.createdAt = createdAt
+        self.text = text
     }
 }
