@@ -58,7 +58,7 @@ Implementation lives in `src/cli/shell.ts`. The snippet is a plain shell file â€
 
 ## Platform notes
 
-- Daemon watches **text** clipboard only in v0.1.5.
+- Daemon watches **text** clipboard only in v0.1.6.
 - Image auto-sync is not daemon-driven; use explicit `copy --image` / `paste --image`.
 - Clipboard adapter availability varies â€” run `pasta doctor` first.
 

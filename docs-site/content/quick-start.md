@@ -92,7 +92,7 @@ pasta daemon              # polls clipboard every 750ms
 <!-- @agent -->
 ## Product summary
 
-Pasta v0.1.5 — terminal-first encrypted clipboard relay. Central Cloudflare Worker transport only. Devices encrypt locally; relay stores ciphertext.
+Pasta v0.1.6 — terminal-first encrypted clipboard relay. Central Cloudflare Worker transport only. Devices encrypt locally; relay stores ciphertext.
 
 ## Repository layout
 
@@ -138,7 +138,7 @@ reset --yes → new routing_id + group key
 ## Quick verification commands
 
 ```bash
-bunx --bun -p github:thehumanworks/pasta pasta --version   # expect 0.1.5
+bunx --bun -p github:thehumanworks/pasta pasta --version   # expect 0.1.6
 pasta protocol                                              # PROTOCOL_ENDPOINTS JSON
 pasta payload-plan                                          # R2 thresholds
 pasta doctor                                                # clipboard adapter probe

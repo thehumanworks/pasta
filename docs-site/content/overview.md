@@ -1,7 +1,7 @@
 ---
 title: Overview
 slug: overview
-description: What Pasta is for, what it is not, and the product shape at v0.1.5.
+description: What Pasta is for, what it is not, and the product shape at v0.1.6.
 nav_order: 2
 ---
 
@@ -10,7 +10,7 @@ nav_order: 2
 
 Pasta lets **trusted desktops share a clipboard** through an encrypted central relay. When you copy text (or, on supported paths, an image or file) on one machine, another machine you have paired can pull and decrypt it — locally — on paste.
 
-The experience is deliberately **terminal-first**: a `pasta` CLI, an optional background daemon that watches your clipboard, and shell aliases for common flows. There is no GUI, browser extension, or mobile client in v0.1.5.
+The experience is deliberately **terminal-first**: a `pasta` CLI, an optional background daemon that watches your clipboard, and shell aliases for common flows. There is no GUI, browser extension, or mobile client in v0.1.6.
 
 ## Why a central relay?
 
@@ -26,7 +26,7 @@ That choice trades metadata visibility (the relay sees *that* you copied, *when*
 4. **Clean pairing** — short code + QR; no typing long secrets.
 5. **Honest recovery** — lose all devices → `reset`; no backdoor recovery.
 
-## Supported today (v0.1.5)
+## Supported today (v0.1.6)
 
 | Capability | Status |
 | --- | --- |
@@ -57,7 +57,7 @@ That choice trades metadata visibility (the relay sees *that* you copied, *when*
 ## System identity
 
 - **Name:** Pasta (`pasta` CLI/bin)
-- **Version:** 0.1.5 (`PASTA_VERSION` in `src/shared/protocol.ts`)
+- **Version:** 0.1.6 (`PASTA_VERSION` in `src/shared/protocol.ts`)
 - **License:** UNLICENSED (package.json)
 - **Public repo:** github:thehumanworks/pasta
 

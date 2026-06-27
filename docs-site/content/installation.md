@@ -12,7 +12,7 @@ nav_order: 3
 
 ```bash
 bunx --bun -p github:thehumanworks/pasta pasta --version
-bunx --bun github:thehumanworks/pasta#v0.1.5 --version
+bunx --bun github:thehumanworks/pasta#v0.1.6 --version
 ```
 
 **From a local checkout (developers):**
