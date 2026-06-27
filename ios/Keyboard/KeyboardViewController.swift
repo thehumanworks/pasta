@@ -210,6 +210,17 @@ private struct PastaKeyboardView: View {
             }
         )
         .autocompleteToolbarStyle(PastaToolbarAppearance.autocompleteToolbarStyle)
+        .keyboardButtonStyle { params in
+            var style = params.standardStyle(for: keyboardContext)
+            guard params.action.isShiftAction else { return style }
+
+            let tokens = PastaKeyboardShiftAppearance.styleTokens(
+                isActive: keyboardContext.keyboardCase.isPastaUppercaseState,
+                interfaceStyle: keyboardContext.hasDarkColorScheme ? .dark : .light
+            )
+            style.applyPastaKeyboardTokens(tokens)
+            return style
+        }
         .keyboardInputToolbarDisplayMode(.none)
         .id(keyboardLayoutIdentifier)
     }
@@ -360,6 +371,39 @@ private enum PastaToolbarAppearance {
             height: toolbarHeight,
             padding: 0
         )
+    }
+}
+
+private extension Keyboard.KeyboardCase {
+    var isPastaUppercaseState: Bool {
+        switch self {
+        case .uppercased, .capsLocked:
+            return true
+        case .auto, .lowercased:
+            return false
+        }
+    }
+}
+
+private extension Keyboard.ButtonStyle {
+    mutating func applyPastaKeyboardTokens(_ tokens: PastaKeyboardShiftStyleTokens) {
+        switch tokens.fill {
+        case .standard:
+            break
+        case .black:
+            backgroundColor = .black
+        case .white:
+            backgroundColor = .white
+        }
+
+        switch tokens.foreground {
+        case .standard:
+            break
+        case .black:
+            foregroundColor = .black
+        case .white:
+            foregroundColor = .white
+        }
     }
 }
 
