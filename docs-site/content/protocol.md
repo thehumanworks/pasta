@@ -72,7 +72,7 @@ The Worker rejects requests outside a **5-minute** timestamp window, with bad bo
 | Create join grant | `POST /v1/pairing/grants` | Signed |
 | Redeem join grant | `POST /v1/pairing/grants/redeem` | Grant proof |
 | Revoke join grant | `POST /v1/pairing/grants/:id/revoke` | Signed |
-| List devices | `GET /v1/devices` | Signed |
+| List devices | `GET /v1/devices[?includeRevoked=true]` | Signed |
 | Revoke device | `POST /v1/devices/:id/revoke` | Signed |
 | Reset space | `POST /v1/reset` | Signed |
 | Upload file | `POST /v1/files` | Signed |
@@ -90,6 +90,8 @@ Join grants are for CI and sandbox devices. A trusted device creates a high-entr
 - Device TTL: default none, maximum 30 days when set. Controls optional automatic revocation of the joined device.
 
 When a device TTL is set, the joined device's expiry is calculated at redemption time. Worker auth treats `device_expires_at` as real revocation: once expired, the next valid signed request marks the device row revoked and is rejected before clipboard operations run. Without a device TTL, `device_expires_at` is null and the joined device remains trusted until explicit revocation.
+
+Device list defaults to active devices only. Add `includeRevoked=true` to return retained revoked rows for audit/governance. Revoked device ids are not reactivated by later approval or grant flows; a machine that should regain access must pair as a fresh device.
 
 <!-- @agent -->
 ## Source of truth

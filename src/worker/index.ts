@@ -117,14 +117,17 @@ async function route(request: Request, env: Env): Promise<Response> {
     return clip ? json({ clip }) : json({ error: "not_found" }, 404);
   }
   if (request.method === "GET" && url.pathname === "/v1/devices") {
+    const includeRevoked = parseBooleanQuery(url.searchParams.get("includeRevoked"));
     const devices = await env.DB.prepare(
       `SELECT account_id AS accountId, device_id AS deviceId, device_name AS deviceName,
               verify_public_key AS verifyPublicKey, wrap_public_key AS wrapPublicKey,
               status, created_at AS createdAt, last_seen_at AS lastSeenAt, revoked_at AS revokedAt,
               device_expires_at AS deviceExpiresAt
-       FROM devices WHERE account_id = ? ORDER BY created_at ASC`
+       FROM devices
+       WHERE account_id = ? AND (? = 1 OR status = 'active')
+       ORDER BY created_at ASC`
     )
-      .bind(auth.accountId)
+      .bind(auth.accountId, includeRevoked ? 1 : 0)
       .all<DeviceRecord>();
     return json({ devices: devices.results.map(deviceFromD1) });
   }
@@ -283,17 +286,14 @@ async function pairingApprove(env: Env, auth: AuthContext, body: PairingApproveR
   if (Number(session.expires_at) <= Date.now()) return json({ error: "expired_pairing" }, 410);
   const pubkeys = JSON.parse(String(session.new_device_pubkeys_json)) as { verifyPublicKey: string; wrapPublicKey: string };
   const now = Date.now();
+  const existingDevice = await env.DB.prepare("SELECT 1 FROM devices WHERE account_id = ? AND device_id = ? LIMIT 1")
+    .bind(auth.accountId, session.new_device_id)
+    .first();
+  if (existingDevice) return json({ error: "device_exists" }, 409);
   await env.DB.prepare(
     `INSERT INTO devices(
       account_id, device_id, device_name, verify_public_key, wrap_public_key, status, created_at, device_expires_at
-    ) VALUES (?, ?, ?, ?, ?, 'active', ?, NULL)
-    ON CONFLICT(account_id, device_id) DO UPDATE SET
-      device_name = excluded.device_name,
-      verify_public_key = excluded.verify_public_key,
-      wrap_public_key = excluded.wrap_public_key,
-      status = 'active',
-      revoked_at = NULL,
-      device_expires_at = NULL`
+    ) VALUES (?, ?, ?, ?, ?, 'active', ?, NULL)`
   )
     .bind(auth.accountId, session.new_device_id, session.new_device_name, pubkeys.verifyPublicKey, pubkeys.wrapPublicKey, now)
     .run();
@@ -622,6 +622,10 @@ function validateJoinGrantBounds(tokenExpiresAt: number, deviceTtlMs: number | n
     return "bad_max_uses";
   }
   return null;
+}
+
+function parseBooleanQuery(value: string | null): boolean {
+  return value === "1" || value === "true" || value === "yes";
 }
 
 function constantTimeEqual(left: string, right: string): boolean {

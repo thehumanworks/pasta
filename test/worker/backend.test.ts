@@ -212,6 +212,57 @@ describe("Worker backend", () => {
     expect((await signedFetch(device, "GET", "/v1/devices")).status).toBe(403);
   });
 
+  it("hides revoked devices by default and rejects reactivation through pair approval", async () => {
+    const existing = await bootstrap();
+    const secondKeys = generateDeviceKeyMaterial();
+    const secondDeviceId = `dev_second_${randomBase64Url(6)}`;
+    await env.DB.prepare(
+      `INSERT INTO devices(
+        account_id, device_id, device_name, verify_public_key, wrap_public_key,
+        status, created_at, last_seen_at, revoked_at, device_expires_at
+      ) VALUES (?, ?, 'second', ?, ?, 'active', ?, NULL, NULL, NULL)`
+    )
+      .bind(existing.accountId, secondDeviceId, secondKeys.signing.publicKey, secondKeys.wrapping.publicKey, Date.now())
+      .run();
+
+    const initial = await (await signedFetch(existing, "GET", "/v1/devices")).json() as { devices: Array<{ deviceId: string; status: string }> };
+    expect(initial.devices.some((device) => device.deviceId === secondDeviceId && device.status === "active")).toBe(true);
+
+    await expectStatus(await signedFetch(existing, "POST", `/v1/devices/${secondDeviceId}/revoke`, {}), 200);
+    const defaultList = await (await signedFetch(existing, "GET", "/v1/devices")).json() as { devices: Array<{ deviceId: string; status: string }> };
+    expect(defaultList.devices.some((device) => device.deviceId === secondDeviceId)).toBe(false);
+    const auditList = await (await signedFetch(existing, "GET", "/v1/devices?includeRevoked=true")).json() as { devices: Array<{ deviceId: string; status: string }> };
+    expect(auditList.devices.some((device) => device.deviceId === secondDeviceId && device.status === "revoked")).toBe(true);
+
+    const requester = generateDeviceKeyMaterial();
+    const shortCodeHash = hashShortCode("REPAIR01", existing.accountId);
+    await expectStatus(await SELF.fetch("https://pasta.test/v1/pairing/open", {
+      method: "POST",
+      body: stableJson({
+        sessionId: `pair_reactivation_${randomBase64Url(6)}`,
+        accountId: existing.accountId,
+        shortCodeHash,
+        newDeviceId: secondDeviceId,
+        newDeviceName: "reactivation-attempt",
+        verifyPublicKey: requester.signing.publicKey,
+        wrapPublicKey: requester.wrapping.publicKey,
+        expiresAt: Date.now() + 60_000
+      })
+    }), 201);
+    const approval = await signedFetch(existing, "POST", "/v1/pairing/approve", {
+      shortCodeHash,
+      wrappedGroupKey: "wrapped",
+      keyVersion: 1
+    });
+    expect(approval.status).toBe(409);
+    expect(await approval.json()).toMatchObject({ error: "device_exists" });
+    const row = await env.DB.prepare("SELECT status, revoked_at FROM devices WHERE account_id = ? AND device_id = ?")
+      .bind(existing.accountId, secondDeviceId)
+      .first<{ status: string; revoked_at: number | null }>();
+    expect(row?.status).toBe("revoked");
+    expect(row?.revoked_at).toBeGreaterThan(0);
+  });
+
   it("approves and consumes pairing exactly once", async () => {
     const existing = await bootstrap();
     const groupKey = generateGroupKey();

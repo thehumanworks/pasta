@@ -139,8 +139,8 @@ export const PROTOCOL_ENDPOINTS: ProtocolEndpoint[] = [
     method: "GET",
     path: "/v1/devices",
     auth: "device-signature",
-    request: "empty signed request",
-    response: "device metadata without secrets",
+    request: "optional includeRevoked query",
+    response: "active device metadata without secrets by default; revoked metadata only when requested",
     mutation: "D1 device last_seen_at"
   },
   {

@@ -75,7 +75,7 @@ The Worker rejects stale timestamps outside five minutes, bad body hashes, unkno
 | `pair grant create` | `POST /v1/pairing/grants` | device signature | grant id, redemption verifier, sealed group-key grant, token TTL, optional device TTL, use limit | stored join grant | D1 `pairing_grants` |
 | `pair join` | `POST /v1/pairing/grants/redeem` | grant proof | grant id, redeem secret, new-device public keys | registered leased device plus sealed group-key grant | D1 `devices`, D1 grant use count |
 | `pair grant revoke` | `POST /v1/pairing/grants/:grantId/revoke` | device signature | grant id | unused grant revoked | D1 `revoked_at` |
-| `devices list` | `GET /v1/devices` | device signature | empty signed request | device metadata only | D1 `last_seen_at` |
+| `devices list` | `GET /v1/devices` | device signature | optional `includeRevoked=true` query | active device metadata by default; revoked rows only when requested | D1 `last_seen_at` |
 | `devices revoke` | `POST /v1/devices/:deviceId/revoke` | device signature | target device | revocation metadata | D1 revoked status, DO wrapped-key revocation |
 | `reset` | `POST /v1/reset` | device signature | `confirm: RESET`, new routing id | new encrypted space metadata | D1 `routing_id`, `reset_at` |
 
@@ -106,6 +106,8 @@ Server bounds:
 - Uses max: 10.
 
 By default, a joined device has `device_expires_at = NULL` and remains trusted until explicit revocation. When the grant creator sets a device TTL, it starts at redemption time and the joined device receives `device_expires_at = redeemed_at + device_ttl_ms`. Worker auth treats that field as real revocation: after expiry, the next valid signed request marks the device revoked, records `revoked_at`, revokes any active DO wrapped-key row, and rejects before copy, paste, history, approval, grant creation, or reset logic runs.
+
+`GET /v1/devices` returns active devices only unless `includeRevoked=true` is supplied. Revoked devices are retained as server-side audit rows, but they are not reactivated. Pair approval and join-grant redemption reject any new device request whose `device_id` already exists; regaining access requires a fresh pairing request with a fresh device id.
 
 ## Reset
 

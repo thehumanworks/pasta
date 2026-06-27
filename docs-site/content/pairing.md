@@ -64,10 +64,11 @@ The wrapped group key is unwrapped locally and stored in the local Pasta auth ca
 
 ```bash
 pasta devices list
+pasta devices list --include-revoked
 pasta devices revoke dev_example
 ```
 
-Revoked devices cannot sign requests, publish, pull, or approve new pairings.
+Revoked devices are hidden from the default list. `--include-revoked` shows retained revoked rows for audit/governance. Revoked devices cannot sign requests, publish, pull, approve new pairings, or be reactivated under the same device id; a returning machine must pair again as a fresh device.
 
 ## Noninteractive CI and sandbox devices
 

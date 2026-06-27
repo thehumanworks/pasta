@@ -239,6 +239,38 @@ describe("CLI", () => {
     expect(output.join("")).not.toContain(grantOutput.joinToken);
   });
 
+  it("lists active devices by default and includes revoked devices only when requested", async () => {
+    const paths = await tempPaths();
+    const secrets = new MemorySecretStore();
+    await writeConfig(sampleConfig(), paths.configPath);
+    const client = new MockApiClient(({ method, path }) => {
+      expect(method).toBe("GET");
+      if (path === "/v1/devices") {
+        return { devices: [{ deviceId: "dev_active", deviceName: "active", status: "active" }] };
+      }
+      if (path === "/v1/devices?includeRevoked=true") {
+        return {
+          devices: [
+            { deviceId: "dev_active", deviceName: "active", status: "active" },
+            { deviceId: "dev_revoked", deviceName: "old", status: "revoked" }
+          ]
+        };
+      }
+      throw new Error(`unexpected ${method} ${path}`);
+    });
+    const output: string[] = [];
+    const deps = { io: capture(output), paths, secrets, clientFactory: () => client };
+
+    expect(await runCli(["devices", "list"], deps)).toBe(0);
+    expect(output.join("")).toContain("dev_active\tactive\tactive");
+    expect(output.join("")).not.toContain("dev_revoked");
+
+    output.length = 0;
+    expect(await runCli(["devices", "list", "--include-revoked"], deps)).toBe(0);
+    expect(output.join("")).toContain("dev_active\tactive\tactive");
+    expect(output.join("")).toContain("dev_revoked\trevoked\told");
+  });
+
   it("copies, pastes, lists history, and avoids daemon publish loops", async () => {
     const paths = await tempPaths();
     const secrets = new MemorySecretStore();

@@ -119,6 +119,7 @@ Verification Contract:
 - 2026-06-26 - live local smoke `devices revoke <dev2>` - exit 0; subsequent dev2 `paste` failed and Worker log returned `GET /v1/clips/latest 403 Forbidden`.
 - 2026-06-26 - `mise exec -- bun run test` - exit 0; Worker tests reject revoked device requests.
 - 2026-06-27 - `mise exec -- bun run test:worker` - exit 0; expired join-grant device is marked `revoked` and rejected with `expired_device` on its next signed request.
+- 2026-06-27 - `mise exec -- bun run check` and `mise exec -- bun test test/bun/cli.test.ts` - exit 0; default `devices list` hides revoked devices, `--include-revoked` exposes retained audit rows, and pair approval rejects reuse of a revoked device ID with `device_exists`.
 
 ### T5 - Reset Flow - [x]
 

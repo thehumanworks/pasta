@@ -32,12 +32,13 @@ pasta --version
 | `pair grant create [--token-ttl <duration>] [--device-ttl <duration>] [--uses <n>] [--label <text>] [--json]` | Trusted device creates noninteractive join token |
 | `pair grant revoke <grantId>` | Revoke an unused join grant |
 | `pair join --token <token> [--device-name <name>]` | Noninteractive device registration for CI/sandboxes |
-| `devices list` | Tab-separated device id, status, name |
+| `devices list [--include-revoked]` | Tab-separated active device id, status, name; include revoked audit rows only when requested |
 | `devices approve <code>` | Trusted device approves pending pair |
 | `devices revoke <deviceId>` | Revoke a device |
 
 Pairing ticket contains **endpoint, account, routing** — not the group key.
 Join grants default to a 10-minute token TTL, no device TTL, and one use. Use `--device-ttl 24h` when a temporary sandbox device should auto-revoke. `pair join` reads `--token` or `PASTA_JOIN_TOKEN`.
+Revoked device rows are hidden from `devices list` by default and cannot be reactivated; a returning machine must pair as a fresh device.
 
 ## Text clipboard
 
@@ -112,7 +113,7 @@ argv[0] routes to handlers. Inject deps via `CliDeps`: `io`, `paths`, `secrets`,
 | `pair grant create` | `POST /v1/pairing/grants` | signed |
 | `pair grant revoke` | `POST /v1/pairing/grants/:id/revoke` | signed |
 | `pair join` | `POST /v1/pairing/grants/redeem` | grant proof |
-| `devices list` | `GET /v1/devices` | signed |
+| `devices list` | `GET /v1/devices` or `GET /v1/devices?includeRevoked=true` | signed |
 | `devices revoke` | `POST /v1/devices/:id/revoke` | signed |
 | `reset` | `POST /v1/reset` | signed |
 

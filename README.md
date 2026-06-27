@@ -116,6 +116,8 @@ See the device record:
 pasta devices list
 ```
 
+The default list shows active devices only. Use `pasta devices list --include-revoked` for retained revoked rows.
+
 Print a pairing ticket for another desktop:
 
 ```bash
@@ -155,6 +157,8 @@ List trusted devices from either side:
 ```bash
 pasta devices list
 ```
+
+Revoked devices disappear from the default list. They remain retained for audit/governance and can be shown with `pasta devices list --include-revoked`.
 
 Revoke a device:
 

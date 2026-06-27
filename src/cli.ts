@@ -831,7 +831,8 @@ async function devicesCommand(
   const config = await readConfig(paths.configPath);
   const client = clientFor(config, secrets, deps);
   if (argv[0] === "list" || !argv[0]) {
-    const response = await client.request<{ devices: Array<{ deviceId: string; deviceName: string; status: string }> }>("GET", "/v1/devices");
+    const path = argv.includes("--include-revoked") ? "/v1/devices?includeRevoked=true" : "/v1/devices";
+    const response = await client.request<{ devices: Array<{ deviceId: string; deviceName: string; status: string }> }>("GET", path);
     for (const device of response.devices) {
       io.stdout(`${device.deviceId}\t${device.status}\t${device.deviceName}\n`);
     }
@@ -1155,12 +1156,14 @@ Examples:
   PASTA_JOIN_TOKEN="$token" pasta pair join --device-name modal-sandbox
   pasta pair grant revoke grant_example
 `,
-    devices: `usage: pasta devices list | pasta devices approve <code> | pasta devices revoke <device>
+    devices: `usage: pasta devices list [--include-revoked] | pasta devices approve <code> | pasta devices revoke <device>
 
-Lists, approves, or revokes trusted devices.
+Lists active devices by default, approves pair requests, or revokes trusted devices.
+Use --include-revoked to show revoked device rows for governance/history.
 
 Examples:
   pasta devices list
+  pasta devices list --include-revoked
   pasta devices approve 123456
   pasta devices revoke dev_example
 `,
@@ -1212,7 +1215,7 @@ function helpText(): string {
     "  bootstrap --endpoint <url> [--device-name <name>]",
     "  pair ticket | pair request --ticket <payload> | pair consume",
     "  pair grant create [--json] | pair grant revoke <grantId> | pair join --token <token>",
-    "  devices list | devices approve <code> | devices revoke <device>",
+    "  devices list [--include-revoked] | devices approve <code> | devices revoke <device>",
     "  copy [path] [--image|--file] [--mime <type>]",
     "  paste [--clipboard] [--seq <n>] [--out <path>]",
     "  history [--show] | history paste <seq>",
