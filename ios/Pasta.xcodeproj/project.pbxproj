@@ -341,7 +341,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/Pasta.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = 54MXM5JG3R;
 				DISPLAY_NAME = Pasta;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -351,7 +351,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.7;
+				MARKETING_VERSION = 0.1.8;
 				PRODUCT_BUNDLE_IDENTIFIER = com.thehumanworks.pasta;
 				PRODUCT_NAME = Pasta;
 				SDKROOT = iphoneos;
@@ -365,7 +365,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = Keyboard/PastaKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = 54MXM5JG3R;
 				DISPLAY_NAME = "Pasta Keyboard";
 				GENERATE_INFOPLIST_FILE = NO;
@@ -376,7 +376,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.7;
+				MARKETING_VERSION = 0.1.8;
 				PRODUCT_BUNDLE_IDENTIFIER = com.thehumanworks.pasta.keyboard;
 				PRODUCT_NAME = PastaKeyboard;
 				SDKROOT = iphoneos;
@@ -453,7 +453,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = Keyboard/PastaKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = 54MXM5JG3R;
 				DISPLAY_NAME = "Pasta Keyboard";
 				GENERATE_INFOPLIST_FILE = NO;
@@ -464,7 +464,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.7;
+				MARKETING_VERSION = 0.1.8;
 				PRODUCT_BUNDLE_IDENTIFIER = com.thehumanworks.pasta.keyboard;
 				PRODUCT_NAME = PastaKeyboard;
 				SDKROOT = iphoneos;
@@ -480,7 +480,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/Pasta.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 13;
+				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = 54MXM5JG3R;
 				DISPLAY_NAME = Pasta;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -490,7 +490,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.7;
+				MARKETING_VERSION = 0.1.8;
 				PRODUCT_BUNDLE_IDENTIFIER = com.thehumanworks.pasta;
 				PRODUCT_NAME = Pasta;
 				SDKROOT = iphoneos;
