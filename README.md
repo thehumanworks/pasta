@@ -33,13 +33,13 @@ pasta --version
 Install the tagged release globally:
 
 ```bash
-bun install --global github:thehumanworks/pasta#v0.1.15
+bun install --global github:thehumanworks/pasta#v0.1.16
 ```
 
 Run the tagged release:
 
 ```bash
-bunx --bun github:thehumanworks/pasta#v0.1.15 --version
+bunx --bun github:thehumanworks/pasta#v0.1.16 --version
 ```
 
 Install the latest GitHub release through mise:
@@ -388,7 +388,7 @@ Install macOS-wide Hyper shortcuts:
 pasta install-hotkeys
 ```
 
-By default, `Hyper+C` runs `pasta copy` and `Hyper+P` runs `pasta paste --clipboard` even when another app has focus. Pasta installs a user LaunchAgent, stores an absolute Pasta command path in its helper, compiles that helper with `/usr/bin/swiftc`, and checks for conflicts before loading it.
+By default, `Hyper+C` runs `pasta copy --clipboard` and `Hyper+P` runs `pasta paste --clipboard` even when another app has focus. Pasta installs a user LaunchAgent, stores an absolute Pasta command path in its helper, compiles that helper with `/usr/bin/swiftc`, and checks for conflicts before loading it.
 
 Regenerate with different global keys:
 

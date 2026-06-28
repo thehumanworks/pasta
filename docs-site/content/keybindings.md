@@ -12,7 +12,7 @@ nav_order: 9
 
 | Action | First-choice chord | Fallback chord | Command |
 | --- | --- | --- | --- |
-| Publish current clipboard | `Hyper+C` | none | `pasta copy` |
+| Publish current clipboard | `Hyper+C` | none | `pasta copy --clipboard` |
 | Pull latest Pasta clip into the OS clipboard | `Hyper+P` | none | `pasta paste --clipboard` |
 
 These are real macOS global hotkeys. They work when another app has focus and do not require a terminal session. Pasta registers them through a user LaunchAgent and a tiny native macOS hotkey helper; it does not mutate Raycast, browser, editor, or system shortcut databases.

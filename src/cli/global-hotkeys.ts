@@ -169,7 +169,7 @@ export function normalizeGlobalHotkeys(options: InstallGlobalHotkeyOptions = {})
   const command = normalizeCommand(options.command ?? "pasta");
   const copyKey = options.copyKey ?? options.env?.PASTA_COPY_KEY ?? DEFAULT_GLOBAL_COPY_KEY;
   const pasteKey = options.pasteKey ?? options.env?.PASTA_PASTE_KEY ?? DEFAULT_GLOBAL_PASTE_KEY;
-  const copy = normalizeMacosHotkey("copy", 1, copyKey, actionCommandLine(command, ["copy"]));
+  const copy = normalizeMacosHotkey("copy", 1, copyKey, actionCommandLine(command, ["copy", "--clipboard"]));
   const paste = normalizeMacosHotkey("paste", 2, pasteKey, actionCommandLine(command, ["paste", "--clipboard"]));
   const hotkeys = [copy, paste].filter((hotkey): hotkey is NormalizedHotkey => hotkey !== null);
   if (hotkeys.length === 0) throw new GlobalHotkeyUsageError("at least one global hotkey must be enabled");

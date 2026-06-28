@@ -360,6 +360,7 @@ async function copyCommand(
   }
   const forceImage = argv.includes("--image");
   const forceFile = argv.includes("--file");
+  const forceClipboard = argv.includes("--clipboard");
   if (forceImage && forceFile) {
     io.stderr("copy accepts only one of --image or --file\n");
     return ExitCode.usage;
@@ -387,7 +388,8 @@ async function copyCommand(
     return ExitCode.ok;
   }
 
-  if (process.stdin.isTTY) {
+  const readClipboard = forceClipboard || process.stdin.isTTY;
+  if (readClipboard) {
     const image = await clipboard.readImage().catch(() => null);
     if (image) {
       await publishImagePayload(config, secrets, client, image.bytes, image.mime);
@@ -396,7 +398,7 @@ async function copyCommand(
     }
   }
 
-  const text = process.stdin.isTTY ? await clipboard.readText() : await deps.io?.stdinText?.() ?? await defaultIo.stdinText();
+  const text = readClipboard ? await clipboard.readText() : await deps.io?.stdinText?.() ?? await defaultIo.stdinText();
   await publishText(config, secrets, client, text);
   io.stdout("published\n");
   return ExitCode.ok;
@@ -1316,15 +1318,17 @@ Checks local clipboard adapter availability.
 Examples:
   pasta doctor
 `,
-    copy: `usage: pasta copy [path] [--path <path>] [--image|--file] [--mime <type>]
+    copy: `usage: pasta copy [path] [--path <path>] [--clipboard] [--image|--file] [--mime <type>]
 
 Copies text, image, file, or directory data. Piped stdin is text. A path is detected as an image when possible, as a directory when it is one, otherwise as a file.
 Directory paths are bundled locally as zip bytes before encryption.
+--clipboard forces OS clipboard input when stdin is not a TTY, such as from a hotkey helper.
 --mime is optional; Pasta infers a MIME type from the file and extension, then falls back to application/octet-stream.
 
 Examples:
   echo "hello" | pasta copy
   pasta copy
+  pasta copy --clipboard
   pasta copy ./Downloads/unlimit.png
   pasta copy ./project-folder
   pasta copy --path ./archive.zip --mime application/zip

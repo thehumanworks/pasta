@@ -1,7 +1,7 @@
 ---
 title: CLI Reference
 slug: cli-reference
-description: Every pasta command, flags, and exit codes at v0.1.15.
+description: Every pasta command, flags, and exit codes at v0.1.16.
 nav_order: 4
 ---
 
@@ -46,6 +46,7 @@ Revoked device rows are hidden from `devices list` by default and cannot be reac
 | --- | --- |
 | `copy` | Stdin if piped, else OS clipboard → encrypt → publish |
 | `paste [--clipboard] [--seq <n>]` | Pull latest or seq; stdout or OS clipboard |
+| `copy --clipboard` | Force OS clipboard input when stdin is not a TTY, including global hotkeys |
 | `history [--show]` | List local text previews and file names; `--show` decrypts full text locally |
 | `history paste <seq> [--clipboard]` | Paste specific history entry |
 

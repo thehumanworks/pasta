@@ -34,7 +34,7 @@ describe("global macOS hotkeys", () => {
     expect(source).toContain("Carbon status");
     expect(source).toContain("process.standardError = FileHandle.standardError");
     expect(source).toContain("exited with status");
-    expect(source).toContain("mise exec -- bun run src/cli.ts 'copy'");
+    expect(source).toContain("mise exec -- bun run src/cli.ts 'copy' '--clipboard'");
     expect(source).toContain("mise exec -- bun run src/cli.ts 'paste' '--clipboard'");
     expect(source).toContain("UInt32(shiftKey | cmdKey)");
     expect(source).toContain("UInt32(optionKey)");
@@ -70,7 +70,7 @@ describe("global macOS hotkeys", () => {
 
     const generated = macosHotkeyPaths(paths, { HOME: userHome });
     expect(installed.paths).toEqual(generated);
-    expect(await Bun.file(generated.sourcePath).text()).toContain("mise exec -- bun run src/cli.ts 'copy'");
+    expect(await Bun.file(generated.sourcePath).text()).toContain("mise exec -- bun run src/cli.ts 'copy' '--clipboard'");
     expect(await Bun.file(generated.launchAgentPath).text()).toContain(MACOS_HOTKEY_LABEL);
     expect(await Bun.file(generated.launchAgentPath).text()).toContain("<key>PASTA_HOME</key>");
     expect(await Bun.file(generated.launchAgentPath).text()).toContain(paths.home);
@@ -99,7 +99,7 @@ describe("global macOS hotkeys", () => {
 
     const generated = macosHotkeyPaths(paths, { HOME: userHome });
     const source = await Bun.file(generated.sourcePath).text();
-    expect(source).toContain("'/Users/example/.bun/bin/pasta' 'copy'");
+    expect(source).toContain("'/Users/example/.bun/bin/pasta' 'copy' '--clipboard'");
     expect(source).toContain("'/Users/example/.bun/bin/pasta' 'paste' '--clipboard'");
   });
 
@@ -122,7 +122,7 @@ describe("global macOS hotkeys", () => {
     });
 
     const source = await Bun.file(macosHotkeyPaths(paths, { HOME: userHome }).sourcePath).text();
-    expect(source).toContain(`'${bunPath}' '${pastaPath}' 'copy'`);
+    expect(source).toContain(`'${bunPath}' '${pastaPath}' 'copy' '--clipboard'`);
     expect(source).toContain(`'${bunPath}' '${pastaPath}' 'paste' '--clipboard'`);
   });
 

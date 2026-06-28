@@ -2,7 +2,7 @@ import Foundation
 
 public enum PastaCore {
     public static let bootstrapVersion = "0.2.0-ios-keyboard"
-    public static let protocolVersion = "0.1.15"
+    public static let protocolVersion = "0.1.16"
     public static let signingVersion = "PASTA-SIGN-V1"
     public static let directoryBundleMIME = "application/vnd.pasta.directory+zip"
     public static let appGroupIdentifier = "group.com.thehumanworks.pasta"

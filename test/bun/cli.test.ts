@@ -321,8 +321,15 @@ describe("CLI", () => {
     expect(await runCli(["paste", "--clipboard"], deps)).toBe(0);
     expect(clipboard.value).toBe("alpha");
     output.length = 0;
+    clipboard.value = "beta";
+    expect(await runCli(["copy", "--clipboard"], deps)).toBe(0);
+    output.length = 0;
+    expect(await runCli(["paste"], deps)).toBe(0);
+    expect(output.join("")).toContain("beta");
+    output.length = 0;
     expect(await runCli(["history"], deps)).toBe(0);
     expect(output.join("")).toContain('"alpha"');
+    expect(output.join("")).toContain('"beta"');
     output.length = 0;
     expect(await runCli(["history", "--show"], deps)).toBe(0);
     expect(output.join("")).toContain("alpha");
