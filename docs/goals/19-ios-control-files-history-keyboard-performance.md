@@ -412,6 +412,24 @@ Verification Contract:
   `internal` (`91ffd61d-626c-44e4-ab22-552d858c3d0b`) is an internal group
   with `hasAccessToAllBuilds=True`; build `15` is visible in the group as
   `VALID`.
+- 2026-06-28 - latency fix TestFlight upload - `archive_upload.sh` with
+  `SCHEME=Pasta`, `CONFIGURATION=Release`, `DEVELOPMENT_TEAM=54MXM5JG3R`,
+  `APP_BUILD_VERSION=18`, `EXPECT_NO_NON_EXEMPT_ENCRYPTION=1`,
+  `TESTFLIGHT_BETA_GROUP_NAME=internal`, and
+  `REQUIRE_TESTFLIGHT_GROUP_ASSIGNMENT=1` - exit 0; archive/export/upload
+  produced `ios/build/export-0.1.9-18/Pasta.ipa`, xcodebuild reported
+  `Upload succeeded`, and IPA inspection reported
+  `CFBundleShortVersionString=0.1.9`, `CFBundleVersion=18`,
+  `ITSAppUsesNonExemptEncryption=false`, nested
+  `PlugIns/PastaKeyboard.appex`, and basic Apple distribution checks passed.
+- 2026-06-28 - TestFlight processing/group proof for build 18 -
+  `ios/build/apple-release-0.1.9-18/testflight-release.log` shows App Store
+  Connect app `6785005536`; beta group `internal`
+  `91ffd61d-626c-44e4-ab22-552d858c3d0b` with
+  `hasAccessToAllBuilds=True`; build `18`
+  `d3263208-961b-4db6-990b-e6c4f2b88868` is `processingState=VALID`,
+  `expired=False`, `minOsVersion=17.0`, and
+  `usesNonExemptEncryption=False`.
 
 ## 6. Decisions
 
