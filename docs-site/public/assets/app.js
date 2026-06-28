@@ -5,9 +5,25 @@
   const humanPanel = document.querySelector('[data-audience-panel="human"]');
   const agentPanel = document.querySelector('[data-audience-panel="agent"]');
   const tocPanels = document.querySelectorAll("[data-audience-toc]");
+  const routeAudience = document.documentElement.dataset.routeAudience === "agent" ? "agent" : "human";
+  const metaNode = document.getElementById("pasta-page-meta");
+  let pageMeta = {};
 
-  function setAudience(audience) {
+  try {
+    pageMeta = JSON.parse(metaNode?.textContent || "{}");
+  } catch {
+    pageMeta = {};
+  }
+
+  function setAudience(audience, navigate) {
     const value = audience === "agent" ? "agent" : "human";
+    if (navigate && value !== routeAudience) {
+      const targetUrl = value === "agent" ? pageMeta.agentUrl : pageMeta.humanUrl;
+      if (typeof targetUrl === "string" && targetUrl.length > 0) {
+        window.location.assign(targetUrl);
+        return;
+      }
+    }
     body.dataset.audience = value;
     buttons.forEach((btn) => {
       const active = btn.dataset.audience === value;
@@ -24,27 +40,13 @@
     } catch {
       /* ignore */
     }
-    const url = new URL(window.location.href);
-    if (value === "agent") url.searchParams.set("audience", "agent");
-    else url.searchParams.delete("audience");
-    window.history.replaceState({}, "", url);
   }
 
   buttons.forEach((btn) => {
-    btn.addEventListener("click", () => setAudience(btn.dataset.audience ?? "human"));
+    btn.addEventListener("click", () => setAudience(btn.dataset.audience ?? "human", true));
   });
 
-  const params = new URLSearchParams(window.location.search);
-  let initial = params.get("audience") === "agent" ? "agent" : "human";
-  if (!params.has("audience")) {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored === "agent" || stored === "human") initial = stored;
-    } catch {
-      /* ignore */
-    }
-  }
-  setAudience(initial);
+  setAudience(routeAudience, false);
 
   if ("serviceWorker" in navigator) {
     const base = document.documentElement.dataset.base ?? "/";

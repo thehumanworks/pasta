@@ -118,8 +118,10 @@ Each profile gets its own config, auth cache, and optional OS credential namespa
 
 ```bash
 pasta install-shell
-# source the printed path in ~/.zshrc or ~/.bashrc
-pasta uninstall-shell   # removes snippet
+# source the printed path in your zsh/bash/fish profile
+pasta install-shell --shell powershell
+# PowerShell prints a dot-source command: . <path>
+pasta uninstall-shell   # clears generated snippets
 ```
 
 <!-- @agent -->

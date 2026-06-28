@@ -59,7 +59,7 @@ import { FetchApiClient, type ApiClient } from "./cli/client";
 import { runDaemonLoop } from "./cli/daemon";
 import { ExitCode, type ExitCodeValue } from "./cli/exit-codes";
 import { defaultSecretStoreForHome, requireSecret, SecretName, type SecretStore } from "./cli/secret-store";
-import { installShell, shellSnippet, uninstallShell } from "./cli/shell";
+import { installShell, isInstallShellKind, isUninstallShellKind, resolveShellKind, shellSnippet, uninstallShell, type ShellKind } from "./cli/shell";
 
 export interface CliIo {
   stdout: (text: string) => void;
@@ -80,6 +80,20 @@ const defaultIo: CliIo = {
   stderr: (text) => process.stderr.write(text),
   stdinText: () => Bun.stdin.text()
 };
+
+function activationHint(shell: ShellKind, installed: string): string {
+  if (shell === "powershell") return `. ${powerShellQuote(installed)}`;
+  return `source ${posixShellQuote(installed)}`;
+}
+
+function powerShellQuote(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function posixShellQuote(value: string): string {
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value;
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
 
 export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCodeValue> {
   const io = deps.io ?? defaultIo;
@@ -200,8 +214,14 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
         io.stdout(commandHelp("install-shell"));
         return ExitCode.ok;
       }
-      const installed = await installShell(paths, option(argv, "--command") ?? "pasta");
-      io.stdout(`installed ${installed}\nsource ${installed}\n`);
+      const shell = option(argv, "--shell") ?? "auto";
+      if (!isInstallShellKind(shell)) {
+        io.stderr("--shell must be auto, zsh, bash, fish, or powershell\n");
+        return ExitCode.usage;
+      }
+      const resolvedShell = resolveShellKind(shell);
+      const installed = await installShell(paths, option(argv, "--command") ?? "pasta", resolvedShell);
+      io.stdout(`installed ${installed}\n${activationHint(resolvedShell, installed)}\n`);
       return ExitCode.ok;
     }
 
@@ -210,8 +230,13 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
         io.stdout(commandHelp("uninstall-shell"));
         return ExitCode.ok;
       }
-      const uninstalled = await uninstallShell(paths);
-      io.stdout(`removed Pasta shell snippet from ${uninstalled}\n`);
+      const shell = option(argv, "--shell") ?? "all";
+      if (!isUninstallShellKind(shell)) {
+        io.stderr("--shell must be auto, all, zsh, bash, fish, or powershell\n");
+        return ExitCode.usage;
+      }
+      const uninstalled = await uninstallShell(paths, shell);
+      io.stdout(`removed Pasta shell snippet from ${uninstalled.length === 0 ? "no files" : uninstalled.join(", ")}\n`);
       return ExitCode.ok;
     }
 
@@ -1247,20 +1272,22 @@ Resets the encrypted clipboard space from a trusted device.
 Examples:
   pasta reset --yes
 `,
-    "install-shell": `usage: pasta install-shell [--command <command>]
+    "install-shell": `usage: pasta install-shell [--command <command>] [--shell auto|zsh|bash|fish|powershell]
 
-Installs a reversible shell snippet.
+Installs a reversible shell snippet with non-overriding aliases and keybindings.
 
 Examples:
   pasta install-shell
+  pasta install-shell --shell powershell
   pasta install-shell --command "$PWD/src/cli.ts"
 `,
-    "uninstall-shell": `usage: pasta uninstall-shell
+    "uninstall-shell": `usage: pasta uninstall-shell [--shell all|auto|zsh|bash|fish|powershell]
 
-Removes the Pasta shell snippet.
+Clears Pasta-generated shell snippets.
 
 Examples:
   pasta uninstall-shell
+  pasta uninstall-shell --shell fish
 `,
     protocol: `usage: pasta protocol
 

@@ -10,7 +10,7 @@ import { authFileForHome, defaultSecretStoreForHome, FileSecretStore, MemorySecr
 import { runCli } from "../../src/cli";
 import { decryptBytesClip, encryptTextClip, generateDeviceKeyMaterial, generateGroupKey, parseJoinGrantToken } from "../../src/shared/crypto";
 import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, SIGNATURE_HEADERS, type PairingGrantCreateRequest, type StoredClip } from "../../src/shared/protocol";
-import { shellSnippet } from "../../src/cli/shell";
+import { detectShellKind, shellConfigPath, shellSnippet, type ShellKind } from "../../src/cli/shell";
 
 describe("CLI", () => {
   it("prints version and help", async () => {
@@ -582,14 +582,94 @@ describe("CLI", () => {
     expect(output.join("")).toContain("exceeds max size");
   });
 
-  it("supports reversible shell integration snippets", async () => {
+  it("supports cross-platform non-overriding shell integration snippets", async () => {
     const paths = await tempPaths();
     const output: string[] = [];
-    expect(shellSnippet("pasta")).toContain("alias pc=");
-    expect(await runCli(["install-shell"], { io: capture(output), paths })).toBe(0);
-    expect(await Bun.file(paths.shellConfigPath).text()).toContain("pasta copy");
+    const snippets = new Map<ShellKind, string>([
+      ["zsh", shellSnippet("pasta", "zsh")],
+      ["bash", shellSnippet("pasta", "bash")],
+      ["fish", shellSnippet("pasta", "fish")],
+      ["powershell", shellSnippet("pasta", "powershell")]
+    ]);
+    expect(snippets.get("zsh")).toContain("bindkey");
+    expect(snippets.get("zsh")).toContain("undefined-key");
+    expect(snippets.get("zsh")).toContain("'^[c' '^Xc'");
+    expect(snippets.get("zsh")).not.toContain("^P");
+    expect(snippets.get("bash")).toContain("bind -p");
+    expect(snippets.get("bash")).toContain("bind -X");
+    expect(snippets.get("bash")).toContain("bind -x");
+    expect(snippets.get("bash")).toContain("'\\ec' '\\C-xc'");
+    expect(snippets.get("fish")).toContain("type -q pc");
+    expect(snippets.get("fish")).toContain("bind --query");
+    expect(snippets.get("fish")).toContain("\\ec \\cxc");
+    expect(snippets.get("powershell")).toContain("Get-PSReadLineKeyHandler -Chord");
+    expect(snippets.get("powershell")).toContain("Set-PSReadLineKeyHandler");
+    expect(snippets.get("powershell")).toContain('"Alt+c", "Ctrl+x,c"');
+    for (const snippet of snippets.values()) {
+      expect(snippet).toContain("pasta");
+      expect(snippet).toContain("copy");
+      expect(snippet).toContain("paste");
+      expect(snippet).toContain("history");
+    }
+
+    const quoted = shellSnippet("/tmp/pasta dev/bin/pasta", "bash");
+    expect(quoted).toContain("/tmp/pasta dev/bin/pasta");
+    expect(quoted).not.toContain("_pasta_copy_cmd=/tmp/pasta dev/bin/pasta copy");
+    expect(quoted).toContain("command -v pc");
+    const trickyCommand = "/tmp/pasta dev/bin/pa'sta;touch";
+    expect(shellSnippet(trickyCommand, "zsh")).toContain("'\\''sta;touch");
+    expect(shellSnippet(trickyCommand, "bash")).toContain("'\\''sta;touch");
+    expect(shellSnippet(trickyCommand, "fish")).toContain("pa\\'sta;touch");
+    expect(shellSnippet(trickyCommand, "powershell")).toContain("pa''sta;touch");
+
+    expect(detectShellKind({ SHELL: "/opt/homebrew/bin/fish" }, "darwin")).toBe("fish");
+    expect(detectShellKind({ SHELL: "/bin/bash" }, "linux")).toBe("bash");
+    expect(detectShellKind({}, "win32")).toBe("powershell");
+
+    expect(await runCli(["install-shell", "--shell", "bash"], { io: capture(output), paths })).toBe(0);
+    expect(await Bun.file(shellConfigPath(paths, "bash")).text()).toContain("Pasta terminal integration (bash)");
+    output.length = 0;
+    expect(await runCli(["install-shell", "--shell", "powershell", "--command", "/tmp/pasta dev/bin/pasta"], { io: capture(output), paths })).toBe(0);
+    expect(await Bun.file(shellConfigPath(paths, "powershell")).text()).toContain("& '/tmp/pasta dev/bin/pasta' 'copy'");
+    expect(output.join("")).toContain(". ");
+    expect(output.join("")).not.toContain("source ");
+    output.length = 0;
+    expect(await runCli(["install-shell", "--shell", "nope"], { io: capture(output), paths })).toBe(2);
+    expect(output.join("")).toContain("--shell must be auto");
+
+    output.length = 0;
+    expect(await runCli(["uninstall-shell", "--shell", "bash"], { io: capture(output), paths })).toBe(0);
+    expect(await Bun.file(shellConfigPath(paths, "bash")).text()).toBe("");
+    output.length = 0;
+    expect(await runCli(["install-shell", "--shell", "zsh"], { io: capture(output), paths })).toBe(0);
+    expect(await runCli(["install-shell", "--shell", "fish"], { io: capture(output), paths })).toBe(0);
     expect(await runCli(["uninstall-shell"], { io: capture(output), paths })).toBe(0);
-    expect(await Bun.file(paths.shellConfigPath).text()).toBe("");
+    expect(await Bun.file(shellConfigPath(paths, "zsh")).text()).toBe("");
+    expect(await Bun.file(shellConfigPath(paths, "fish")).text()).toBe("");
+  });
+
+  it("preserves existing zsh chords and uses fallback keybindings when zsh is available", async () => {
+    if (!(await commandExists("zsh"))) return;
+    const paths = await tempPaths();
+    const snippetPath = join(paths.home, "pasta.zsh");
+    await Bun.write(snippetPath, shellSnippet("pasta", "zsh"));
+    const script = [
+      "bindkey -s '^[c' 'existing-copy'",
+      "bindkey -s '^[p' 'existing-paste'",
+      `source ${posixPath(snippetPath)}`,
+      "bindkey '^[c'",
+      "bindkey '^Xc'",
+      "bindkey '^[p'",
+      "bindkey '^Xp'"
+    ].join("; ");
+    const proc = Bun.spawn(["zsh", "-f", "-c", script], { stdout: "pipe", stderr: "pipe" });
+    const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(stderr).toBe("");
+    expect(code).toBe(0);
+    expect(stdout).toContain("existing-copy");
+    expect(stdout).toContain("pasta copy");
+    expect(stdout).toContain("existing-paste");
+    expect(stdout).toContain("pasta paste --clipboard");
   });
 
   it("discovers clipboard adapter commands for macOS, Linux, and Windows", () => {
@@ -667,4 +747,12 @@ function capture(output: string[], stdin = "") {
     stderr: (text: string) => output.push(text),
     stdinText: async () => stdin
   };
+}
+
+async function commandExists(command: string): Promise<boolean> {
+  return (await Bun.spawn(["/bin/sh", "-c", `command -v ${command} >/dev/null 2>&1`]).exited) === 0;
+}
+
+function posixPath(path: string): string {
+  return `'${path.replace(/'/g, "'\\''")}'`;
 }

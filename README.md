@@ -389,6 +389,15 @@ pasta install-shell
 ```
 
 Then source the printed file path. The snippet adds short aliases for common copy, paste, and history workflows.
+It also installs terminal-local keybindings for zsh, fish, PowerShell, and Bash builds that can safely inspect existing shell-command bindings.
+
+```bash
+pasta install-shell --shell bash
+pasta install-shell --shell fish
+pasta install-shell --shell powershell
+```
+
+PowerShell prints a dot-source command (`. <path>`) instead of `source <path>`.
 
 Remove the shell snippet:
 

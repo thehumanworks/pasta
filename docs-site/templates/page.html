@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark" data-base="{{BASE}}">
+<html lang="en" data-theme="dark" data-base="{{BASE}}" data-route-audience="{{INITIAL_AUDIENCE}}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -13,7 +13,7 @@
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="{{BASE}}assets/styles.css" />
     <script type="application/json" id="pasta-page-meta">
-      {"slug":"{{SLUG}}","agentMdUrl":"{{AGENT_MD_URL}}","apiUrl":"{{API_URL}}"}
+      {"slug":"{{SLUG}}","humanUrl":"{{HUMAN_URL}}","agentUrl":"{{AGENT_URL}}","agentMdUrl":"{{AGENT_MD_URL}}","apiUrl":"{{API_URL}}"}
     </script>
   </head>
   <body>
@@ -26,10 +26,10 @@
       </a>
       <div class="header-actions">
         <div class="audience-toggle" role="group" aria-label="Documentation audience">
-          <button type="button" class="audience-btn audience-btn--active" data-audience="human" aria-pressed="true">
+          <button type="button" class="audience-btn audience-btn--active" data-audience="human" data-target-url="{{HUMAN_URL}}" aria-pressed="true">
             <span class="audience-key" aria-hidden="true">H</span> Human
           </button>
-          <button type="button" class="audience-btn" data-audience="agent" aria-pressed="false">
+          <button type="button" class="audience-btn" data-audience="agent" data-target-url="{{AGENT_URL}}" aria-pressed="false">
             <span class="audience-key" aria-hidden="true">A</span> Agent
           </button>
         </div>

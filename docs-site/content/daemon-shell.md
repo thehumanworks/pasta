@@ -42,7 +42,15 @@ pasta install-shell
 source ~/.config/pasta/shell.zsh   # path printed by install
 ```
 
-The snippet adds short aliases for common flows (copy, paste-to-clipboard, history). For local development:
+The snippet adds short aliases for common flows (copy, paste-to-clipboard, history) and terminal-local keybindings when the chosen chords are still free. Pasta supports zsh, fish, PowerShell, and Bash builds that can safely inspect existing shell-command bindings:
+
+```bash
+pasta install-shell --shell bash
+pasta install-shell --shell fish
+pasta install-shell --shell powershell
+```
+
+For local development:
 
 ```bash
 pasta install-shell --command "$PWD/src/cli.ts"
@@ -54,7 +62,7 @@ Remove it:
 pasta uninstall-shell
 ```
 
-Implementation lives in `src/cli/shell.ts`. The snippet is a plain shell file — no eval of remote code.
+Implementation lives in `src/cli/shell.ts`. The snippet is a plain shell file — no eval of remote code and no override of existing aliases, functions, or shell keybindings.
 
 ## Platform notes
 
@@ -93,9 +101,10 @@ Daemon reads via `() => config?.lastRemotePasteHash`.
 
 ## Shell module (`src/cli/shell.ts`)
 
-- `installShell(paths, command)` — writes snippet file under Pasta home
-- `uninstallShell(paths)` — removes snippet
-- `shellSnippet(command)` — template string used in `--help`
+- `installShell(paths, command, shell)` — writes a zsh, bash, fish, or PowerShell snippet under Pasta home
+- `uninstallShell(paths, shell)` — clears one generated snippet or all generated snippets
+- `shellSnippet(command, shell)` — pure shell-specific template used by CLI help/tests
+- Full keybinding contract: `docs-site/content/keybindings.md`
 
 ## Clipboard adapter (`src/cli/clipboard.ts`)
 

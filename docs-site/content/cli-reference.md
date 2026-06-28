@@ -78,8 +78,8 @@ Default interval: **750 ms**. Skips republishing text just pulled via `paste --c
 | Command | Description |
 | --- | --- |
 | `reset --yes` | New group key + routing id; old history unreachable |
-| `install-shell [--command <path>]` | Write reversible shell snippet |
-| `uninstall-shell` | Remove snippet |
+| `install-shell [--command <path>] [--shell auto\|zsh\|bash\|fish\|powershell]` | Write reversible aliases and non-overriding keybindings |
+| `uninstall-shell [--shell all\|auto\|zsh\|bash\|fish\|powershell]` | Clear generated snippet content |
 
 ## Exit codes
 

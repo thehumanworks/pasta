@@ -10,7 +10,7 @@ const server = Bun.serve({
     const url = new URL(req.url);
     const accept = req.headers.get("Accept") ?? "";
 
-    if (accept.includes("text/markdown") || accept.includes("text/x-markdown")) {
+    if (accept.includes("text/markdown") || accept.includes("text/plain") || accept.includes("text/x-markdown")) {
       const slugFromAgent = url.pathname.match(/^\/agent\/([^/]+)\.md$/);
       if (slugFromAgent) {
         const file = Bun.file(join(DIST, "agent", `${slugFromAgent[1]}.md`));
@@ -24,15 +24,15 @@ const server = Bun.serve({
         }
       }
 
-      const pageMatch = url.pathname.match(/^\/([^/]+)\/?$/);
-      if (pageMatch && pageMatch[1] !== "assets" && pageMatch[1] !== "api" && pageMatch[1] !== "agent") {
-        const file = Bun.file(join(DIST, "agent", `${pageMatch[1]}.md`));
+      const pageMatch = url.pathname.match(/^\/(?:(human|agent)\/)?([^/]+)\/?$/);
+      if (pageMatch && pageMatch[2] !== "assets" && pageMatch[2] !== "api" && pageMatch[2] !== "agent") {
+        const file = Bun.file(join(DIST, "agent", `${pageMatch[2]}.md`));
         if (await file.exists()) {
           return new Response(file, {
             headers: {
               "Content-Type": "text/markdown; charset=utf-8",
               "Vary": "Accept",
-              "Link": `<${url.origin}/agent/${pageMatch[1]}.md>; rel="alternate"; type="text/markdown"`
+              "Link": `<${url.origin}/agent/${pageMatch[2]}.md>; rel="alternate"; type="text/markdown"`
             }
           });
         }

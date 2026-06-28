@@ -86,4 +86,4 @@ MISE_MINIMUM_RELEASE_AGE=0 mise use -g github:thehumanworks/pasta
 
 ## Shell Integration
 
-`pasta install-shell` writes a reversible snippet to the Pasta config directory. It provides aliases for copy, paste-to-clipboard, and history plus an optional zsh binding. `pasta uninstall-shell` clears the snippet.
+`pasta install-shell` writes a reversible snippet to the Pasta config directory. It provides aliases for copy, paste-to-clipboard, and history plus non-overriding keybindings for zsh, fish, PowerShell, and Bash builds that can safely inspect existing shell-command bindings. `pasta uninstall-shell` clears generated snippet content.

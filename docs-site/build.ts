@@ -106,6 +106,10 @@ function renderMarkdown(md: string, basePath: string): { html: string; toc: TocI
   return { html: anchored.replace(/href="\/([^"]+)"/g, `href="${basePath}$1"`), toc };
 }
 
+function routeFor(basePath: string, audience: "human" | "agent", slug: string): string {
+  return `${basePath}${audience}/${slug}/`;
+}
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -114,12 +118,12 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function buildNav(pages: PageDoc[], activeSlug: string, basePath: string): string {
+function buildNav(pages: PageDoc[], activeSlug: string, basePath: string, audience: "human" | "agent" = "human"): string {
   return pages
     .map((p, index) => {
       const active = p.meta.slug === activeSlug ? ' aria-current="page"' : "";
       const navIndex = String(index + 1).padStart(2, "0");
-      return `<a class="nav-link${p.meta.slug === activeSlug ? " nav-link--active" : ""}" href="${basePath}${p.meta.slug}/"${active}><span class="nav-index" aria-hidden="true">${navIndex}</span>${escapeHtml(p.meta.title)}</a>`;
+      return `<a class="nav-link${p.meta.slug === activeSlug ? " nav-link--active" : ""}" href="${routeFor(basePath, audience, p.meta.slug)}"${active}><span class="nav-index" aria-hidden="true">${navIndex}</span>${escapeHtml(p.meta.title)}</a>`;
     })
     .join("\n");
 }
@@ -156,31 +160,42 @@ async function buildSite(): Promise<void> {
   await mkdir(DIST_DIR, { recursive: true });
   await copyPublic();
 
-  const agentManifest: Array<{ slug: string; title: string; url: string; markdown_url: string; api_url: string }> = [];
+  const agentManifest: Array<{ slug: string; title: string; human_url: string; agent_url: string; markdown_url: string; api_url: string }> = [];
 
   for (const page of pages) {
     const humanRendered = renderMarkdown(page.humanMd, normalizedBase);
     const agentRendered = renderMarkdown(page.agentMd, normalizedBase);
-    const nav = buildNav(pages, page.meta.slug, normalizedBase);
     const agentMdPath = `${normalizedBase}agent/${page.meta.slug}.md`;
+    const humanPath = routeFor(normalizedBase, "human", page.meta.slug);
+    const agentPath = routeFor(normalizedBase, "agent", page.meta.slug);
     const apiPath = `${normalizedBase}api/${page.meta.slug}.json`;
 
-    const html = template
+    const renderPage = (audience: "human" | "agent") => template
       .replaceAll("{{TITLE}}", escapeHtml(page.meta.title))
       .replaceAll("{{DESCRIPTION}}", escapeHtml(page.meta.description))
       .replaceAll("{{SLUG}}", page.meta.slug)
+      .replaceAll("{{INITIAL_AUDIENCE}}", audience)
       .replaceAll("{{BASE}}", normalizedBase)
-      .replaceAll("{{NAV}}", nav)
+      .replaceAll("{{NAV}}", buildNav(pages, page.meta.slug, normalizedBase, audience))
       .replaceAll("{{HUMAN_HTML}}", humanRendered.html)
       .replaceAll("{{AGENT_HTML}}", agentRendered.html)
       .replaceAll("{{HUMAN_TOC}}", buildToc(humanRendered.toc))
       .replaceAll("{{AGENT_TOC}}", buildToc(agentRendered.toc))
+      .replaceAll("{{HUMAN_URL}}", humanPath)
+      .replaceAll("{{AGENT_URL}}", agentPath)
       .replaceAll("{{AGENT_MD_URL}}", agentMdPath)
       .replaceAll("{{API_URL}}", apiPath);
 
+    const html = renderPage("human");
     const outDir = join(DIST_DIR, page.meta.slug);
     await mkdir(outDir, { recursive: true });
     await writeFile(join(outDir, "index.html"), html);
+
+    for (const audience of ["human", "agent"] as const) {
+      const audienceDir = join(DIST_DIR, audience, page.meta.slug);
+      await mkdir(audienceDir, { recursive: true });
+      await writeFile(join(audienceDir, "index.html"), renderPage(audience));
+    }
 
     const agentDir = join(DIST_DIR, "agent");
     await mkdir(agentDir, { recursive: true });
@@ -210,7 +225,8 @@ async function buildSite(): Promise<void> {
     agentManifest.push({
       slug: page.meta.slug,
       title: page.meta.title,
-      url: `${normalizedBase}${page.meta.slug}/`,
+      human_url: humanPath,
+      agent_url: agentPath,
       markdown_url: agentMdPath,
       api_url: apiPath
     });
@@ -223,12 +239,15 @@ async function buildSite(): Promise<void> {
     .replaceAll("{{TITLE}}", "Pasta Docs")
     .replaceAll("{{DESCRIPTION}}", "Encrypted clipboard relay for trusted desktops")
     .replaceAll("{{SLUG}}", "home")
+    .replaceAll("{{INITIAL_AUDIENCE}}", "human")
     .replaceAll("{{BASE}}", basePath)
-    .replaceAll("{{NAV}}", buildNav(pages, "quick-start", normalizedBase))
+    .replaceAll("{{NAV}}", buildNav(pages, "quick-start", normalizedBase, "human"))
     .replaceAll("{{HUMAN_HTML}}", homeHumanRendered.html)
     .replaceAll("{{AGENT_HTML}}", homeAgentRendered.html)
     .replaceAll("{{HUMAN_TOC}}", buildToc(homeHumanRendered.toc))
     .replaceAll("{{AGENT_TOC}}", buildToc(homeAgentRendered.toc))
+    .replaceAll("{{HUMAN_URL}}", routeFor(normalizedBase, "human", homePage.meta.slug))
+    .replaceAll("{{AGENT_URL}}", routeFor(normalizedBase, "agent", homePage.meta.slug))
     .replaceAll("{{AGENT_MD_URL}}", `${normalizedBase}agent/${homePage.meta.slug}.md`)
     .replaceAll("{{API_URL}}", `${normalizedBase}api/${homePage.meta.slug}.json`);
 
@@ -241,7 +260,7 @@ async function buildSite(): Promise<void> {
     generated_at: "2026-06-27",
     schema_version: "hindsight-agents-v1",
     base_url_assumption: normalizedBase,
-    accept_markdown: "Request /agent/{slug}.md with Accept: text/markdown, text/plain, or */*",
+    accept_markdown: "Request /agent/{slug}.md directly, or request /agent/{slug}/ with Accept: text/markdown or text/plain",
     accept_json: "Request /api/{slug}.json with Accept: application/json",
     source_material: [
       "AGENTS.md",
@@ -262,11 +281,14 @@ async function buildSite(): Promise<void> {
       "curl -H 'Accept: text/markdown' http://localhost:4173/native-ios/"
     ],
     pages: agentManifest.map((page) => ({
+      id: page.slug,
       slug: page.slug,
       title: page.title,
       purpose: purposeForPage(page.slug),
-      html_url: page.url,
-      content_negotiated_url: page.url,
+      human_url: page.human_url,
+      agent_url: page.agent_url,
+      html_url: page.human_url,
+      content_negotiated_url: page.agent_url,
       markdown_url: page.markdown_url,
       api_url: page.api_url
     }))
@@ -299,6 +321,8 @@ function purposeForPage(slug: string): string {
     case "development":
     case "agent-handbook":
       return "Implementation and quality: agent rules, verification commands, release gates, and footguns.";
+    case "keybindings":
+      return "Terminal keybinding setup contract for zsh, bash, fish, and PowerShell.";
     default:
       return "Reference page for Pasta operators and implementation agents.";
   }
