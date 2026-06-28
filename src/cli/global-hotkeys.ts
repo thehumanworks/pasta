@@ -27,7 +27,7 @@ export type HotkeyCommandRunner = (
 export type HotkeyCommandResolver = (command: string) => string | null | undefined;
 
 export interface InstallGlobalHotkeyOptions {
-  command?: string;
+  command?: string | readonly string[];
   provider?: GlobalHotkeyProvider;
   copyKey?: string;
   pasteKey?: string;
@@ -314,7 +314,7 @@ export function macosLaunchAgentPlist(paths: MacosHotkeyPaths): string {
 export async function installGlobalHotkeys(paths: Paths, options: InstallGlobalHotkeyOptions = {}): Promise<InstalledGlobalHotkeys> {
   resolveGlobalHotkeyProvider(options.provider ?? "auto", options.platform ?? process.platform);
   const hotkeyPaths = macosHotkeyPaths(paths, options.env ?? Bun.env);
-  const command = options.command ?? resolveDefaultGlobalHotkeyCommand(options.commandResolver);
+  const command = options.command ?? await resolveDefaultGlobalHotkeyCommand(options.commandResolver);
   const hotkeys = normalizeGlobalHotkeys({ ...options, command });
   const runner = options.runner ?? defaultHotkeyCommandRunner;
   const swiftcPath = options.swiftcPath ?? "/usr/bin/swiftc";
@@ -359,11 +359,25 @@ export async function installGlobalHotkeys(paths: Paths, options: InstallGlobalH
   };
 }
 
-function resolveDefaultGlobalHotkeyCommand(resolver: HotkeyCommandResolver = Bun.which): string {
+async function resolveDefaultGlobalHotkeyCommand(resolver: HotkeyCommandResolver = Bun.which): Promise<string | readonly string[]> {
   try {
-    return resolver("pasta") ?? "pasta";
+    const pasta = resolver("pasta") ?? "pasta";
+    if (pasta !== "pasta" && await isBunShebangScript(pasta)) {
+      const bun = resolver("bun");
+      if (bun) return [bun, pasta];
+    }
+    return pasta;
   } catch {
     return "pasta";
+  }
+}
+
+async function isBunShebangScript(path: string): Promise<boolean> {
+  try {
+    const header = await Bun.file(path).slice(0, 64).text();
+    return header.startsWith("#!/usr/bin/env bun") || header.startsWith("#! /usr/bin/env bun");
+  } catch {
+    return false;
   }
 }
 
@@ -459,13 +473,21 @@ function isReservedMacosShortcut(modifiers: ReadonlySet<MacosModifier>, key: str
   return false;
 }
 
-function normalizeCommand(command: string): string {
+function normalizeCommand(command: string | readonly string[]): string | readonly string[] {
+  if (typeof command !== "string") {
+    const parts = command.map((part) => part.trim());
+    if (parts.length === 0 || parts.some((part) => !part)) throw new GlobalHotkeyUsageError("--command cannot be empty");
+    return parts;
+  }
   const trimmed = command.trim();
   if (!trimmed) throw new GlobalHotkeyUsageError("--command cannot be empty");
   return trimmed;
 }
 
-function actionCommandLine(command: string, args: readonly string[]): string {
+function actionCommandLine(command: string | readonly string[], args: readonly string[]): string {
+  if (typeof command !== "string") {
+    return [...command, ...args].map(posixQuote).join(" ");
+  }
   const base = commandShouldStayShellPrefix(command) ? command : posixQuote(command);
   return [base, ...args.map(posixQuote)].join(" ");
 }

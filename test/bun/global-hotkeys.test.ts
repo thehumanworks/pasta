@@ -103,6 +103,29 @@ describe("global macOS hotkeys", () => {
     expect(source).toContain("'/Users/example/.bun/bin/pasta' 'paste' '--clipboard'");
   });
 
+  it("wraps Bun shebang installs with an absolute bun executable", async () => {
+    const paths = await tempPaths();
+    const userHome = await mkdtemp(join(tmpdir(), "pasta-user-"));
+    const binDir = await mkdtemp(join(tmpdir(), "pasta-bin-"));
+    const pastaPath = join(binDir, "pasta");
+    const bunPath = join(binDir, "bun");
+    await Bun.write(pastaPath, "#!/usr/bin/env bun\nconsole.log('pasta');\n");
+    await Bun.write(bunPath, "bun");
+    const runner: HotkeyCommandRunner = async () => ({ code: 0, stdout: "", stderr: "" });
+
+    await installGlobalHotkeys(paths, {
+      env: { HOME: userHome },
+      platform: "darwin",
+      runner,
+      commandResolver: (command) => command === "pasta" ? pastaPath : bunPath,
+      uid: "501"
+    });
+
+    const source = await Bun.file(macosHotkeyPaths(paths, { HOME: userHome }).sourcePath).text();
+    expect(source).toContain(`'${bunPath}' '${pastaPath}' 'copy'`);
+    expect(source).toContain(`'${bunPath}' '${pastaPath}' 'paste' '--clipboard'`);
+  });
+
   it("fails install when the Carbon conflict check fails", async () => {
     const paths = await tempPaths();
     const userHome = await mkdtemp(join(tmpdir(), "pasta-user-"));
