@@ -106,7 +106,7 @@ describe("global macOS hotkeys", () => {
   it("prefers the running standalone Pasta executable for mise-style installs", async () => {
     const paths = await tempPaths();
     const userHome = await mkdtemp(join(tmpdir(), "pasta-user-"));
-    const misePastaPath = "/Users/example/.local/share/mise/installs/github-thehumanworks-pasta/v0.1.18/bin/pasta";
+    const misePastaPath = "/Users/example/.local/share/mise/installs/github-thehumanworks-pasta/v0.1.19/bin/pasta";
     const runner: HotkeyCommandRunner = async () => ({ code: 0, stdout: "", stderr: "" });
 
     await installGlobalHotkeys(paths, {

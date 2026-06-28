@@ -1,14 +1,14 @@
 ---
 title: Protocol & Crypto
 slug: protocol
-description: Wire format, signing, encryption, and API endpoints for Pasta v0.1.18.
+description: Wire format, signing, encryption, and API endpoints for Pasta v0.1.19.
 nav_order: 6
 ---
 
 <!-- @human -->
 ## Version
 
-Protocol version aligns with **`pasta 0.1.18`**. Run `pasta protocol` for the live endpoint map from your installed CLI.
+Protocol version aligns with **`pasta 0.1.19`**. Run `pasta protocol` for the live endpoint map from your installed CLI.
 
 ## Identifiers
 
@@ -103,7 +103,7 @@ Device list defaults to active devices only. Add `includeRevoked=true` to return
 ## Key constants
 
 ```typescript
-PASTA_VERSION = "0.1.18"
+PASTA_VERSION = "0.1.19"
 SIGNING_VERSION = "PASTA-SIGN-V1"
 REQUEST_TOLERANCE_MS = 5 * 60 * 1000
 REQUEST_NONCE_TTL_MS = 10 * 60 * 1000

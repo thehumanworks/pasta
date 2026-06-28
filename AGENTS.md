@@ -26,6 +26,7 @@ These project-local instructions apply to this repository.
 - Use `fnox` for secrets. Run secret-gated commands as `mise exec -- fnox exec -- <command>` so secrets are injected from `fnox.toml`.
 - `fnox` is already configured to fetch `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_KEY`, and `CLOUDFLARE_ACCOUNT_EMAIL` from Doppler. Do not replace this with `.env` files or hardcoded credentials.
 - Never print, commit, or paste secret values. Secret checks should prove names/configuration, not reveal values.
+- For iOS builds in parallel worktrees, use an isolated `-derivedDataPath`. Inspect generated `ios/Package.resolved` churn and drop it unless dependency pins intentionally changed. Do not use `status` as a zsh variable name; it collides with shell state.
 
 ## Scope Discipline
 

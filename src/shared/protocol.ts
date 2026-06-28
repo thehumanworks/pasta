@@ -1,7 +1,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { fromBase64Url, stableJson, toBase64Url, utf8ToBytes } from "./encoding";
 
-export const PASTA_VERSION = "0.1.18";
+export const PASTA_VERSION = "0.1.19";
 export const SIGNING_VERSION = "PASTA-SIGN-V1";
 export const REQUEST_TOLERANCE_MS = 5 * 60 * 1000;
 export const REQUEST_NONCE_TTL_MS = 10 * 60 * 1000;
