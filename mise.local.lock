@@ -158,7 +158,7 @@ url_api = "https://api.github.com/repos/jdx/fnox/releases/assets/422647962"
 provenance = "github-attestations"
 
 [[tools.wrangler]]
-version = "4.104.0"
+version = "4.105.0"
 backend = "npm:wrangler"
 
 [tools.wrangler.options]
