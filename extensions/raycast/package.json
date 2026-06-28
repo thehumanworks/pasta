@@ -1,0 +1,63 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "pasta",
+  "title": "Pasta",
+  "description": "Interacts with the remote Pasta store.",
+  "icon": "extension-icon.png",
+  "author": "nothuman",
+  "platforms": [
+    "Windows",
+    "macOS"
+  ],
+  "categories": [
+    "Developer Tools"
+  ],
+  "preferences": [
+    {
+      "name": "pastaCliPath",
+      "type": "textfield",
+      "required": false,
+      "title": "Pasta CLI Path",
+      "description": "Optional path to the pasta binary. Leave empty to auto-detect from PATH and common install locations.",
+      "placeholder": "e.g. /opt/homebrew/bin/pasta"
+    }
+  ],
+  "license": "MIT",
+  "commands": [
+    {
+      "mode": "no-view",
+      "name": "copy",
+      "title": "Copy",
+      "description": "Copies the selected text to the Pasta remote store.",
+      "subtitle": "Copy to Pasta store"
+    },
+    {
+      "mode": "no-view",
+      "name": "paste",
+      "title": "Paste",
+      "description": "Pastes last entry from the pasta store.",
+      "subtitle": "Paste from Pasta store"
+    }
+  ],
+  "tools": [],
+  "scripts": {
+    "build": "ray build",
+    "dev": "ray develop",
+    "fix-lint": "ray lint --fix",
+    "lint": "ray lint",
+    "prepublishOnly": "echo \"\\n\\nThis workspace is managed with Bun and is intended for Raycast Store publishing.\\nRun \\`bun run publish\\` from extensions/raycast instead.\\n\\n\" && exit 1",
+    "publish": "ray publish"
+  },
+  "dependencies": {
+    "@raycast/api": "^1.103.0",
+    "@raycast/utils": "^2.2.1"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^2.0.4",
+    "@types/node": "22.19.17",
+    "@types/react": "19.0.10",
+    "eslint": "^9.22.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.2"
+  }
+}

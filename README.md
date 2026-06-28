@@ -495,6 +495,13 @@ bun test test/bun
 bun run test:worker
 ```
 
+Run Raycast extension checks:
+
+```bash
+bun run raycast:lint
+bun run raycast:build
+```
+
 Generate Worker types:
 
 ```bash

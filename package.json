@@ -4,6 +4,9 @@
   "description": "Terminal-first encrypted clipboard relay for trusted desktop devices.",
   "license": "UNLICENSED",
   "type": "module",
+  "workspaces": [
+    "extensions/*"
+  ],
   "bin": {
     "pasta": "./src/cli.ts"
   },
@@ -26,7 +29,10 @@
     "build:release": "bun scripts/build-release.ts",
     "smoke:macos-image": "bun scripts/smoke-macos-image.ts",
     "pack:list": "bun pm pack --dry-run",
-    "check:no-latest": "python3 scripts/check-no-latest.py"
+    "check:no-latest": "python3 scripts/check-no-latest.py",
+    "raycast:build": "bun run --cwd extensions/raycast build",
+    "raycast:dev": "bun run --cwd extensions/raycast dev",
+    "raycast:lint": "bun run --cwd extensions/raycast lint"
   },
   "dependencies": {
     "@noble/ciphers": "2.2.0",
