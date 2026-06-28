@@ -32,6 +32,8 @@ describe("global macOS hotkeys", () => {
     expect(source).toContain("RegisterEventHotKey");
     expect(source).toContain("kEventHotKeyExclusive");
     expect(source).toContain("Carbon status");
+    expect(source).toContain("process.standardError = FileHandle.standardError");
+    expect(source).toContain("exited with status");
     expect(source).toContain("mise exec -- bun run src/cli.ts 'copy'");
     expect(source).toContain("mise exec -- bun run src/cli.ts 'paste' '--clipboard'");
     expect(source).toContain("UInt32(shiftKey | cmdKey)");
@@ -80,6 +82,25 @@ describe("global macOS hotkeys", () => {
       ["/bin/launchctl", "bootstrap", "gui/501", generated.launchAgentPath],
       ["/bin/launchctl", "kickstart", "-k", `gui/501/${MACOS_HOTKEY_LABEL}`]
     ]);
+  });
+
+  it("resolves the default hotkey command to an absolute pasta executable when available", async () => {
+    const paths = await tempPaths();
+    const userHome = await mkdtemp(join(tmpdir(), "pasta-user-"));
+    const runner: HotkeyCommandRunner = async () => ({ code: 0, stdout: "", stderr: "" });
+
+    await installGlobalHotkeys(paths, {
+      env: { HOME: userHome },
+      platform: "darwin",
+      runner,
+      commandResolver: () => "/Users/example/.bun/bin/pasta",
+      uid: "501"
+    });
+
+    const generated = macosHotkeyPaths(paths, { HOME: userHome });
+    const source = await Bun.file(generated.sourcePath).text();
+    expect(source).toContain("'/Users/example/.bun/bin/pasta' 'copy'");
+    expect(source).toContain("'/Users/example/.bun/bin/pasta' 'paste' '--clipboard'");
   });
 
   it("fails install when the Carbon conflict check fails", async () => {

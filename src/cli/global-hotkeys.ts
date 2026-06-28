@@ -24,6 +24,8 @@ export type HotkeyCommandRunner = (
   options?: { allowFailure?: boolean }
 ) => Promise<HotkeyCommandResult>;
 
+export type HotkeyCommandResolver = (command: string) => string | null | undefined;
+
 export interface InstallGlobalHotkeyOptions {
   command?: string;
   provider?: GlobalHotkeyProvider;
@@ -32,6 +34,7 @@ export interface InstallGlobalHotkeyOptions {
   env?: Record<string, string | undefined>;
   platform?: NodeJS.Platform;
   runner?: HotkeyCommandRunner;
+  commandResolver?: HotkeyCommandResolver;
   uid?: string;
   swiftcPath?: string;
   launchctlPath?: string;
@@ -230,8 +233,14 @@ func runAction(_ action: HotKeyAction) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/zsh")
     process.arguments = ["-lc", action.commandLine]
+    process.standardOutput = FileHandle.standardOutput
+    process.standardError = FileHandle.standardError
     do {
       try process.run()
+      process.waitUntilExit()
+      if process.terminationStatus != 0 {
+        writeStderr("Pasta hotkey \\(action.name) exited with status \\(process.terminationStatus)\\n")
+      }
     } catch {
       writeStderr("Pasta hotkey \\(action.name) failed to start: \\(error)\\n")
     }
@@ -305,7 +314,8 @@ export function macosLaunchAgentPlist(paths: MacosHotkeyPaths): string {
 export async function installGlobalHotkeys(paths: Paths, options: InstallGlobalHotkeyOptions = {}): Promise<InstalledGlobalHotkeys> {
   resolveGlobalHotkeyProvider(options.provider ?? "auto", options.platform ?? process.platform);
   const hotkeyPaths = macosHotkeyPaths(paths, options.env ?? Bun.env);
-  const hotkeys = normalizeGlobalHotkeys(options);
+  const command = options.command ?? resolveDefaultGlobalHotkeyCommand(options.commandResolver);
+  const hotkeys = normalizeGlobalHotkeys({ ...options, command });
   const runner = options.runner ?? defaultHotkeyCommandRunner;
   const swiftcPath = options.swiftcPath ?? "/usr/bin/swiftc";
   const launchctlPath = options.launchctlPath ?? "/bin/launchctl";
@@ -347,6 +357,14 @@ export async function installGlobalHotkeys(paths: Paths, options: InstallGlobalH
     copyKey: copy?.spec ?? "none",
     pasteKey: paste?.spec ?? "none"
   };
+}
+
+function resolveDefaultGlobalHotkeyCommand(resolver: HotkeyCommandResolver = Bun.which): string {
+  try {
+    return resolver("pasta") ?? "pasta";
+  } catch {
+    return "pasta";
+  }
 }
 
 export async function uninstallGlobalHotkeys(paths: Paths, options: UninstallGlobalHotkeyOptions = {}): Promise<MacosHotkeyPaths> {
