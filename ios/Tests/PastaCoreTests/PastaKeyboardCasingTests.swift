@@ -52,4 +52,19 @@ final class PastaKeyboardCasingTests: XCTestCase {
 
         XCTAssertNotEqual(lower, upper)
     }
+
+    func testLayoutSignatureCanKeyBoundedLayoutCache() {
+        let signature = PastaKeyboardLayoutSignature(
+            keyboardType: "alphabetic",
+            keyboardCase: .lowercased,
+            interfaceOrientation: "portrait",
+            screenWidth: 390,
+            screenHeight: 844,
+            deviceType: "phone",
+            needsInputModeSwitchKey: true,
+            localeIdentifier: "en_US"
+        )
+
+        XCTAssertEqual([signature: "cached"][signature], "cached")
+    }
 }

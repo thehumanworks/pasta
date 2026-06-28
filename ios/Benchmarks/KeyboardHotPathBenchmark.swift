@@ -8,6 +8,7 @@ struct BenchmarkResult {
 
 struct LayoutKey: Hashable {
     let keyboardType: Int
+    let keyboardCase: Int
     let orientation: Int
     let width: Int
     let height: Int
@@ -24,7 +25,7 @@ struct KeyboardLayout {
     var rows: [[LayoutItem]]
 }
 
-final class KeyboardLayoutCache {
+final class SingleEntryKeyboardLayoutCache {
     private var key: LayoutKey?
     private var layout: KeyboardLayout?
 
@@ -35,6 +36,30 @@ final class KeyboardLayoutCache {
         let generated = makeBaseLayout(for: key)
         self.key = key
         self.layout = generated
+        return generated
+    }
+}
+
+final class KeyboardLayoutCache {
+    private let maximumCachedLayouts: Int
+    private var layouts: [LayoutKey: KeyboardLayout] = [:]
+    private var keys: [LayoutKey] = []
+
+    init(maximumCachedLayouts: Int = 24) {
+        self.maximumCachedLayouts = maximumCachedLayouts
+    }
+
+    func layout(for key: LayoutKey) -> KeyboardLayout {
+        if let layout = layouts[key] {
+            return layout
+        }
+        let generated = makeBaseLayout(for: key)
+        layouts[key] = generated
+        keys.append(key)
+        while keys.count > maximumCachedLayouts {
+            let evicted = keys.removeFirst()
+            layouts[evicted] = nil
+        }
         return generated
     }
 }
@@ -100,6 +125,24 @@ final class SimulatedTextChecker {
     }
 }
 
+struct AutocompletePolicy {
+    let debounceMilliseconds = 24
+    let maximumContextCharacters = 96
+    let minimumCorrectedWordCharacters = 3
+    let maximumCorrectedWordCharacters = 32
+
+    func autocompleteContext(from text: String) -> String {
+        String(text.suffix(maximumContextCharacters))
+    }
+
+    func shouldAttemptCorrection(for word: String) -> Bool {
+        let characterCount = word.count
+        guard characterCount >= minimumCorrectedWordCharacters else { return false }
+        guard characterCount <= maximumCorrectedWordCharacters else { return false }
+        return word.rangeOfCharacter(from: .letters) != nil
+    }
+}
+
 let defaultIterations = 40_000
 let iterations = argumentValue("--iterations").flatMap(Int.init) ?? defaultIterations
 let mode = argumentValue("--mode") ?? "both"
@@ -107,11 +150,19 @@ let maxOptimizedTotalMs = argumentValue("--max-optimized-total-ms").flatMap(Doub
 let minImprovementPercent = argumentValue("--min-improvement-percent").flatMap(Double.init)
 
 let layoutKeys = [
-    LayoutKey(keyboardType: 0, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
-    LayoutKey(keyboardType: 0, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
-    LayoutKey(keyboardType: 0, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
-    LayoutKey(keyboardType: 1, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
-    LayoutKey(keyboardType: 0, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
+    LayoutKey(keyboardType: 0, keyboardCase: 0, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
+    LayoutKey(keyboardType: 0, keyboardCase: 0, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
+    LayoutKey(keyboardType: 0, keyboardCase: 0, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
+    LayoutKey(keyboardType: 1, keyboardCase: 0, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
+    LayoutKey(keyboardType: 0, keyboardCase: 1, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
+]
+
+let caseChurnLayoutKeys = [
+    LayoutKey(keyboardType: 0, keyboardCase: 0, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
+    LayoutKey(keyboardType: 0, keyboardCase: 1, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
+    LayoutKey(keyboardType: 0, keyboardCase: 0, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
+    LayoutKey(keyboardType: 0, keyboardCase: 2, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
+    LayoutKey(keyboardType: 0, keyboardCase: 0, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
 ]
 
 let typingSamples = [
@@ -124,7 +175,43 @@ let typingSamples = [
     "clipboard sync before tomorrow"
 ]
 
+let typingBursts = [
+    ["T", "Th", "The", "The ", "The k", "The ke", "The key", "The keyb", "The keyba", "The keybao", "The keybaor", "The keybaord"],
+    ["C", "Ca", "Can", "Can ", "Can y", "Can yo", "Can you", "Can you ", "Can you p", "Can you pu", "Can you pub", "Can you publ", "Can you publs", "Can you publsi", "Can you publsih"],
+    ["t", "th", "tha", "than", "thank", "thanks", "thanks ", "thanks f", "thanks fo", "thanks for", "thanks for ", "thanks for c", "thanks for ch", "thanks for che", "thanks for check", "thanks for checki", "thanks for checking"]
+]
+
 let languageCandidates = ["en_GB", "en-GB", "en", "en_US"]
+let autocompletePolicy = AutocompletePolicy()
+let engineAutocorrections = [
+    "teh": "the",
+    "recieve": "receive",
+    "keybaord": "keyboard",
+    "publsih": "publish",
+    "clipbaord": "clipboard",
+    "psta": "pasta"
+]
+let engineCompletions = [
+    "about", "again", "because", "before", "between", "clipboard",
+    "complete", "completion", "device", "history", "keyboard", "message",
+    "native", "number", "ordinary", "pasta", "paste", "pasted", "pasting",
+    "performance", "privacy", "publish", "quick", "release", "remote",
+    "secure", "shared", "shift", "space", "suggestion", "symbol", "sync",
+    "system", "testing", "text", "thanks", "there", "through", "today",
+    "toolbar", "tomorrow", "trusted", "typed", "typing", "visible",
+    "without"
+]
+let engineCompletionsByPrefix: [String: [String]] = {
+    var index: [String: [String]] = [:]
+    for completion in engineCompletions {
+        var prefix = ""
+        for scalar in completion.unicodeScalars {
+            prefix.unicodeScalars.append(scalar)
+            index[prefix, default: []].append(completion)
+        }
+    }
+    return index
+}()
 
 var results: [BenchmarkResult] = []
 
@@ -148,6 +235,29 @@ if mode == "baseline" || mode == "both" {
         }
         return checksum
     })
+    results.append(measure("baseline.autocomplete_eager_stale_and_current") {
+        var checksum = 0
+        let checker = SimulatedTextChecker()
+        let language = checker.language(candidates: languageCandidates)
+        for i in 0..<iterations {
+            let burst = typingBursts[i % typingBursts.count]
+            let index = i % burst.count
+            let previous = burst[max(0, index - 1)]
+            let current = burst[index]
+            checksum &+= language.count
+            checksum &+= checker.suggestions(for: currentWord(in: previous)).joined().count
+            checksum &+= checker.suggestions(for: currentWord(in: current)).joined().count
+        }
+        return checksum
+    })
+    results.append(measure("baseline.layout_single_entry_case_churn") {
+        var checksum = 0
+        let cache = SingleEntryKeyboardLayoutCache()
+        for i in 0..<iterations {
+            checksum &+= layoutChecksum(cache.layout(for: caseChurnLayoutKeys[i % caseChurnLayoutKeys.count]))
+        }
+        return checksum
+    })
 }
 
 if mode == "optimized" || mode == "both" {
@@ -159,14 +269,32 @@ if mode == "optimized" || mode == "both" {
         }
         return checksum
     })
-    results.append(measure("optimized.autocomplete_reused_checker") {
+    results.append(measure("optimized.autocomplete_bounded_engine") {
         var checksum = 0
-        let checker = SimulatedTextChecker()
-        let language = checker.language(candidates: languageCandidates)
         for i in 0..<iterations {
             let text = typingSamples[i % typingSamples.count]
-            checksum &+= language.count
-            checksum &+= checker.suggestions(for: currentWord(in: text)).joined().count
+            checksum &+= engineSuggestions(for: text).joined().count
+        }
+        return checksum
+    })
+    results.append(measure("optimized.autocomplete_debounced_latest") {
+        var checksum = 0
+        for i in 0..<iterations {
+            let burst = typingBursts[i % typingBursts.count]
+            let index = i % burst.count
+            guard index == burst.count - 1 else {
+                checksum &+= autocompletePolicy.debounceMilliseconds
+                continue
+            }
+            checksum &+= engineSuggestions(for: burst[index]).joined().count
+        }
+        return checksum
+    })
+    results.append(measure("optimized.layout_multientry_case_cache") {
+        var checksum = 0
+        let cache = KeyboardLayoutCache()
+        for i in 0..<iterations {
+            checksum &+= layoutChecksum(cache.layout(for: caseChurnLayoutKeys[i % caseChurnLayoutKeys.count]))
         }
         return checksum
     })
@@ -233,7 +361,10 @@ func makeBaseLayout(for key: LayoutKey) -> KeyboardLayout {
         "-/:;()$&@\"",
         ".,?!'"
     ]
-    let source = key.keyboardType == 0 ? alphaRows : symbolRows
+    let uppercase = key.keyboardCase == 1 || key.keyboardCase == 2
+    let source = key.keyboardType == 0
+        ? alphaRows.map { uppercase ? $0.uppercased() : $0 }
+        : symbolRows
     var rows = source.map { row in
         row.map { LayoutItem(action: String($0), width: 10) }
     }
@@ -266,6 +397,32 @@ func currentWord(in text: String) -> String {
         result.unicodeScalars.insert(scalar, at: result.unicodeScalars.startIndex)
     }
     return result
+}
+
+func engineSuggestions(for text: String) -> [String] {
+    let context = autocompletePolicy.autocompleteContext(from: text)
+    let word = currentWord(in: context)
+    guard !word.isEmpty else { return ["I", "The", "It"] }
+
+    var suggestions: [String] = []
+    var seen = Set<String>()
+    if word.count > 1 {
+        append(word, to: &suggestions, seen: &seen)
+    }
+    let normalized = word.lowercased()
+    if
+        autocompletePolicy.shouldAttemptCorrection(for: word),
+        let correction = engineAutocorrections[normalized],
+        correction != normalized
+    {
+        append(matchCase(correction, for: word), to: &suggestions, seen: &seen)
+    }
+    for completion in engineCompletionsByPrefix[normalized] ?? [] {
+        guard completion != normalized else { continue }
+        append(matchCase(completion, for: word), to: &suggestions, seen: &seen)
+        if suggestions.count == 3 { break }
+    }
+    return suggestions.isEmpty ? ["I", "The", "It"] : Array(suggestions.prefix(3))
 }
 
 func append(_ value: String, to suggestions: inout [String], seen: inout Set<String>) {

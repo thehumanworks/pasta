@@ -181,9 +181,9 @@ Observable finished state:
 
 Keyboard performance proof for this release:
 
-- Observed root cause: Pasta-owned helper work around KeyboardKit did avoidable work on typing-sensitive paths. The SwiftUI wrapper rebuilt Pasta's structural KeyboardKit layout on repeated body evaluations, and the autocomplete service recreated `UITextChecker` plus its available-language lookup per autocomplete request.
-- Implemented fix: cache the structural KeyboardKit layout by keyboard type, orientation, screen size, device class, input-mode-switch requirement, and locale; reuse the `UITextChecker` and available-language set for autocomplete.
-- Benchmark: `swift ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 40000 --mode both` reports `baseline.total: 5091.245 ms`, `optimized.total: 2175.182 ms`, and `57.276% faster` with matching checksums after the alphabetic number row removal.
+- Observed root cause: Pasta-owned helper work around KeyboardKit did avoidable work on typing-sensitive paths. The SwiftUI wrapper rebuilt structural layouts on repeated body evaluations, the one-entry layout cache churned when case/type states alternated, and Pasta autocomplete kept old requests eligible while running system spellchecking/completion work on the main actor for ordinary keypresses.
+- Implemented fix: use a bounded multi-entry structural layout cache; debounce and cancel stale autocomplete requests in the keyboard controller; replace the typing-path `UITextChecker` calls with a bounded pure Swift autocomplete engine; cap autocomplete context to the recent typing suffix; keep KeyboardKit's autocomplete toolbar and standard action handling intact.
+- Benchmark: `swift ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 40000 --mode both --min-improvement-percent 60` reports `baseline.total: 6947.720 ms`, `optimized.total: 2246.995 ms`, and `67.659% faster` for the checked-in layout and autocomplete hot-path model.
 
 Non-goals:
 
@@ -363,29 +363,27 @@ The current implementation fixes both sides:
 
 `PastaAutocompleteService` is intentionally local and privacy-preserving:
 
-- It uses `UITextChecker`, not a network model.
-- It only inspects the text context that iOS already exposes to the keyboard extension.
+- It uses bounded local string matching, not a network model or system spellchecker on each keypress.
+- It only inspects the recent text context that iOS already exposes to the keyboard extension.
 - It does not publish keystrokes, clips, or typed text to Pasta.
 - It returns a KeyboardKit `Autocomplete.ServiceResult`.
 - It supports ignored and learned word sets in memory for KeyboardKit's standard action handler.
 
 Suggestion generation works as follows:
 
-1. Extract the current trailing word from the provided autocomplete text.
-2. If there is no current word, return idle suggestions.
-3. Add an `.unknown` suggestion for the current word, displayed with quotes, when the word is long enough.
-4. Ask `UITextChecker.rangeOfMisspelledWord` and `guesses(forWordRange:in:language:)` for autocorrect candidates.
-5. If the best guess differs from the current word, return it as `.autocorrect`; KeyboardKit's standard action handler can then apply it before delimiters such as space.
-6. Ask `UITextChecker.completions(forPartialWordRange:in:language:)` for normal completions.
-7. Add a tiny local fallback list for common words when the checker has no useful completions.
-8. Cap displayed suggestions through KeyboardKit's normal autocomplete context settings.
+1. Cap the provided autocomplete text to the recent typing suffix.
+2. Extract the current trailing word from the bounded autocomplete text.
+3. If there is no current word, return idle suggestions.
+4. Add an `.unknown` suggestion for the current word, displayed with quotes, when the word is long enough.
+5. Check a small local correction dictionary for common typos.
+6. Check a precomputed local completion prefix index for matches.
+7. Cap displayed suggestions through KeyboardKit's normal autocomplete context settings.
 
 Swift 6 / Xcode 27 detail:
 
-- `UITextChecker` APIs are main-actor isolated in the current SDK.
-- The service snapshots `locale` and ignored words, then runs checker work on `MainActor`.
-- The main-actor helper is static so the service instance itself is not captured across actor boundaries.
-- Do not move `UITextChecker` calls into a detached background task unless the SDK isolation changes and the build proves it.
+- `KeyboardViewController.performAutocomplete()` debounces for `24 ms`, cancels stale tasks, and only asks KeyboardKit to update suggestions for the latest text.
+- Keep the autocomplete service free of `UITextChecker` and `MainActor.run` work unless a future build proves the SDK isolation and device latency are acceptable.
+- Keep ignored/learned word sets synchronized, since KeyboardKit may call the autocomplete service from async tasks.
 
 ### Keyboard layout and case behavior
 

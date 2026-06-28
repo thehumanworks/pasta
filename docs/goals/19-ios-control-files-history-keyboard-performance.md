@@ -272,6 +272,68 @@ Verification Contract:
   docs/goals/19-ios-control-files-history-keyboard-performance.md` - exit 0;
   goal parsed with 4/5 DoD complete and T5 next.
 
+### T4B - Fix Keyboard Autocomplete Latency Regression - [x]
+
+- Re-check KeyboardKit and Pasta-owned typing hot paths after device-reported
+  keypress latency.
+- Remove avoidable main-actor autocomplete work from ordinary typing.
+- Coalesce stale autocomplete requests without replacing KeyboardKit input
+  handling, autocomplete toolbar, globe behavior, or Pasta publish/paste
+  actions.
+- Keep the fix local to keyboard latency; do not change clipboard privacy or
+  Worker/API behavior.
+
+Verification Contract:
+
+- The committed benchmark models the checked-in optimized autocomplete path and
+  gates on at least 60% improvement.
+- `swift test --package-path ios` and a simulator keyboard build pass.
+- Docs record the current root cause, fix, and benchmark numbers.
+
+**Confidence:** 92/100
+**Closes:** DoD-4
+**Evidence:**
+
+- 2026-06-28 - root-cause readback - KeyboardKit
+  `KeyboardInputViewController.performAutocomplete` dispatches service updates
+  from the controller, and `KeyboardAction.StandardActionHandler` calls
+  `keyboardController?.performAutocomplete()` after key release. Pasta's prior
+  service still allowed typing-path autocomplete work to run for ordinary
+  keypresses while using system spellchecking/completion work.
+- 2026-06-28 - implementation -
+  `ios/Keyboard/KeyboardViewController.swift` now debounces autocomplete for
+  `24 ms`, cancels stale tasks, and delegates the latest request back through
+  KeyboardKit's `autocomplete(_:updating:)` path; `PastaAutocompleteService`
+  now uses a bounded pure Swift engine with a precomputed completion prefix
+  index instead of `UITextChecker` or `MainActor.run` work on each keypress.
+- 2026-06-28 - `swift test --package-path ios` - exit 0; 35 XCTest tests
+  executed, 1 gated live-relay smoke skipped without `PASTA_IOS_JOIN_TOKEN`,
+  0 failures. New tests cover debounce bounds, bounded autocomplete context,
+  ignored corrections, casing, and prefix-indexed local suggestions.
+- 2026-06-28 - keyboard hot-path benchmark - `swift
+  ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 40000 --mode both
+  --min-improvement-percent 60` - exit 0; `baseline.layout_rebuild:
+  236.300 ms`, `baseline.autocomplete_new_checker: 4635.628 ms`,
+  `baseline.autocomplete_eager_stale_and_current: 1864.634 ms`,
+  `baseline.layout_single_entry_case_churn: 211.157 ms`,
+  `optimized.layout_cache: 144.806 ms`,
+  `optimized.autocomplete_bounded_engine: 1903.192 ms`,
+  `optimized.autocomplete_debounced_latest: 53.356 ms`,
+  `optimized.layout_multientry_case_cache: 145.640 ms`,
+  `baseline.total: 6947.720 ms`, `optimized.total: 2246.995 ms`,
+  improvement `4700.725 ms` / `67.659% faster`.
+- 2026-06-28 - `xcodebuild -project ios/Pasta.xcodeproj -scheme Pasta
+  -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS
+  Simulator' -derivedDataPath ios/build/DerivedDataLatencyFix
+  CODE_SIGNING_ALLOWED=NO build` - exit 0; app and embedded
+  `PastaKeyboard.appex` compiled with the debounced autocomplete controller.
+- 2026-06-28 - `cd docs-site && bun run build -- --base /` - exit 0; built
+  16 docs pages after documenting the current latency root cause, fix, and
+  benchmark numbers.
+- 2026-06-28 - `git diff --check` plus `gdd_status.py --author
+  docs/goals/19-ios-control-files-history-keyboard-performance.md` - exit 0;
+  goal parsed with 5/5 DoD covered and no authoring violations.
+
 ### T5 - Integrate, Release, And Prove Distribution - [x]
 
 - Merge reviewed worktrees into local `main`.

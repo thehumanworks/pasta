@@ -15,6 +15,13 @@ final class KeyboardViewController: KeyboardInputViewController {
     private let keychain = PastaKeychainStore()
     private let store = try? PastaAppGroupStore()
     private let autocompleteService = PastaAutocompleteService()
+    private var autocompleteTask: Task<Void, Never>?
+    private var autocompleteGeneration = 0
+    private var lastPastaAutocompleteText = ""
+
+    deinit {
+        autocompleteTask?.cancel()
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -55,6 +62,44 @@ final class KeyboardViewController: KeyboardInputViewController {
         deferKeyboardSurfaceToHost()
     }
 
+    override func performAutocomplete() {
+        guard isAutocompleteEnabled else {
+            cancelPendingAutocomplete()
+            return
+        }
+
+        autocompleteGeneration += 1
+        let generation = autocompleteGeneration
+        autocompleteTask?.cancel()
+        autocompleteTask = Task { @MainActor [weak self] in
+            let delay = PastaKeyboardAutocompletePolicy.standard.debounceMilliseconds
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
+            } catch {
+                return
+            }
+
+            guard let self else { return }
+            guard !Task.isCancelled else { return }
+            guard generation == self.autocompleteGeneration else { return }
+            guard self.isAutocompleteEnabled else { return }
+
+            let text = self.autocompleteText ?? ""
+            guard text != self.lastPastaAutocompleteText else { return }
+            self.lastPastaAutocompleteText = text
+            self.services.autocompleteService.autocomplete(
+                text,
+                updating: self.state.autocompleteContext
+            )
+        }
+    }
+
+    override func resetAutocomplete() {
+        cancelPendingAutocomplete()
+        lastPastaAutocompleteText = ""
+        super.resetAutocomplete()
+    }
+
     private func deferKeyboardSurfaceToHost() {
         view.isOpaque = false
         view.backgroundColor = .clear
@@ -64,6 +109,12 @@ final class KeyboardViewController: KeyboardInputViewController {
             child.view.isOpaque = false
             child.view.backgroundColor = .clear
         }
+    }
+
+    private func cancelPendingAutocomplete() {
+        autocompleteGeneration += 1
+        autocompleteTask?.cancel()
+        autocompleteTask = nil
     }
 
     private func reloadClips() {
@@ -270,24 +321,33 @@ private struct PastaKeyboardView: View {
 
 @MainActor
 private final class PastaKeyboardLayoutCache: ObservableObject {
-    private var cachedKey: PastaKeyboardLayoutKey?
-    private var cachedLayout: KeyboardLayout?
+    private static let maximumCachedLayouts = 24
+    private var cachedLayouts: [PastaKeyboardLayoutKey: KeyboardLayout] = [:]
+    private var cachedKeys: [PastaKeyboardLayoutKey] = []
 
     func layout(for keyboardContext: KeyboardContext, service: KeyboardLayoutService) -> KeyboardLayout {
         let key = PastaKeyboardLayoutKey(context: keyboardContext)
-        if cachedKey == key, let cachedLayout {
+        if let cachedLayout = cachedLayouts[key] {
             return cachedLayout
         }
 
         let layout = service.keyboardLayout(for: keyboardContext)
 
-        cachedKey = key
-        cachedLayout = layout
+        cachedLayouts[key] = layout
+        cachedKeys.append(key)
+        evictOldLayoutsIfNeeded()
         return layout
+    }
+
+    private func evictOldLayoutsIfNeeded() {
+        while cachedKeys.count > Self.maximumCachedLayouts {
+            let evicted = cachedKeys.removeFirst()
+            cachedLayouts[evicted] = nil
+        }
     }
 }
 
-private struct PastaKeyboardLayoutKey: Equatable {
+private struct PastaKeyboardLayoutKey: Hashable {
     let signature: PastaKeyboardLayoutSignature
 
     init(context: KeyboardContext) {
@@ -498,238 +558,82 @@ private extension PastaKeyboardCaseMode {
 }
 
 private final class PastaAutocompleteService: AutocompleteService {
-    static let idleSuggestions = [
-        Autocomplete.Suggestion(text: "I"),
-        Autocomplete.Suggestion(text: "The"),
-        Autocomplete.Suggestion(text: "It")
-    ]
+    static let idleSuggestions = PastaKeyboardAutocompleteEngine.idleSuggestions.map(\.keyboardKitSuggestion)
 
     var locale: Locale = .current
 
+    private let engine = PastaKeyboardAutocompleteEngine()
+    private let wordsLock = NSLock()
     private var ignored = Set<String>()
     private var learned = Set<String>()
 
     var canIgnoreWords: Bool { true }
     var canLearnWords: Bool { true }
-    var ignoredWords: [String] { Array(ignored).sorted() }
-    var learnedWords: [String] { Array(learned).sorted() }
+    var ignoredWords: [String] { wordsLock.withLock { Array(ignored).sorted() } }
+    var learnedWords: [String] { wordsLock.withLock { Array(learned).sorted() } }
 
     func autocomplete(_ text: String) async throws -> Autocomplete.ServiceResult {
-        let languageCandidates = Self.languageCandidates(for: locale)
-        let ignoredSnapshot = ignored
-        let suggestions = await MainActor.run {
-            Self.suggestions(
-                for: text,
-                languageCandidates: languageCandidates,
-                ignoredWords: ignoredSnapshot
-            )
-        }
+        let ignoredSnapshot = wordsLock.withLock { ignored }
+        let suggestions = engine
+            .suggestions(for: text, ignoredWords: ignoredSnapshot)
+            .map(\.keyboardKitSuggestion)
         return Autocomplete.ServiceResult(inputText: text, suggestions: suggestions)
     }
 
     func hasIgnoredWord(_ word: String) -> Bool {
-        ignored.contains(Self.normalized(word))
+        wordsLock.withLock { ignored.contains(PastaKeyboardAutocompleteEngine.normalized(word)) }
     }
 
     func hasLearnedWord(_ word: String) -> Bool {
-        learned.contains(Self.normalized(word))
+        wordsLock.withLock { learned.contains(PastaKeyboardAutocompleteEngine.normalized(word)) }
     }
 
     func ignoreWord(_ word: String) {
-        ignored.insert(Self.normalized(word))
+        wordsLock.withLock { ignored.insert(PastaKeyboardAutocompleteEngine.normalized(word)) }
     }
 
     func learnWord(_ word: String) {
-        learned.insert(Self.normalized(word))
+        wordsLock.withLock { learned.insert(PastaKeyboardAutocompleteEngine.normalized(word)) }
     }
 
     func removeIgnoredWord(_ word: String) {
-        ignored.remove(Self.normalized(word))
+        wordsLock.withLock { ignored.remove(PastaKeyboardAutocompleteEngine.normalized(word)) }
     }
 
     func unlearnWord(_ word: String) {
-        learned.remove(Self.normalized(word))
+        wordsLock.withLock { learned.remove(PastaKeyboardAutocompleteEngine.normalized(word)) }
     }
+}
 
-    @MainActor
-    private static func suggestions(
-        for text: String,
-        languageCandidates: [String],
-        ignoredWords: Set<String>
-    ) -> [Autocomplete.Suggestion] {
-        guard let range = currentWordRange(in: text) else {
-            return Self.idleSuggestions
-        }
-
-        let nsText = text as NSString
-        let word = nsText.substring(with: range)
-        guard !word.isEmpty else { return Self.idleSuggestions }
-
-        let checker = Self.checker
-        let language = checkerLanguage(candidates: languageCandidates)
-        var suggestions: [Autocomplete.Suggestion] = []
-        var seen = Set<String>()
-
-        appendUnknownSuggestion(for: word, to: &suggestions, seen: &seen)
-        appendAutocorrectSuggestion(
-            for: word,
+private extension PastaKeyboardAutocompleteSuggestion {
+    var keyboardKitSuggestion: Autocomplete.Suggestion {
+        Autocomplete.Suggestion(
             text: text,
-            range: range,
-            checker: checker,
-            language: language,
-            ignoredWords: ignoredWords,
-            to: &suggestions,
-            seen: &seen
-        )
-        appendCompletionSuggestions(
-            for: word,
-            text: text,
-            range: range,
-            checker: checker,
-            language: language,
-            to: &suggestions,
-            seen: &seen
-        )
-        appendFallbackSuggestions(for: word, to: &suggestions, seen: &seen)
-
-        return suggestions.isEmpty ? Self.idleSuggestions : Array(suggestions.prefix(3))
-    }
-
-    private static func appendUnknownSuggestion(
-        for word: String,
-        to suggestions: inout [Autocomplete.Suggestion],
-        seen: inout Set<String>
-    ) {
-        guard word.count > 1 else { return }
-        append(
-            Autocomplete.Suggestion(text: word, type: .unknown, title: "\"\(word)\""),
-            to: &suggestions,
-            seen: &seen
+            type: kind.keyboardKitSuggestionType,
+            title: title
         )
     }
+}
 
-    @MainActor
-    private static func appendAutocorrectSuggestion(
-        for word: String,
-        text: String,
-        range: NSRange,
-        checker: UITextChecker,
-        language: String,
-        ignoredWords: Set<String>,
-        to suggestions: inout [Autocomplete.Suggestion],
-        seen: inout Set<String>
-    ) {
-        guard !ignoredWords.contains(normalized(word)) else { return }
-        let misspelled = checker.rangeOfMisspelledWord(
-            in: text,
-            range: range,
-            startingAt: range.location,
-            wrap: false,
-            language: language
-        )
-        guard misspelled.location != NSNotFound else { return }
-        guard let guess = checker.guesses(forWordRange: range, in: text, language: language)?.first else { return }
-        guard !guess.caseInsensitiveEquals(word) else { return }
-        let suggestion = Autocomplete.Suggestion(text: guess, type: .autocorrect)
-            .autocompleteCased(for: word)
-        append(suggestion, to: &suggestions, seen: &seen)
-    }
-
-    @MainActor
-    private static func appendCompletionSuggestions(
-        for word: String,
-        text: String,
-        range: NSRange,
-        checker: UITextChecker,
-        language: String,
-        to suggestions: inout [Autocomplete.Suggestion],
-        seen: inout Set<String>
-    ) {
-        let completions = checker.completions(
-            forPartialWordRange: range,
-            in: text,
-            language: language
-        ) ?? []
-
-        for completion in completions.prefix(6) {
-            guard !completion.caseInsensitiveEquals(word) else { continue }
-            let suggestion = Autocomplete.Suggestion(text: completion)
-                .autocompleteCased(for: word)
-            append(suggestion, to: &suggestions, seen: &seen)
+private extension PastaKeyboardAutocompleteSuggestionKind {
+    var keyboardKitSuggestionType: Autocomplete.SuggestionType {
+        switch self {
+        case .regular:
+            return .regular
+        case .autocorrect:
+            return .autocorrect
+        case .unknown:
+            return .unknown
         }
     }
+}
 
-    private static func appendFallbackSuggestions(
-        for word: String,
-        to suggestions: inout [Autocomplete.Suggestion],
-        seen: inout Set<String>
-    ) {
-        let prefix = word.lowercased()
-        for fallback in Self.commonWords where fallback.lowercased().hasPrefix(prefix) {
-            guard !fallback.caseInsensitiveEquals(word) else { continue }
-            let suggestion = Autocomplete.Suggestion(text: fallback)
-                .autocompleteCased(for: word)
-            append(suggestion, to: &suggestions, seen: &seen)
-        }
+private extension NSLock {
+    func withLock<T>(_ operation: () -> T) -> T {
+        lock()
+        defer { unlock() }
+        return operation()
     }
-
-    private static func append(
-        _ suggestion: Autocomplete.Suggestion,
-        to suggestions: inout [Autocomplete.Suggestion],
-        seen: inout Set<String>
-    ) {
-        let key = normalized(suggestion.text)
-        guard !key.isEmpty, !seen.contains(key) else { return }
-        seen.insert(key)
-        suggestions.append(suggestion)
-    }
-
-    private static func currentWordRange(in text: String) -> NSRange? {
-        let nsText = text as NSString
-        var start = nsText.length
-        while start > 0 {
-            let codeUnit = nsText.character(at: start - 1)
-            guard
-                let scalar = UnicodeScalar(Int(codeUnit)),
-                Self.wordCharacters.contains(scalar)
-            else {
-                break
-            }
-            start -= 1
-        }
-
-        let length = nsText.length - start
-        guard length > 0 else { return nil }
-        return NSRange(location: start, length: length)
-    }
-
-    @MainActor
-    private static func checkerLanguage(candidates: [String]) -> String {
-        candidates.first { availableCheckerLanguages.contains($0) } ?? "en_US"
-    }
-
-    private static func languageCandidates(for locale: Locale) -> [String] {
-        [
-            locale.identifier,
-            locale.identifier.replacingOccurrences(of: "_", with: "-"),
-            locale.language.languageCode?.identifier ?? "",
-            "en_US",
-            "en"
-        ].filter { !$0.isEmpty }
-    }
-
-    private static func normalized(_ word: String) -> String {
-        word.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-
-    private static let wordCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "'"))
-    @MainActor private static let checker = UITextChecker()
-    @MainActor private static let availableCheckerLanguages = Set(UITextChecker.availableLanguages)
-    private static let commonWords = [
-        "I", "the", "to", "and", "you", "that", "it", "in", "is", "for",
-        "of", "on", "with", "this", "we", "are", "be", "have", "not", "can",
-        "will", "from", "at", "as", "if", "or", "so", "but", "just", "thanks"
-    ]
 }
 
 private struct LivePastaContext {
@@ -747,10 +651,6 @@ private extension String {
     var singleLineTitle: String {
         let compact = replacingOccurrences(of: "\n", with: " ")
         return compact.isEmpty ? "Text clip" : String(compact.prefix(48))
-    }
-
-    func caseInsensitiveEquals(_ other: String) -> Bool {
-        compare(other, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
     }
 }
 

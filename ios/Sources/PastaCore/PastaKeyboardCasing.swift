@@ -25,7 +25,7 @@ public enum PastaKeyboardCaseMode: String, CaseIterable, Sendable {
     }
 }
 
-public struct PastaKeyboardLayoutSignature: Equatable, Sendable {
+public struct PastaKeyboardLayoutSignature: Hashable, Sendable {
     public let keyboardType: String
     public let keyboardCase: PastaKeyboardCaseMode
     public let interfaceOrientation: String
