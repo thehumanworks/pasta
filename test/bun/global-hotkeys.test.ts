@@ -103,6 +103,28 @@ describe("global macOS hotkeys", () => {
     expect(source).toContain("'/Users/example/.bun/bin/pasta' 'paste' '--clipboard'");
   });
 
+  it("prefers the running standalone Pasta executable for mise-style installs", async () => {
+    const paths = await tempPaths();
+    const userHome = await mkdtemp(join(tmpdir(), "pasta-user-"));
+    const misePastaPath = "/Users/example/.local/share/mise/installs/github-thehumanworks-pasta/v0.1.18/bin/pasta";
+    const runner: HotkeyCommandRunner = async () => ({ code: 0, stdout: "", stderr: "" });
+
+    await installGlobalHotkeys(paths, {
+      env: { HOME: userHome },
+      platform: "darwin",
+      runner,
+      commandResolver: () => "/Users/example/.bun/bin/pasta",
+      processInfo: { argv: [misePastaPath, "/$bunfs/root/pasta", "install-hotkeys"], execPath: misePastaPath },
+      uid: "501"
+    });
+
+    const source = await Bun.file(macosHotkeyPaths(paths, { HOME: userHome }).sourcePath).text();
+    expect(source).toContain(`'${misePastaPath}' 'copy' '--clipboard'`);
+    expect(source).toContain(`'${misePastaPath}' 'paste' '--clipboard'`);
+    expect(source).not.toContain("/Users/example/.bun/bin/pasta");
+    expect(source).not.toContain("/$bunfs/root/pasta");
+  });
+
   it("wraps Bun shebang installs with an absolute bun executable", async () => {
     const paths = await tempPaths();
     const userHome = await mkdtemp(join(tmpdir(), "pasta-user-"));
@@ -117,7 +139,8 @@ describe("global macOS hotkeys", () => {
       env: { HOME: userHome },
       platform: "darwin",
       runner,
-      commandResolver: (command) => command === "pasta" ? pastaPath : bunPath,
+      commandResolver: () => null,
+      processInfo: { argv: [bunPath, pastaPath, "install-hotkeys"], execPath: bunPath },
       uid: "501"
     });
 

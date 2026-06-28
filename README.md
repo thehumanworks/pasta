@@ -33,13 +33,13 @@ pasta --version
 Install the tagged release globally:
 
 ```bash
-bun install --global github:thehumanworks/pasta#v0.1.16
+bun install --global github:thehumanworks/pasta#v0.1.18
 ```
 
 Run the tagged release:
 
 ```bash
-bunx --bun github:thehumanworks/pasta#v0.1.16 --version
+bunx --bun github:thehumanworks/pasta#v0.1.18 --version
 ```
 
 Install the latest GitHub release through mise:

@@ -33,7 +33,7 @@ On macOS this writes:
 
 The helper is compiled at install time with `/usr/bin/swiftc`, so macOS needs Xcode or the Apple command line tools installed.
 
-By default the installer resolves `pasta` from your current shell and stores the absolute command path in the helper. Use `--command <command>` only when you want the hotkeys to call a different Pasta binary or wrapper.
+By default the installer detects the currently running Pasta executable and stores that absolute command in the helper. A mise-managed standalone install stores the mise-managed binary path; a Bun script install stores absolute `bun` plus the Pasta script path. Use `--command <command>` only when you want the hotkeys to call a different Pasta binary or wrapper.
 
 The installer checks for conflicts before enabling the LaunchAgent. If another app already owns the requested chord, Pasta exits without replacing it.
 

@@ -1,5 +1,5 @@
 import { chmod, mkdir, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { Paths } from "./config";
 
 export const GLOBAL_HOTKEY_PROVIDERS = ["auto", "macos"] as const;
@@ -26,6 +26,11 @@ export type HotkeyCommandRunner = (
 
 export type HotkeyCommandResolver = (command: string) => string | null | undefined;
 
+export interface HotkeyProcessInfo {
+  argv?: readonly string[];
+  execPath?: string;
+}
+
 export interface InstallGlobalHotkeyOptions {
   command?: string | readonly string[];
   provider?: GlobalHotkeyProvider;
@@ -35,6 +40,7 @@ export interface InstallGlobalHotkeyOptions {
   platform?: NodeJS.Platform;
   runner?: HotkeyCommandRunner;
   commandResolver?: HotkeyCommandResolver;
+  processInfo?: HotkeyProcessInfo;
   uid?: string;
   swiftcPath?: string;
   launchctlPath?: string;
@@ -314,7 +320,7 @@ export function macosLaunchAgentPlist(paths: MacosHotkeyPaths): string {
 export async function installGlobalHotkeys(paths: Paths, options: InstallGlobalHotkeyOptions = {}): Promise<InstalledGlobalHotkeys> {
   resolveGlobalHotkeyProvider(options.provider ?? "auto", options.platform ?? process.platform);
   const hotkeyPaths = macosHotkeyPaths(paths, options.env ?? Bun.env);
-  const command = options.command ?? await resolveDefaultGlobalHotkeyCommand(options.commandResolver);
+  const command = options.command ?? await resolveDefaultGlobalHotkeyCommand(options.commandResolver, options.processInfo);
   const hotkeys = normalizeGlobalHotkeys({ ...options, command });
   const runner = options.runner ?? defaultHotkeyCommandRunner;
   const swiftcPath = options.swiftcPath ?? "/usr/bin/swiftc";
@@ -359,7 +365,12 @@ export async function installGlobalHotkeys(paths: Paths, options: InstallGlobalH
   };
 }
 
-async function resolveDefaultGlobalHotkeyCommand(resolver: HotkeyCommandResolver = Bun.which): Promise<string | readonly string[]> {
+async function resolveDefaultGlobalHotkeyCommand(
+  resolver: HotkeyCommandResolver = Bun.which,
+  processInfo: HotkeyProcessInfo = { argv: process.argv, execPath: process.execPath }
+): Promise<string | readonly string[]> {
+  const current = await resolveCurrentProcessCommand(processInfo);
+  if (current) return current;
   try {
     const pasta = resolver("pasta") ?? "pasta";
     if (pasta !== "pasta" && await isBunShebangScript(pasta)) {
@@ -370,6 +381,20 @@ async function resolveDefaultGlobalHotkeyCommand(resolver: HotkeyCommandResolver
   } catch {
     return "pasta";
   }
+}
+
+async function resolveCurrentProcessCommand(processInfo: HotkeyProcessInfo): Promise<string | readonly string[] | null> {
+  const execPath = processInfo.execPath;
+  const scriptPath = processInfo.argv?.[1];
+  if (execPath && looksLikePastaEntrypoint(execPath)) return execPath;
+  if (execPath && scriptPath && looksLikePastaEntrypoint(scriptPath) && await isBunShebangScript(scriptPath)) {
+    return [execPath, scriptPath];
+  }
+  return null;
+}
+
+function looksLikePastaEntrypoint(path: string): boolean {
+  return basename(path) === "pasta" || path.endsWith("/src/cli.ts") || path.endsWith("\\src\\cli.ts");
 }
 
 async function isBunShebangScript(path: string): Promise<boolean> {
