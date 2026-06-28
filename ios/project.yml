@@ -33,7 +33,7 @@ targets:
         PRODUCT_NAME: Pasta
         DISPLAY_NAME: Pasta
         MARKETING_VERSION: 0.1.9
-        CURRENT_PROJECT_VERSION: 16
+        CURRENT_PROJECT_VERSION: 17
         SWIFT_VERSION: 6.0
         DEVELOPMENT_TEAM: 54MXM5JG3R
         CODE_SIGN_STYLE: Automatic
@@ -59,7 +59,7 @@ targets:
         PRODUCT_NAME: PastaKeyboard
         DISPLAY_NAME: Pasta Keyboard
         MARKETING_VERSION: 0.1.9
-        CURRENT_PROJECT_VERSION: 16
+        CURRENT_PROJECT_VERSION: 17
         SWIFT_VERSION: 6.0
         DEVELOPMENT_TEAM: 54MXM5JG3R
         CODE_SIGN_STYLE: Automatic

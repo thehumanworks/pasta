@@ -1,6 +1,6 @@
 {
   "name": "pasta",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "Terminal-first encrypted clipboard relay for trusted desktop devices.",
   "license": "UNLICENSED",
   "type": "module",
