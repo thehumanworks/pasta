@@ -69,6 +69,8 @@ export interface InstalledGlobalHotkeys {
   paths: MacosHotkeyPaths;
   copyKey: string;
   pasteKey: string;
+  accessibilityTrusted: boolean;
+  accessibilityMessage?: string;
 }
 
 interface NormalizedHotkey {
@@ -190,7 +192,8 @@ export function macosHotkeySource(hotkeys: readonly NormalizedHotkey[]): string 
     const modifiers = hotkey.modifiers.map((modifier) => CARBON_MODIFIERS[modifier]).join(" | ");
     return `  HotKeyAction(id: ${hotkey.id}, name: ${swiftStringLiteral(hotkey.action)}, spec: ${swiftStringLiteral(hotkey.spec)}, keyCode: ${hotkey.keyCode}, modifiers: UInt32(${modifiers}), commandLine: ${swiftStringLiteral(hotkey.commandLine)})`;
   });
-  return `import Carbon
+  return `import ApplicationServices
+import Carbon
 import Foundation
 
 struct HotKeyAction {
@@ -209,9 +212,43 @@ ${actionLines.join(",\n")}
 let signature = OSType(0x50535441) // PSTA
 var registeredHotKeys: [EventHotKeyRef?] = []
 let actionsById = Dictionary(uniqueKeysWithValues: actions.map { ($0.id, $0) })
+let commandShortcutDelay: TimeInterval = 0.18
 
 func writeStderr(_ value: String) {
   FileHandle.standardError.write(Data(value.utf8))
+}
+
+func accessibilityTrusted(prompt: Bool) -> Bool {
+  if !prompt {
+    return AXIsProcessTrusted()
+  }
+  let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+  return AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
+}
+
+func accessibilityHelp() -> String {
+  return "PastaHotkeys needs Accessibility permission to send Cmd shortcuts. Enable PastaHotkeys in System Settings > Privacy & Security > Accessibility.\\n"
+}
+
+func postCommandShortcut(_ keyCode: CGKeyCode, label: String) -> Bool {
+  if !accessibilityTrusted(prompt: false) {
+    writeStderr("Pasta hotkey \\(label) needs Accessibility permission to send Cmd shortcuts. Enable PastaHotkeys in System Settings > Privacy & Security > Accessibility.\\n")
+    return false
+  }
+  guard
+    let source = CGEventSource(stateID: .hidSystemState),
+    let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
+    let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+  else {
+    writeStderr("Pasta hotkey \\(label) could not create Cmd shortcut events.\\n")
+    return false
+  }
+  keyDown.flags = .maskCommand
+  keyUp.flags = .maskCommand
+  keyDown.post(tap: .cghidEventTap)
+  usleep(20_000)
+  keyUp.post(tap: .cghidEventTap)
+  return true
 }
 
 func registerHotKey(_ action: HotKeyAction) -> OSStatus {
@@ -234,21 +271,38 @@ func registerAllOrExit() {
   }
 }
 
+func runShellCommand(_ action: HotKeyAction) -> Int32 {
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+  process.arguments = ["-lc", action.commandLine]
+  process.standardOutput = FileHandle.standardOutput
+  process.standardError = FileHandle.standardError
+  do {
+    try process.run()
+    process.waitUntilExit()
+    return process.terminationStatus
+  } catch {
+    writeStderr("Pasta hotkey \\(action.name) failed to start: \\(error)\\n")
+    return -1
+  }
+}
+
 func runAction(_ action: HotKeyAction) {
   DispatchQueue.global(qos: .userInitiated).async {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-    process.arguments = ["-lc", action.commandLine]
-    process.standardOutput = FileHandle.standardOutput
-    process.standardError = FileHandle.standardError
-    do {
-      try process.run()
-      process.waitUntilExit()
-      if process.terminationStatus != 0 {
-        writeStderr("Pasta hotkey \\(action.name) exited with status \\(process.terminationStatus)\\n")
-      }
-    } catch {
-      writeStderr("Pasta hotkey \\(action.name) failed to start: \\(error)\\n")
+    if action.name == "copy" {
+      guard postCommandShortcut(8, label: "copy") else { return }
+      Thread.sleep(forTimeInterval: commandShortcutDelay)
+    }
+
+    let status = runShellCommand(action)
+    if status != 0 {
+      writeStderr("Pasta hotkey \\(action.name) exited with status \\(status)\\n")
+      return
+    }
+
+    if action.name == "paste" {
+      Thread.sleep(forTimeInterval: commandShortcutDelay)
+      _ = postCommandShortcut(9, label: "paste")
     }
   }
 }
@@ -273,6 +327,14 @@ let handler: EventHandlerUPP = { _, eventRef, _ in
 if CommandLine.arguments.contains("--check-conflicts") {
   registerAllOrExit()
   exit(0)
+}
+
+if CommandLine.arguments.contains("--check-accessibility") {
+  if accessibilityTrusted(prompt: true) {
+    exit(0)
+  }
+  writeStderr(accessibilityHelp())
+  exit(3)
 }
 
 var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
@@ -342,6 +404,7 @@ export async function installGlobalHotkeys(paths: Paths, options: InstallGlobalH
     [hotkeyPaths.binaryPath, "--check-conflicts"],
     "macOS hotkey conflict check failed; Pasta did not load the LaunchAgent"
   );
+  const accessibilityCheck = await runner([hotkeyPaths.binaryPath, "--check-accessibility"], { allowFailure: true });
   await mkdir(dirname(hotkeyPaths.launchAgentPath), { recursive: true });
   await Bun.write(hotkeyPaths.launchAgentPath, macosLaunchAgentPlist(hotkeyPaths));
   await runRequired(
@@ -357,12 +420,18 @@ export async function installGlobalHotkeys(paths: Paths, options: InstallGlobalH
 
   const copy = hotkeys.find((hotkey) => hotkey.action === "copy");
   const paste = hotkeys.find((hotkey) => hotkey.action === "paste");
-  return {
+  const accessibilityTrusted = accessibilityCheck.code === 0;
+  const installed: InstalledGlobalHotkeys = {
     provider: "macos",
     paths: hotkeyPaths,
     copyKey: copy?.spec ?? "none",
-    pasteKey: paste?.spec ?? "none"
+    pasteKey: paste?.spec ?? "none",
+    accessibilityTrusted
   };
+  if (!accessibilityTrusted) {
+    installed.accessibilityMessage = accessibilityCheck.stderr.trim() || accessibilityCheck.stdout.trim() || "PastaHotkeys needs Accessibility permission to send Cmd shortcuts.";
+  }
+  return installed;
 }
 
 async function resolveDefaultGlobalHotkeyCommand(

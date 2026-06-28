@@ -830,6 +830,10 @@ describe("CLI", () => {
     expect(source).toContain("RegisterEventHotKey");
     expect(source).toContain("kEventHotKeyExclusive");
     expect(source).toContain("Carbon status");
+    expect(source).toContain("--check-accessibility");
+    expect(source).toContain("postCommandShortcut(8, label: \"copy\")");
+    expect(source).toContain("postCommandShortcut(9, label: \"paste\")");
+    expect(source).toContain("Accessibility permission");
     expect(source).toContain("Pasta hotkey conflict");
 
     expect(await runCli(["install-hotkeys", "--provider", "nope"], { io: capture(output), paths })).toBe(2);

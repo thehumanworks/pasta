@@ -33,13 +33,13 @@ pasta --version
 Install the tagged release globally:
 
 ```bash
-bun install --global github:thehumanworks/pasta#v0.1.21
+bun install --global github:thehumanworks/pasta#v0.1.22
 ```
 
 Run the tagged release:
 
 ```bash
-bunx --bun github:thehumanworks/pasta#v0.1.21 --version
+bunx --bun github:thehumanworks/pasta#v0.1.22 --version
 ```
 
 Install the latest GitHub release through mise:
@@ -388,7 +388,7 @@ Install macOS-wide Hyper shortcuts:
 pasta install-hotkeys
 ```
 
-By default, `Hyper+C` runs `pasta copy --clipboard` and `Hyper+P` runs `pasta paste --clipboard` even when another app has focus. Pasta installs a user LaunchAgent, stores an absolute Pasta command path in its helper, compiles that helper with `/usr/bin/swiftc`, and checks for conflicts before loading it.
+By default, `Hyper+C` sends Cmd+C in the focused app and then runs `pasta copy --clipboard`; `Hyper+P` runs `pasta paste --clipboard` and then sends Cmd+V back to the focused app. Pasta installs a user LaunchAgent, stores an absolute Pasta command path in its helper, compiles that helper with `/usr/bin/swiftc`, and checks for conflicts before loading it. macOS must allow the generated `PastaHotkeys` helper in System Settings > Privacy & Security > Accessibility so it can send the Cmd+C / Cmd+V keystrokes.
 
 Regenerate with different global keys:
 

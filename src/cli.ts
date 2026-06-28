@@ -272,6 +272,9 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
       try {
         const installed = await installGlobalHotkeys(paths, globalHotkeyOptionsFromArgs(argv));
         io.stdout(`installed ${installed.copyKey} copy and ${installed.pasteKey} paste hotkeys\n${installed.paths.launchAgentPath}\n`);
+        if (!installed.accessibilityTrusted) {
+          io.stderr(`warning: ${installed.accessibilityMessage ?? "PastaHotkeys needs Accessibility permission to send Cmd shortcuts."}\n`);
+        }
         return ExitCode.ok;
       } catch (error) {
         io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);

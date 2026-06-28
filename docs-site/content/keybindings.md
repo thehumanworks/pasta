@@ -12,8 +12,8 @@ nav_order: 9
 
 | Action | First-choice chord | Fallback chord | Command |
 | --- | --- | --- | --- |
-| Publish current clipboard | `Hyper+C` | none | `pasta copy --clipboard` |
-| Pull latest Pasta clip into the OS clipboard | `Hyper+P` | none | `pasta paste --clipboard` |
+| Publish focused selection | `Hyper+C` | none | Cmd+C, then `pasta copy --clipboard` |
+| Paste latest Pasta clip into the focused app | `Hyper+P` | none | `pasta paste --clipboard`, then Cmd+V |
 
 These are real macOS global hotkeys. They work when another app has focus and do not require a terminal session. Pasta registers them through a user LaunchAgent and a tiny native macOS hotkey helper; it does not mutate Raycast, browser, editor, or system shortcut databases.
 
@@ -36,6 +36,8 @@ The helper is compiled at install time with `/usr/bin/swiftc`, so macOS needs Xc
 By default the installer detects the currently running Pasta executable and stores that absolute command in the helper. A mise-managed standalone install stores the mise-managed binary path; a Bun script install stores absolute `bun` plus the Pasta script path. Use `--command <command>` only when you want the hotkeys to call a different Pasta binary or wrapper.
 
 The installer checks for conflicts before enabling the LaunchAgent. If another app already owns the requested chord, Pasta exits without replacing it.
+
+macOS must allow the generated `PastaHotkeys` helper in System Settings > Privacy & Security > Accessibility. The helper needs that permission to send Cmd+C before publishing and Cmd+V after pulling the latest clip.
 
 Shell integration is still available as a terminal-local fallback:
 

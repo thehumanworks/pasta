@@ -29,9 +29,15 @@ describe("global macOS hotkeys", () => {
     expect(custom.map((hotkey) => hotkey.spec)).toEqual(["shift+cmd+b", "opt+p"]);
 
     const source = macosHotkeySource(custom);
+    expect(source).toContain("import ApplicationServices");
     expect(source).toContain("RegisterEventHotKey");
     expect(source).toContain("kEventHotKeyExclusive");
     expect(source).toContain("Carbon status");
+    expect(source).toContain("AXIsProcessTrusted");
+    expect(source).toContain("--check-accessibility");
+    expect(source).toContain("postCommandShortcut(8, label: \"copy\")");
+    expect(source).toContain("postCommandShortcut(9, label: \"paste\")");
+    expect(source).toContain("System Settings > Privacy & Security > Accessibility");
     expect(source).toContain("process.standardError = FileHandle.standardError");
     expect(source).toContain("exited with status");
     expect(source).toContain("mise exec -- bun run src/cli.ts 'copy' '--clipboard'");
@@ -79,6 +85,7 @@ describe("global macOS hotkeys", () => {
       ["/usr/bin/swiftc", generated.sourcePath, "-o", generated.binaryPath, "-framework", "Carbon"],
       ["/bin/launchctl", "bootout", `gui/501/${MACOS_HOTKEY_LABEL}`],
       [generated.binaryPath, "--check-conflicts"],
+      [generated.binaryPath, "--check-accessibility"],
       ["/bin/launchctl", "bootstrap", "gui/501", generated.launchAgentPath],
       ["/bin/launchctl", "kickstart", "-k", `gui/501/${MACOS_HOTKEY_LABEL}`]
     ]);
@@ -106,7 +113,7 @@ describe("global macOS hotkeys", () => {
   it("prefers the running standalone Pasta executable for mise-style installs", async () => {
     const paths = await tempPaths();
     const userHome = await mkdtemp(join(tmpdir(), "pasta-user-"));
-    const misePastaPath = "/Users/example/.local/share/mise/installs/github-thehumanworks-pasta/v0.1.21/bin/pasta";
+    const misePastaPath = "/Users/example/.local/share/mise/installs/github-thehumanworks-pasta/v0.1.22/bin/pasta";
     const runner: HotkeyCommandRunner = async () => ({ code: 0, stdout: "", stderr: "" });
 
     await installGlobalHotkeys(paths, {
