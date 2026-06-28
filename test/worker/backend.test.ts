@@ -18,7 +18,7 @@ import {
   signCanonicalRequest,
   wrapGroupKey
 } from "../../src/shared/crypto";
-import { randomBase64Url, stableJson } from "../../src/shared/encoding";
+import { bytesToUtf8, fromBase64Url, randomBase64Url, stableJson, toBase64Url, utf8ToBytes } from "../../src/shared/encoding";
 import { LARGE_PAYLOAD_MAX_BYTES, MAX_OPEN_PAIRING_SESSIONS, sha256Base64Url, SIGNATURE_HEADERS, type BootstrapRequest, type SignedRequestParts, type StoredClip } from "../../src/shared/protocol";
 
 describe("Worker backend", () => {
@@ -91,7 +91,7 @@ describe("Worker backend", () => {
     expect(JSON.stringify(dump)).toContain(clip.ciphertext);
   });
 
-  it("uses clipId routes and renumbers display sequences after delete and retention", async () => {
+  it("uses clipId routes and preserves monotonic display sequences after delete and retention", async () => {
     const device = await bootstrap();
     const groupKey = generateGroupKey();
     const publishText = async (label: string, expiresAt: number | null = null): Promise<StoredClip> => {
@@ -115,6 +115,8 @@ describe("Worker backend", () => {
     const three = await publishText("three");
     expect([one.seq, two.seq, three.seq]).toEqual([1, 2, 3]);
     await expectStatus(await signedFetch(device, "GET", `/v1/clips/${three.clipId}`), 200);
+    const bySeq = await (await signedFetch(device, "GET", `/v1/clips/by-seq/${three.seq}`)).json() as { clip: StoredClip };
+    expect(bySeq.clip.clipId).toBe(three.clipId);
     expect((await signedFetch(device, "GET", `/v1/clips/${three.seq}`)).status).toBe(404);
 
     const deleted = await signedFetch(device, "DELETE", `/v1/clips/${two.clipId}`);
@@ -122,22 +124,27 @@ describe("Worker backend", () => {
     expect(await deleted.json()).toMatchObject({ clipId: two.clipId, deleted: 1, deletedObjects: 0 });
     const afterDelete = await (await signedFetch(device, "GET", "/v1/clips/history?limit=10")).json() as { clips: StoredClip[] };
     expect(afterDelete.clips.map((clip) => [clip.clipId, clip.seq])).toEqual([
-      [three.clipId, 2],
+      [three.clipId, 3],
       [one.clipId, 1]
     ]);
+    expect((await signedFetch(device, "GET", `/v1/clips/by-seq/${two.seq}`)).status).toBe(404);
 
     const cleanupNow = Date.now() + 60_000;
     await publishText("expired", cleanupNow - 1);
     const four = await publishText("four");
-    expect(four.seq).toBe(4);
+    expect(four.seq).toBe(5);
     const retention = await env.CLIPBOARD.getByName(device.routingId).runRetention(cleanupNow);
     expect(retention).toMatchObject({ deletedClips: 1, deletedObjects: 0 });
     const afterRetention = await (await signedFetch(device, "GET", "/v1/clips/history?limit=10")).json() as { clips: StoredClip[] };
     expect(afterRetention.clips.map((clip) => [clip.clipId, clip.seq])).toEqual([
-      [four.clipId, 3],
-      [three.clipId, 2],
+      [four.clipId, 5],
+      [three.clipId, 3],
       [one.clipId, 1]
     ]);
+
+    await expectStatus(await signedFetch(device, "DELETE", `/v1/clips/${four.clipId}`), 200);
+    const five = await publishText("five");
+    expect(five.seq).toBe(6);
   });
 
   it("uploads and downloads file payloads through R2 with bounded sizes", async () => {
@@ -168,6 +175,37 @@ describe("Worker backend", () => {
     const body = await download.json() as { clip: StoredClip; ciphertext: string };
     expect(decryptBytesClip(groupKey, device.accountId, device.routingId, { ...body.clip, ciphertext: body.ciphertext })).toEqual(medium);
     expect(decryptClipMetadata(groupKey, device.accountId, device.routingId, body.clip)).toEqual({ name: "report.pdf" });
+
+    const v2Bytes = new Uint8Array(32 * 1024).fill(8);
+    const v2Clip = encryptBytesClip({
+      accountId: device.accountId,
+      routingId: device.routingId,
+      originDeviceId: device.deviceId,
+      bytes: v2Bytes,
+      payloadKind: "file",
+      mime: "application/octet-stream",
+      groupKey,
+      keyVersion: 1,
+      metadata: { name: "raw.bin" }
+    });
+    const v2Envelope = { ...v2Clip, ciphertext: "" };
+    const v2Publish = await signedFetch(
+      device,
+      "POST",
+      "/v2/files",
+      fromBase64Url(v2Clip.ciphertext),
+      { headers: { "content-type": "application/octet-stream", "pasta-file-envelope": toBase64Url(utf8ToBytes(stableJson(v2Envelope))) } }
+    );
+    await expectStatus(v2Publish, 201);
+    const v2Stored = await v2Publish.json() as { clip: StoredClip };
+    expect(v2Stored.clip.storageKind).toBe("r2");
+    const v2Download = await signedFetch(device, "GET", `/v2/files/${v2Stored.clip.clipId}/content`);
+    await expectStatus(v2Download, 200);
+    const envelopeHeader = v2Download.headers.get("pasta-file-envelope");
+    expect(envelopeHeader).toBeTruthy();
+    const v2EnvelopeClip = JSON.parse(bytesToUtf8(fromBase64Url(envelopeHeader!))) as StoredClip;
+    expect(v2EnvelopeClip.clipId).toBe(v2Stored.clip.clipId);
+    expect(decryptBytesClip(groupKey, device.accountId, device.routingId, { ...v2EnvelopeClip, ciphertext: toBase64Url(new Uint8Array(await v2Download.arrayBuffer())) })).toEqual(v2Bytes);
 
     const imageBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, ...new Array(64 * 1024).fill(7)]);
     const imageClip = encryptBytesClip({
@@ -804,12 +842,14 @@ async function signedFetch(
   method: string,
   path: string,
   body?: unknown,
-  overrides: Partial<SignedRequestParts> & { signature?: string } = {}
+  overrides: Partial<SignedRequestParts> & { signature?: string; headers?: Record<string, string> } = {}
 ): Promise<Response> {
-  const bodyText = body === undefined ? "" : stableJson(body);
+  const isBinary = body instanceof Uint8Array;
+  const bodyText = body === undefined || isBinary ? "" : stableJson(body);
+  const bodyBytes = body === undefined ? new Uint8Array() : isBinary ? body : utf8ToBytes(bodyText);
   const timestamp = overrides.timestamp ?? Date.now();
   const nonce = overrides.nonce ?? randomBase64Url(8);
-  const bodyHash = overrides.bodyHash ?? sha256Base64Url(bodyText);
+  const bodyHash = overrides.bodyHash ?? sha256Base64Url(bodyBytes);
   const parts = {
     method,
     pathWithQuery: path,
@@ -817,8 +857,8 @@ async function signedFetch(
     nonce,
     bodyHash
   };
-  const headers = new Headers();
-  if (body !== undefined) headers.set("content-type", "application/json");
+  const headers = new Headers(overrides.headers);
+  if (body !== undefined && !isBinary && !headers.has("content-type")) headers.set("content-type", "application/json");
   headers.set(SIGNATURE_HEADERS.accountId, device.accountId);
   headers.set(SIGNATURE_HEADERS.deviceId, device.deviceId);
   headers.set(SIGNATURE_HEADERS.timestamp, String(timestamp));
@@ -830,7 +870,12 @@ async function signedFetch(
     headers
   };
   if (body !== undefined) {
-    init.body = bodyText;
+    init.body = isBinary ? requestBodyFromBytes(body) : bodyText;
   }
   return SELF.fetch(`https://pasta.test${path}`, init);
+}
+
+function requestBodyFromBytes(bytes: Uint8Array): BodyInit {
+  const copy = new Uint8Array(bytes);
+  return copy.buffer as ArrayBuffer;
 }

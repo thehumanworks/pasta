@@ -144,7 +144,6 @@ export class ClipboardSpace extends DurableObject<Env> {
       throw new Error("origin device mismatch");
     }
     this.ctx.storage.sql.exec("DELETE FROM clips WHERE clip_id = ?", clipId);
-    this.renumberClips();
     return { deleted: 1 };
   }
 
@@ -160,7 +159,6 @@ export class ClipboardSpace extends DurableObject<Env> {
       deletedObjects = 1;
     }
     this.ctx.storage.sql.exec("DELETE FROM clips WHERE clip_id = ?", clipId);
-    this.renumberClips();
     await this.scheduleNextAlarm();
     return { deleted: 1, deletedObjects };
   }
@@ -217,6 +215,20 @@ export class ClipboardSpace extends DurableObject<Env> {
     return row ? rowToClip(row) : null;
   }
 
+  async getClipBySeq(_actor: Actor, seq: number): Promise<StoredClip | null> {
+    this.initializeSchema();
+    await this.cleanupExpired(Date.now());
+    if (!Number.isSafeInteger(seq) || seq < 1) return null;
+    const row = this.ctx.storage.sql
+      .exec<ClipRow>(
+        "SELECT * FROM clips WHERE seq = ? AND (expires_at IS NULL OR expires_at > ?) LIMIT 1",
+        seq,
+        Date.now()
+      )
+      .toArray()[0];
+    return row ? rowToClip(row) : null;
+  }
+
   storeWrappedKey(_actor: Actor, grant: WrappedKeyGrant): { ok: true } {
     this.initializeSchema();
     this.ctx.storage.sql.exec(
@@ -254,9 +266,6 @@ export class ClipboardSpace extends DurableObject<Env> {
       }
     }
     this.ctx.storage.sql.exec("DELETE FROM clips WHERE expires_at IS NOT NULL AND expires_at <= ?", now);
-    if (expiredRows.length > 0) {
-      this.renumberClips();
-    }
     await this.scheduleNextAlarm();
     return { deletedClips: expiredRows.length, deletedObjects };
   }
@@ -326,18 +335,18 @@ export class ClipboardSpace extends DurableObject<Env> {
   }
 
   private nextSeq(): number {
-    return this.ctx.storage.sql
+    const maxNextSeq = this.ctx.storage.sql
       .exec<{ next_seq: number }>("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM clips")
       .toArray()[0]?.next_seq ?? 1;
-  }
-
-  private renumberClips(): void {
-    const rows = this.ctx.storage.sql
-      .exec<Pick<ClipRow, "clip_id">>("SELECT clip_id FROM clips ORDER BY seq ASC")
-      .toArray();
-    for (let index = 0; index < rows.length; index += 1) {
-      this.ctx.storage.sql.exec("UPDATE clips SET seq = ? WHERE clip_id = ?", index + 1, rows[index]!.clip_id);
-    }
+    const storedNextSeqText = this.ctx.storage.sql
+      .exec<{ value: string }>("SELECT value FROM meta WHERE key = 'next_seq' LIMIT 1")
+      .toArray()[0]?.value;
+    const storedNextSeq = storedNextSeqText === undefined ? null : Number.parseInt(storedNextSeqText, 10);
+    const nextSeq = Number.isSafeInteger(storedNextSeq) && storedNextSeq !== null
+      ? Math.max(storedNextSeq, maxNextSeq)
+      : maxNextSeq;
+    this.ctx.storage.sql.exec("INSERT OR REPLACE INTO meta(key, value) VALUES ('next_seq', ?)", String(nextSeq + 1));
+    return nextSeq;
   }
 
   private async scheduleNextAlarm(): Promise<void> {

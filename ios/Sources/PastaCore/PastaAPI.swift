@@ -4,6 +4,7 @@ public enum PastaAPIError: Error, Equatable {
     case invalidURL
     case http(Int, String)
     case missingClip
+    case missingFileEnvelope
 }
 
 public struct PastaAPIClient: Sendable {
@@ -91,15 +92,23 @@ public struct PastaAPIClient: Sendable {
             keyVersion: configuration.keyVersion,
             metadata: metadata
         ))
-        let response: ClipResponse = try await request(
-            endpoint: configuration.endpoint,
-            method: "POST",
-            path: "/v1/files",
-            body: clip,
-            configuration: configuration,
-            signingPrivateKey: signingPrivateKey
-        )
-        return response.clip
+        do {
+            return try await publishFileV2(
+                clip: clip,
+                configuration: configuration,
+                signingPrivateKey: signingPrivateKey
+            )
+        } catch let error as PastaAPIError where Self.shouldFallbackToV1(error) {
+            let response: ClipResponse = try await request(
+                endpoint: configuration.endpoint,
+                method: "POST",
+                path: "/v1/files",
+                body: clip,
+                configuration: configuration,
+                signingPrivateKey: signingPrivateKey
+            )
+            return response.clip
+        }
     }
 
     public func downloadFile(
@@ -108,14 +117,23 @@ public struct PastaAPIClient: Sendable {
         groupKey: String,
         signingPrivateKey: String
     ) async throws -> PastaDownloadedFileClip {
-        let response: FileClipResponse = try await request(
-            endpoint: configuration.endpoint,
-            method: "GET",
-            path: "/v1/files/\(Self.escapePathComponent(clipId))",
-            body: Optional<EmptyBody>.none,
-            configuration: configuration,
-            signingPrivateKey: signingPrivateKey
-        )
+        let response: FileClipResponse
+        do {
+            response = try await downloadFileV2(
+                clipId: clipId,
+                configuration: configuration,
+                signingPrivateKey: signingPrivateKey
+            )
+        } catch let error as PastaAPIError where Self.shouldFallbackToV1(error) {
+            response = try await request(
+                endpoint: configuration.endpoint,
+                method: "GET",
+                path: "/v1/files/\(Self.escapePathComponent(clipId))",
+                body: Optional<EmptyBody>.none,
+                configuration: configuration,
+                signingPrivateKey: signingPrivateKey
+            )
+        }
         let encryptedClip = EncryptedClip(
             clipId: response.clip.clipId,
             originDeviceId: response.clip.originDeviceId,
@@ -219,23 +237,111 @@ public struct PastaAPIClient: Sendable {
         configuration: PastaDeviceConfiguration?,
         signingPrivateKey: String?
     ) async throws -> T {
-        guard let url = URL(string: path, relativeTo: endpoint) else { throw PastaAPIError.invalidURL }
         let bodyText: String
         if let body {
             bodyText = try PastaEncoding.stableJSONString(body)
         } else {
             bodyText = ""
         }
+        let request = try signedRequest(
+            endpoint: endpoint,
+            method: method,
+            path: path,
+            bodyData: Data(bodyText.utf8),
+            contentType: body == nil ? nil : "application/json",
+            configuration: configuration,
+            signingPrivateKey: signingPrivateKey
+        )
+        let (data, response) = try await session.data(for: request)
+        try Self.validateResponse(data: data, response: response)
+        if data.isEmpty {
+            return EmptyBody() as! T
+        }
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private func publishFileV2(clip: EncryptedClip, configuration: PastaDeviceConfiguration, signingPrivateKey: String) async throws -> StoredClip {
+        let encryptedBytes = try PastaEncoding.base64URLDecode(clip.ciphertext)
+        let envelope = EncryptedClip(
+            clipId: clip.clipId,
+            originDeviceId: clip.originDeviceId,
+            createdAt: clip.createdAt,
+            expiresAt: clip.expiresAt,
+            payloadKind: clip.payloadKind,
+            mime: clip.mime,
+            byteLen: clip.byteLen,
+            keyVersion: clip.keyVersion,
+            nonce: clip.nonce,
+            aadHash: clip.aadHash,
+            ciphertext: "",
+            storageKind: clip.storageKind,
+            payloadId: clip.payloadId,
+            r2Key: clip.r2Key,
+            metadata: clip.metadata
+        )
+        let envelopeText = try PastaEncoding.stableJSONString(envelope)
+        let request = try signedRequest(
+            endpoint: configuration.endpoint,
+            method: "POST",
+            path: "/v2/files",
+            bodyData: Data(encryptedBytes),
+            contentType: "application/octet-stream",
+            extraHeaders: ["pasta-file-envelope": PastaEncoding.base64URLEncode(Array(envelopeText.utf8))],
+            configuration: configuration,
+            signingPrivateKey: signingPrivateKey
+        )
+        let (data, response) = try await session.data(for: request)
+        try Self.validateResponse(data: data, response: response)
+        return try JSONDecoder().decode(ClipResponse.self, from: data).clip
+    }
+
+    private func downloadFileV2(clipId: String, configuration: PastaDeviceConfiguration, signingPrivateKey: String) async throws -> FileClipResponse {
+        let path = "/v2/files/\(Self.escapePathComponent(clipId))/content"
+        let request = try signedRequest(
+            endpoint: configuration.endpoint,
+            method: "GET",
+            path: path,
+            bodyData: Data(),
+            contentType: nil,
+            configuration: configuration,
+            signingPrivateKey: signingPrivateKey
+        )
+        let (data, response) = try await session.data(for: request)
+        try Self.validateResponse(data: data, response: response)
+        guard let envelopeHeader = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "pasta-file-envelope") else {
+            throw PastaAPIError.missingFileEnvelope
+        }
+        let envelopeData = Data(try PastaEncoding.base64URLDecode(envelopeHeader))
+        let clip = try JSONDecoder().decode(StoredClip.self, from: envelopeData)
+        return FileClipResponse(clip: clip, ciphertext: PastaEncoding.base64URLEncode(Array(data)))
+    }
+
+    private func signedRequest(
+        endpoint: URL,
+        method: String,
+        path: String,
+        bodyData: Data,
+        contentType: String?,
+        extraHeaders: [String: String] = [:],
+        configuration: PastaDeviceConfiguration?,
+        signingPrivateKey: String?
+    ) throws -> URLRequest {
+        guard let url = URL(string: path, relativeTo: endpoint) else { throw PastaAPIError.invalidURL }
         var request = URLRequest(url: url)
         request.httpMethod = method
-        if body != nil {
-            request.setValue("application/json", forHTTPHeaderField: "content-type")
-            request.httpBody = Data(bodyText.utf8)
+        if let contentType {
+            request.setValue(contentType, forHTTPHeaderField: "content-type")
+        }
+        if !bodyData.isEmpty || contentType != nil {
+            request.httpBody = bodyData
+        }
+        for (name, value) in extraHeaders {
+            request.setValue(value, forHTTPHeaderField: name)
         }
         if let configuration, let signingPrivateKey {
             let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
             let nonce = try PastaEncoding.randomBase64URL(byteCount: 18)
-            let bodyHash = PastaEncoding.sha256Base64URL(bodyText)
+            let bodyHash = PastaEncoding.sha256Base64URL(Array(bodyData))
             let parts = SignedRequestParts(method: method, pathWithQuery: path, timestamp: timestamp, nonce: nonce, bodyHash: bodyHash)
             request.setValue(configuration.accountId, forHTTPHeaderField: "pasta-account-id")
             request.setValue(configuration.deviceId, forHTTPHeaderField: "pasta-device-id")
@@ -244,16 +350,24 @@ public struct PastaAPIClient: Sendable {
             request.setValue(bodyHash, forHTTPHeaderField: "pasta-body-sha256")
             request.setValue(try PastaCrypto.signCanonicalRequest(parts: parts, privateKey: signingPrivateKey), forHTTPHeaderField: "pasta-signature")
         }
-        let (data, response) = try await session.data(for: request)
+        return request
+    }
+
+    private static func validateResponse(data: Data, response: URLResponse) throws {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             let preview = String(data: data, encoding: .utf8)?.prefixText(160) ?? ""
             throw PastaAPIError.http(status, preview)
         }
-        if data.isEmpty {
-            return EmptyBody() as! T
+    }
+
+    private static func shouldFallbackToV1(_ error: PastaAPIError) -> Bool {
+        switch error {
+        case .http(404, _), .missingFileEnvelope:
+            return true
+        default:
+            return false
         }
-        return try JSONDecoder().decode(T.self, from: data)
     }
 
     private static func escapePathComponent(_ value: String) -> String {
@@ -283,6 +397,11 @@ private struct ClipsResponse: Codable {
 private struct FileClipResponse: Codable {
     let clip: StoredClip
     let ciphertext: String
+
+    init(clip: StoredClip, ciphertext: String) {
+        self.clip = clip
+        self.ciphertext = ciphertext
+    }
 }
 
 private struct EmptyBody: Codable {}

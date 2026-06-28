@@ -59,8 +59,35 @@ export const PROTOCOL_ENDPOINTS: ProtocolEndpoint[] = [
     path: "/v1/clips",
     auth: "device-signature",
     request: "encrypted text envelope and metadata",
-    response: "stored clip metadata with gap-free display sequence",
+    response: "stored clip metadata with monotonic display sequence",
     mutation: "Durable Object clips insert"
+  },
+  {
+    command: "copy file",
+    method: "POST",
+    path: "/v2/files",
+    auth: "device-signature",
+    request: "raw encrypted bytes with pasta-file-envelope metadata header",
+    response: "stored clip metadata",
+    mutation: "Durable Object clips insert, R2 object put"
+  },
+  {
+    command: "paste file",
+    method: "GET",
+    path: "/v2/files/:clipId/content",
+    auth: "device-signature",
+    request: "empty signed request",
+    response: "raw encrypted bytes with pasta-file-envelope metadata header",
+    mutation: "D1 device last_seen_at when stale"
+  },
+  {
+    command: "history by seq",
+    method: "GET",
+    path: "/v1/clips/by-seq/:seq",
+    auth: "device-signature",
+    request: "display sequence",
+    response: "selected encrypted clip metadata",
+    mutation: "D1 device last_seen_at when stale"
   },
   {
     command: "paste",
@@ -69,7 +96,7 @@ export const PROTOCOL_ENDPOINTS: ProtocolEndpoint[] = [
     auth: "device-signature",
     request: "empty signed request",
     response: "opaque encrypted envelope and metadata",
-    mutation: "D1 device last_seen_at"
+    mutation: "D1 device last_seen_at when stale"
   },
   {
     command: "history",
@@ -78,7 +105,7 @@ export const PROTOCOL_ENDPOINTS: ProtocolEndpoint[] = [
     auth: "device-signature",
     request: "before clipId/limit query",
     response: "ordered encrypted clip metadata",
-    mutation: "D1 device last_seen_at"
+    mutation: "D1 device last_seen_at when stale"
   },
   {
     command: "history delete",
@@ -141,7 +168,7 @@ export const PROTOCOL_ENDPOINTS: ProtocolEndpoint[] = [
     auth: "device-signature",
     request: "optional includeRevoked query",
     response: "active device metadata without secrets by default; revoked metadata only when requested",
-    mutation: "D1 device last_seen_at"
+    mutation: "D1 device last_seen_at when stale"
   },
   {
     command: "devices revoke",

@@ -389,7 +389,8 @@ final class PastaCoreFileAPITests: XCTestCase {
         let groupKey = PastaEncoding.base64URLEncode(Array(repeating: UInt8(9), count: 32))
         let client = PastaAPIClient(session: Self.mockSession { request in
             XCTAssertEqual(request.httpMethod, "POST")
-            XCTAssertEqual(request.url?.path, "/v1/files")
+            XCTAssertEqual(request.url?.path, "/v2/files")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "content-type"), "application/octet-stream")
             XCTAssertEqual(request.value(forHTTPHeaderField: "pasta-account-id"), configuration.accountId)
             XCTAssertEqual(request.value(forHTTPHeaderField: "pasta-device-id"), configuration.deviceId)
             XCTAssertNotNil(request.value(forHTTPHeaderField: "pasta-signature"))
@@ -397,11 +398,41 @@ final class PastaCoreFileAPITests: XCTestCase {
             let body = try XCTUnwrap(request.pastaTestBodyData())
             let bodyText = String(data: body, encoding: .utf8) ?? ""
             XCTAssertFalse(bodyText.contains("secret-report.pdf"))
-            let clip = try JSONDecoder().decode(EncryptedClip.self, from: body)
+            let envelopeHeader = try XCTUnwrap(request.value(forHTTPHeaderField: "pasta-file-envelope"))
+            let envelopeData = Data(try PastaEncoding.base64URLDecode(envelopeHeader))
+            let clip = try JSONDecoder().decode(EncryptedClip.self, from: envelopeData)
             XCTAssertEqual(clip.payloadKind, "file")
             XCTAssertEqual(clip.mime, "application/octet-stream")
             XCTAssertEqual(clip.originDeviceId, configuration.deviceId)
+            XCTAssertEqual(clip.ciphertext, "")
+            XCTAssertGreaterThan(body.count, clip.byteLen)
             XCTAssertNotNil(clip.metadata)
+            let encryptedFromRequest = EncryptedClip(
+                clipId: clip.clipId,
+                originDeviceId: clip.originDeviceId,
+                createdAt: clip.createdAt,
+                expiresAt: clip.expiresAt,
+                payloadKind: clip.payloadKind,
+                mime: clip.mime,
+                byteLen: clip.byteLen,
+                keyVersion: clip.keyVersion,
+                nonce: clip.nonce,
+                aadHash: clip.aadHash,
+                ciphertext: PastaEncoding.base64URLEncode(Array(body)),
+                storageKind: clip.storageKind,
+                payloadId: clip.payloadId,
+                r2Key: clip.r2Key,
+                metadata: clip.metadata
+            )
+            XCTAssertEqual(
+                try PastaCrypto.decryptBytesClip(
+                    groupKey: groupKey,
+                    accountId: configuration.accountId,
+                    routingId: configuration.routingId,
+                    clip: encryptedFromRequest
+                ),
+                [1, 2, 3, 4]
+            )
 
             let stored = StoredClip(
                 seq: 11,
@@ -475,13 +506,17 @@ final class PastaCoreFileAPITests: XCTestCase {
         )
         let client = PastaAPIClient(session: Self.mockSession { request in
             XCTAssertEqual(request.httpMethod, "GET")
-            XCTAssertEqual(request.url?.path, "/v1/files/clip_download")
+            XCTAssertEqual(request.url?.path, "/v2/files/clip_download/content")
             XCTAssertEqual(request.value(forHTTPHeaderField: "pasta-body-sha256"), PastaEncoding.sha256Base64URL(""))
             XCTAssertNotNil(request.value(forHTTPHeaderField: "pasta-signature"))
-            return try Self.jsonResponse(
+            return try Self.dataResponse(
                 request: request,
                 statusCode: 200,
-                body: FileClipFixture(clip: stored, ciphertext: encrypted.ciphertext)
+                data: Data(PastaEncoding.base64URLDecode(encrypted.ciphertext)),
+                headers: [
+                    "content-type": "application/octet-stream",
+                    "pasta-file-envelope": PastaEncoding.base64URLEncode(Array(try JSONEncoder().encode(stored)))
+                ]
             )
         })
 
@@ -531,13 +566,27 @@ final class PastaCoreFileAPITests: XCTestCase {
         statusCode: Int,
         body: T
     ) throws -> (HTTPURLResponse, Data) {
+        try dataResponse(
+            request: request,
+            statusCode: statusCode,
+            data: JSONEncoder().encode(body),
+            headers: ["content-type": "application/json"]
+        )
+    }
+
+    private static func dataResponse(
+        request: URLRequest,
+        statusCode: Int,
+        data: Data,
+        headers: [String: String]
+    ) throws -> (HTTPURLResponse, Data) {
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: statusCode,
             httpVersion: nil,
-            headerFields: ["content-type": "application/json"]
+            headerFields: headers
         )!
-        return (response, try JSONEncoder().encode(body))
+        return (response, data)
     }
 }
 

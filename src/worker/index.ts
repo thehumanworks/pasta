@@ -23,7 +23,7 @@ import {
   type PairingOpenRequest,
   type ResetRequest
 } from "../shared/protocol";
-import { fromBase64Url, randomBase64Url, stableJson, toBase64Url } from "../shared/encoding";
+import { bytesToUtf8, fromBase64Url, randomBase64Url, stableJson, toBase64Url, utf8ToBytes } from "../shared/encoding";
 import { hashJoinGrantRedeemSecret, verifyCanonicalRequest } from "../shared/crypto";
 
 export { ClipboardSpace };
@@ -52,8 +52,18 @@ interface AccountRow {
 interface AuthContext extends Actor {
   device: DeviceRow;
   bodyText: string;
+  bodyBytes: Uint8Array;
   url: URL;
 }
+
+interface RequestBody {
+  text: string;
+  bytes: Uint8Array;
+}
+
+const LAST_SEEN_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
+const NONCE_CLEANUP_INTERVAL_MS = 60 * 1000;
+let nextNonceCleanupAt = 0;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -68,7 +78,8 @@ export default {
 
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  const bodyText = request.method === "GET" || request.method === "HEAD" ? "" : await request.text();
+  const body = await readRequestBody(request);
+  const bodyText = body.text;
 
   if (request.method === "POST" && url.pathname === "/v1/accounts/bootstrap") {
     return bootstrap(env, parseJson<BootstrapRequest>(bodyText));
@@ -83,7 +94,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     return pairingGrantRedeem(env, parseJson<PairingGrantRedeemRequest>(bodyText));
   }
 
-  const auth = await authenticate(request, env, url, bodyText);
+  const auth = await authenticate(request, env, url, body);
   if (auth instanceof Response) return auth;
 
   if (request.method === "POST" && url.pathname === "/v1/clips") {
@@ -91,6 +102,13 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   if (request.method === "POST" && url.pathname === "/v1/files") {
     return publishFile(env, auth, parseJson<EncryptedClip>(bodyText));
+  }
+  if (request.method === "POST" && url.pathname === "/v2/files") {
+    return publishFileV2(env, auth, parseFileEnvelope(request), body.bytes);
+  }
+  const fileContentMatch = url.pathname.match(/^\/v2\/files\/([^/]+)\/content$/u);
+  if (request.method === "GET" && fileContentMatch?.[1]) {
+    return getFileV2(env, auth, decodeURIComponent(fileContentMatch[1]));
   }
   const fileMatch = url.pathname.match(/^\/v1\/files\/([^/]+)$/u);
   if (request.method === "GET" && fileMatch?.[1]) {
@@ -105,6 +123,11 @@ async function route(request: Request, env: Env): Promise<Response> {
     const beforeClipId = url.searchParams.get("before");
     const history = await space(env, auth).listHistory(actorOf(auth), limit, beforeClipId);
     return json({ clips: history });
+  }
+  const seqMatch = url.pathname.match(/^\/v1\/clips\/by-seq\/([1-9][0-9]*)$/u);
+  if (request.method === "GET" && seqMatch?.[1]) {
+    const clip = await space(env, auth).getClipBySeq(actorOf(auth), Number.parseInt(seqMatch[1], 10));
+    return clip ? json({ clip }) : json({ error: "not_found" }, 404);
   }
   const clipMatch = url.pathname.match(/^\/v1\/clips\/([^/]+)$/u);
   if (request.method === "DELETE" && clipMatch?.[1]) {
@@ -152,6 +175,18 @@ async function route(request: Request, env: Env): Promise<Response> {
     return resetSpace(env, auth, parseJson<ResetRequest>(bodyText));
   }
   return json({ error: "not_found" }, 404);
+}
+
+async function readRequestBody(request: Request): Promise<RequestBody> {
+  if (request.method === "GET" || request.method === "HEAD") {
+    return { text: "", bytes: new Uint8Array() };
+  }
+  const bytes = new Uint8Array(await request.arrayBuffer());
+  const isBinaryFileUpload = request.method === "POST" && new URL(request.url).pathname === "/v2/files";
+  return {
+    text: isBinaryFileUpload ? "" : bytesToUtf8(bytes),
+    bytes
+  };
 }
 
 async function bootstrap(env: Env, body: BootstrapRequest): Promise<Response> {
@@ -207,6 +242,51 @@ async function publishFile(env: Env, auth: AuthContext, clip: EncryptedClip): Pr
     await space(env, auth).scheduleRetention();
   }
   return json({ clip: stored }, 201);
+}
+
+async function publishFileV2(env: Env, auth: AuthContext, clip: EncryptedClip, encryptedBytes: Uint8Array): Promise<Response> {
+  validateFileClipEnvelope(auth, clip);
+  if (encryptedBytes.length === 0) return json({ error: "empty_file_body" }, 400);
+  if (encryptedBytes.length > LARGE_PAYLOAD_MAX_BYTES + 16) return json({ error: "file_payload_too_large" }, 413);
+  if (encryptedBytes.length !== clip.byteLen + 16) return json({ error: "file_payload_size_mismatch" }, 400);
+  const actor = actorOf(auth);
+  const stored = await space(env, auth).publishR2Clip(actor, { ...clip, ciphertext: "" }, `payload_${randomBase64Url(12)}`);
+  if (!stored.r2Key) throw new Error("missing R2 key");
+  try {
+    await env.BLOBS.put(stored.r2Key, encryptedBytes, {
+      httpMetadata: {
+        contentType: "application/octet-stream"
+      },
+      customMetadata: {
+        clipId: stored.clipId,
+        payloadKind: stored.payloadKind,
+        mime: stored.mime,
+        transport: "v2-raw"
+      }
+    });
+  } catch (error) {
+    await space(env, auth).deleteClip(actor, stored.clipId);
+    throw error;
+  }
+  if (stored.expiresAt !== null) {
+    await space(env, auth).scheduleRetention();
+  }
+  return json({ clip: stored }, 201);
+}
+
+async function getFileV2(env: Env, auth: AuthContext, clipId: string): Promise<Response> {
+  const clip = await space(env, auth).getClip(actorOf(auth), clipId);
+  if (!clip || !clip.r2Key) return json({ error: "not_found" }, 404);
+  const object = await env.BLOBS.get(clip.r2Key);
+  if (!object) return json({ error: "blob_missing" }, 404);
+  return new Response(object.body, {
+    status: 200,
+    headers: {
+      "cache-control": "no-store",
+      "content-type": "application/octet-stream",
+      "pasta-file-envelope": toBase64Url(utf8ToBytes(stableJson(clip)))
+    }
+  });
 }
 
 async function getFile(env: Env, auth: AuthContext, clipId: string): Promise<Response> {
@@ -469,7 +549,7 @@ async function resetSpace(env: Env, auth: AuthContext, body: ResetRequest): Prom
   return json({ accountId: auth.accountId, routingId: body.newRoutingId, resetAt: now });
 }
 
-async function authenticate(request: Request, env: Env, url: URL, bodyText: string): Promise<AuthContext | Response> {
+async function authenticate(request: Request, env: Env, url: URL, body: RequestBody): Promise<AuthContext | Response> {
   const accountId = request.headers.get(SIGNATURE_HEADERS.accountId);
   const deviceId = request.headers.get(SIGNATURE_HEADERS.deviceId);
   const timestampText = request.headers.get(SIGNATURE_HEADERS.timestamp);
@@ -483,7 +563,7 @@ async function authenticate(request: Request, env: Env, url: URL, bodyText: stri
   if (!Number.isSafeInteger(timestamp) || Math.abs(Date.now() - timestamp) > REQUEST_TOLERANCE_MS) {
     return json({ error: "stale_request" }, 401);
   }
-  const actualBodyHash = sha256Base64Url(bodyText);
+  const actualBodyHash = sha256Base64Url(body.bytes);
   if (actualBodyHash !== bodyHash) {
     return json({ error: "bad_body_hash" }, 401);
   }
@@ -518,29 +598,40 @@ async function authenticate(request: Request, env: Env, url: URL, bodyText: stri
     await env.CLIPBOARD.getByName(device.routing_id).revokeDevice({ accountId, deviceId, routingId: device.routing_id }, deviceId, now);
     return json({ error: "expired_device" }, 403);
   }
-  await env.DB.prepare("UPDATE devices SET last_seen_at = ? WHERE account_id = ? AND device_id = ?")
-    .bind(now, accountId, deviceId)
-    .run();
+  if (shouldUpdateLastSeen(device.last_seen_at, now)) {
+    await env.DB.prepare("UPDATE devices SET last_seen_at = ? WHERE account_id = ? AND device_id = ?")
+      .bind(now, accountId, deviceId)
+      .run();
+  }
   return {
     accountId,
     deviceId,
     routingId: device.routing_id,
     device,
-    bodyText,
+    bodyText: body.text,
+    bodyBytes: body.bytes,
     url
   };
 }
 
 async function rememberNonce(env: Env, accountId: string, deviceId: string, nonce: string): Promise<boolean> {
-  await env.DB.prepare("DELETE FROM request_nonces WHERE expires_at <= ?").bind(Date.now()).run();
+  const now = Date.now();
+  if (now >= nextNonceCleanupAt) {
+    nextNonceCleanupAt = now + NONCE_CLEANUP_INTERVAL_MS;
+    await env.DB.prepare("DELETE FROM request_nonces WHERE expires_at <= ?").bind(now).run();
+  }
   try {
     await env.DB.prepare("INSERT INTO request_nonces(account_id, device_id, nonce, expires_at) VALUES (?, ?, ?, ?)")
-      .bind(accountId, deviceId, nonce, Date.now() + REQUEST_NONCE_TTL_MS)
+      .bind(accountId, deviceId, nonce, now + REQUEST_NONCE_TTL_MS)
       .run();
     return true;
   } catch {
     return false;
   }
+}
+
+function shouldUpdateLastSeen(lastSeenAt: number | null, now: number): boolean {
+  return lastSeenAt === null || now - Number(lastSeenAt) >= LAST_SEEN_UPDATE_INTERVAL_MS;
 }
 
 function validateClip(auth: AuthContext, clip: EncryptedClip): void {
@@ -578,6 +669,23 @@ function validateFileClip(auth: AuthContext, clip: EncryptedClip): void {
   if (clip.aadHash !== sha256Base64Url(stableJson(aad))) throw new Error("bad AAD hash");
 }
 
+function validateFileClipEnvelope(auth: AuthContext, clip: EncryptedClip): void {
+  requireString(clip.clipId, "clipId");
+  requireClipId(clip.clipId);
+  requireString(clip.originDeviceId, "originDeviceId");
+  requireString(clip.mime, "mime");
+  requireString(clip.nonce, "nonce");
+  requireString(clip.aadHash, "aadHash");
+  validateClipMetadata(clip);
+  if (clip.ciphertext !== "") throw new Error("file envelope must not include ciphertext");
+  if (clip.originDeviceId !== auth.deviceId) throw new Error("origin device mismatch");
+  if (clip.payloadKind !== "file" && clip.payloadKind !== "image") throw new Error("unsupported payload kind");
+  if (clip.payloadKind === "image" && !clip.mime.startsWith("image/")) throw new Error("bad image MIME");
+  if (clip.byteLen < 0 || clip.byteLen > LARGE_PAYLOAD_MAX_BYTES) throw new Error("file payload too large");
+  const aad = aadForClip(auth.accountId, auth.routingId, clip);
+  if (clip.aadHash !== sha256Base64Url(stableJson(aad))) throw new Error("bad AAD hash");
+}
+
 function space(env: Env, auth: Actor): DurableObjectStub<ClipboardSpace> {
   return env.CLIPBOARD.getByName(auth.routingId);
 }
@@ -600,6 +708,12 @@ function actorOf(auth: AuthContext): Actor {
 
 async function getAccount(env: Env, accountId: string): Promise<AccountRow | null> {
   return await env.DB.prepare("SELECT * FROM accounts WHERE account_id = ? LIMIT 1").bind(accountId).first<AccountRow>();
+}
+
+function parseFileEnvelope(request: Request): EncryptedClip {
+  const encoded = request.headers.get("pasta-file-envelope");
+  if (!encoded) throw new Error("pasta-file-envelope is required");
+  return JSON.parse(bytesToUtf8(fromBase64Url(encoded))) as EncryptedClip;
 }
 
 function parseJson<T>(bodyText: string): T {
