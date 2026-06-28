@@ -1,7 +1,7 @@
 ---
 title: CLI Reference
 slug: cli-reference
-description: Every pasta command, flags, and exit codes at v0.1.11.
+description: Every pasta command, flags, and exit codes at v0.1.12.
 nav_order: 4
 ---
 
@@ -78,7 +78,7 @@ Default interval: **750 ms**. Skips republishing text just pulled via `paste --c
 | Command | Description |
 | --- | --- |
 | `reset --yes` | New group key + routing id; old history unreachable |
-| `install-shell [--command <path>] [--shell auto\|zsh\|bash\|fish\|powershell]` | Write reversible aliases and non-overriding keybindings |
+| `install-shell [--command <path>] [--shell auto\|zsh\|bash\|fish\|powershell] [--copy-key <key>]... [--paste-key <key>]...` | Write reversible aliases and configurable non-overriding keybindings |
 | `uninstall-shell [--shell all\|auto\|zsh\|bash\|fish\|powershell]` | Clear generated snippet content |
 
 ## Exit codes

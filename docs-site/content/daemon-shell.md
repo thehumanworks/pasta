@@ -42,12 +42,19 @@ pasta install-shell
 source ~/.config/pasta/shell.zsh   # path printed by install
 ```
 
-The snippet adds short aliases for common flows (copy, paste-to-clipboard, history) and terminal-local keybindings when the chosen chords are still free. Pasta supports zsh, fish, PowerShell, and Bash builds that can safely inspect existing shell-command bindings:
+The snippet adds short aliases for common flows (copy, paste-to-clipboard, history) and terminal-local `Hyper+C` / `Hyper+P` keybindings when the chosen chords are still free. Pasta also binds free `Ctrl+X C` / `Ctrl+X P` fallbacks by default. It supports zsh, fish, PowerShell, and Bash builds that can safely inspect existing shell-command bindings:
 
 ```bash
 pasta install-shell --shell bash
 pasta install-shell --shell fish
 pasta install-shell --shell powershell
+```
+
+Change or disable generated keybindings while keeping aliases:
+
+```bash
+pasta install-shell --copy-key alt+c --paste-key alt+p
+pasta install-shell --copy-key none --paste-key none
 ```
 
 For local development:
@@ -66,7 +73,7 @@ Implementation lives in `src/cli/shell.ts`. The snippet is a plain shell file â€
 
 ## Platform notes
 
-- Daemon watches **text** clipboard only in v0.1.11.
+- Daemon watches **text** clipboard only in v0.1.12.
 - Image auto-sync is not daemon-driven; use explicit `copy --image` / `paste --image`.
 - Clipboard adapter availability varies â€” run `pasta doctor` first.
 

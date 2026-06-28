@@ -1,7 +1,7 @@
 ---
 title: Binary Payloads
 slug: payloads
-description: Images, files, R2 storage, size limits, and retention at v0.1.11.
+description: Images, files, R2 storage, size limits, and retention at v0.1.12.
 nav_order: 9
 ---
 

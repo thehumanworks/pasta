@@ -59,7 +59,18 @@ import { FetchApiClient, type ApiClient } from "./cli/client";
 import { runDaemonLoop } from "./cli/daemon";
 import { ExitCode, type ExitCodeValue } from "./cli/exit-codes";
 import { defaultSecretStoreForHome, requireSecret, SecretName, type SecretStore } from "./cli/secret-store";
-import { installShell, isInstallShellKind, isUninstallShellKind, resolveShellKind, shellSnippet, uninstallShell, type ShellKind } from "./cli/shell";
+import {
+  installShell,
+  isInstallShellKind,
+  isUninstallShellKind,
+  normalizeShellKeybindingOptions,
+  resolveShellKind,
+  shellKeySpecHelp,
+  shellSnippet,
+  uninstallShell,
+  type ShellKeybindingOptions,
+  type ShellKind
+} from "./cli/shell";
 
 export interface CliIo {
   stdout: (text: string) => void;
@@ -219,8 +230,16 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
         io.stderr("--shell must be auto, zsh, bash, fish, or powershell\n");
         return ExitCode.usage;
       }
+      let keybindings: ShellKeybindingOptions;
+      try {
+        keybindings = shellKeybindingOptionsFromArgs(argv);
+        normalizeShellKeybindingOptions(keybindings);
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
+        return ExitCode.usage;
+      }
       const resolvedShell = resolveShellKind(shell);
-      const installed = await installShell(paths, option(argv, "--command") ?? "pasta", resolvedShell);
+      const installed = await installShell(paths, option(argv, "--command") ?? "pasta", resolvedShell, Bun.env, process.platform, keybindings);
       io.stdout(`installed ${installed}\n${activationHint(resolvedShell, installed)}\n`);
       return ExitCode.ok;
     }
@@ -970,6 +989,38 @@ function option(argv: string[], name: string): string | undefined {
   return argv[index + 1];
 }
 
+function repeatedOption(argv: string[], name: string): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] !== name) continue;
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) {
+      throw new Error(`${name} requires a value; ${shellKeySpecHelp()}`);
+    }
+    values.push(value);
+    index += 1;
+  }
+  return values;
+}
+
+function shellKeybindingOptionsFromArgs(argv: string[]): ShellKeybindingOptions {
+  const copyKeys = repeatedOption(argv, "--copy-key");
+  const pasteKeys = repeatedOption(argv, "--paste-key");
+  const options: ShellKeybindingOptions = {};
+  const envCopyKeys = envKeySpec(Bun.env.PASTA_COPY_KEY);
+  const envPasteKeys = envKeySpec(Bun.env.PASTA_PASTE_KEY);
+  if (copyKeys.length > 0) options.copyKeys = copyKeys;
+  else if (envCopyKeys) options.copyKeys = envCopyKeys;
+  if (pasteKeys.length > 0) options.pasteKeys = pasteKeys;
+  else if (envPasteKeys) options.pasteKeys = envPasteKeys;
+  return options;
+}
+
+function envKeySpec(value: string | undefined): string[] | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? [trimmed] : undefined;
+}
+
 function firstPositional(argv: string[]): string | undefined {
   const valueOptions = new Set([
     "--endpoint",
@@ -987,7 +1038,9 @@ function firstPositional(argv: string[]): string | undefined {
     "--token-ttl",
     "--device-ttl",
     "--uses",
-    "--label"
+    "--label",
+    "--copy-key",
+    "--paste-key"
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -1272,13 +1325,17 @@ Resets the encrypted clipboard space from a trusted device.
 Examples:
   pasta reset --yes
 `,
-    "install-shell": `usage: pasta install-shell [--command <command>] [--shell auto|zsh|bash|fish|powershell]
+    "install-shell": `usage: pasta install-shell [--command <command>] [--shell auto|zsh|bash|fish|powershell] [--copy-key <key>]... [--paste-key <key>]...
 
-Installs a reversible shell snippet with non-overriding aliases and keybindings.
+Installs a reversible shell snippet with non-overriding aliases and configurable keybindings.
+
+Supported key specs: hyper+<letter>, alt+<letter>, ctrl+x,<letter>, none.
+Defaults: copy hyper+c and ctrl+x,c; paste hyper+p and ctrl+x,p.
 
 Examples:
   pasta install-shell
   pasta install-shell --shell powershell
+  pasta install-shell --copy-key alt+c --paste-key alt+p
   pasta install-shell --command "$PWD/src/cli.ts"
 `,
     "uninstall-shell": `usage: pasta uninstall-shell [--shell all|auto|zsh|bash|fish|powershell]

@@ -33,13 +33,13 @@ pasta --version
 Install the tagged release globally:
 
 ```bash
-bun install --global github:thehumanworks/pasta#v0.1.11
+bun install --global github:thehumanworks/pasta#v0.1.12
 ```
 
 Run the tagged release:
 
 ```bash
-bunx --bun github:thehumanworks/pasta#v0.1.11 --version
+bunx --bun github:thehumanworks/pasta#v0.1.12 --version
 ```
 
 Install the latest GitHub release through mise:
@@ -389,12 +389,19 @@ pasta install-shell
 ```
 
 Then source the printed file path. The snippet adds short aliases for common copy, paste, and history workflows.
-It also installs terminal-local keybindings for zsh, fish, PowerShell, and Bash builds that can safely inspect existing shell-command bindings.
+It also installs terminal-local `Hyper+C` / `Hyper+P` keybindings, plus free `Ctrl+X C` / `Ctrl+X P` fallbacks, for zsh, fish, PowerShell, and Bash builds that can safely inspect existing shell-command bindings.
 
 ```bash
 pasta install-shell --shell bash
 pasta install-shell --shell fish
 pasta install-shell --shell powershell
+```
+
+Regenerate with different keys when your terminal or launcher uses another chord:
+
+```bash
+pasta install-shell --copy-key alt+c --paste-key alt+p
+pasta install-shell --copy-key none --paste-key none
 ```
 
 PowerShell prints a dot-source command (`. <path>`) instead of `source <path>`.

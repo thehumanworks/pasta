@@ -12,7 +12,7 @@ nav_order: 3
 
 ```bash
 bunx --bun -p github:thehumanworks/pasta pasta --version
-bunx --bun github:thehumanworks/pasta#v0.1.11 --version
+bunx --bun github:thehumanworks/pasta#v0.1.12 --version
 ```
 
 **From a local checkout (developers):**
@@ -113,12 +113,16 @@ Each profile gets its own config, auth cache, and optional OS credential namespa
 | `PASTA_ENDPOINT` | Not auto-read; pass `--endpoint` at bootstrap or set in config |
 | `PASTA_AUTH_STORE=keychain` | Opt in to OS credential storage mirroring |
 | `PASTA_USE_OS_KEYCHAIN=1` | Boolean alias for OS credential storage opt-in |
+| `PASTA_COPY_KEY` | Default `install-shell` copy key when `--copy-key` is absent |
+| `PASTA_PASTE_KEY` | Default `install-shell` paste key when `--paste-key` is absent |
 
 ## Shell integration
 
 ```bash
 pasta install-shell
 # source the printed path in your zsh/bash/fish profile
+pasta install-shell --copy-key alt+c --paste-key alt+p
+pasta install-shell --copy-key none --paste-key none
 pasta install-shell --shell powershell
 # PowerShell prints a dot-source command: . <path>
 pasta uninstall-shell   # clears generated snippets

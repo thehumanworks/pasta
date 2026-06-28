@@ -593,19 +593,19 @@ describe("CLI", () => {
     ]);
     expect(snippets.get("zsh")).toContain("bindkey");
     expect(snippets.get("zsh")).toContain("undefined-key");
-    expect(snippets.get("zsh")).toContain("'^[c:capitalize-word' '^Xc'");
-    expect(snippets.get("zsh")).toContain("'^[p:history-search-backward' '^Xp'");
+    expect(snippets.get("zsh")).toContain("'^[[99;16u' '^Xc'");
+    expect(snippets.get("zsh")).toContain("'^[[112;16u' '^Xp'");
     expect(snippets.get("zsh")).not.toContain("^P");
     expect(snippets.get("bash")).toContain("bind -p");
     expect(snippets.get("bash")).toContain("bind -X");
     expect(snippets.get("bash")).toContain("bind -x");
-    expect(snippets.get("bash")).toContain("'\\ec' '\\C-xc'");
+    expect(snippets.get("bash")).toContain("'\\e[99;16u' '\\C-xc'");
     expect(snippets.get("fish")).toContain("type -q pc");
     expect(snippets.get("fish")).toContain("bind --query");
-    expect(snippets.get("fish")).toContain("\\ec \\cxc");
+    expect(snippets.get("fish")).toContain("\\e\\[99\\;16u \\cxc");
     expect(snippets.get("powershell")).toContain("Get-PSReadLineKeyHandler -Chord");
     expect(snippets.get("powershell")).toContain("Set-PSReadLineKeyHandler");
-    expect(snippets.get("powershell")).toContain('"Alt+c", "Ctrl+x,c"');
+    expect(snippets.get("powershell")).toContain("'Ctrl+Alt+Shift+c', 'Ctrl+x,c'");
     for (const snippet of snippets.values()) {
       expect(snippet).toContain("pasta");
       expect(snippet).toContain("copy");
@@ -635,6 +635,37 @@ describe("CLI", () => {
     expect(output.join("")).toContain(". ");
     expect(output.join("")).not.toContain("source ");
     output.length = 0;
+    expect(await runCli(["install-shell", "--shell", "bash", "--copy-key", "alt+c", "--paste-key", "none"], { io: capture(output), paths })).toBe(0);
+    const customBash = await Bun.file(shellConfigPath(paths, "bash")).text();
+    expect(customBash).toContain("'\\ec'");
+    expect(customBash).not.toContain("\\e[99;16u");
+    expect(customBash).toContain("Pasta paste keybindings disabled");
+    output.length = 0;
+    expect(await runCli(["install-shell", "--shell", "zsh", "--copy-key", "hyper+c", "--copy-key", "alt+c", "--paste-key", "none"], { io: capture(output), paths })).toBe(0);
+    const repeatedZsh = await Bun.file(shellConfigPath(paths, "zsh")).text();
+    expect(repeatedZsh).toContain("'^[[99;16u' '^[c:capitalize-word'");
+    expect(repeatedZsh).toContain("Pasta paste keybindings disabled");
+    output.length = 0;
+    expect(await runCli(["install-shell", "--shell", "zsh", "--copy-key", "cmd+c"], { io: capture(output), paths })).toBe(2);
+    expect(output.join("")).toContain("supported key specs");
+    output.length = 0;
+    const previousCopyKey = Bun.env.PASTA_COPY_KEY;
+    const previousPasteKey = Bun.env.PASTA_PASTE_KEY;
+    try {
+      Bun.env.PASTA_COPY_KEY = "alt+c";
+      Bun.env.PASTA_PASTE_KEY = "alt+p";
+      expect(await runCli(["install-shell", "--shell", "zsh"], { io: capture(output), paths })).toBe(0);
+      const envZsh = await Bun.file(shellConfigPath(paths, "zsh")).text();
+      expect(envZsh).toContain("'^[c:capitalize-word'");
+      expect(envZsh).toContain("'^[p:history-search-backward'");
+      expect(envZsh).not.toContain("^[[99;16u");
+    } finally {
+      if (previousCopyKey === undefined) delete Bun.env.PASTA_COPY_KEY;
+      else Bun.env.PASTA_COPY_KEY = previousCopyKey;
+      if (previousPasteKey === undefined) delete Bun.env.PASTA_PASTE_KEY;
+      else Bun.env.PASTA_PASTE_KEY = previousPasteKey;
+    }
+    output.length = 0;
     expect(await runCli(["install-shell", "--shell", "nope"], { io: capture(output), paths })).toBe(2);
     expect(output.join("")).toContain("--shell must be auto");
 
@@ -649,11 +680,31 @@ describe("CLI", () => {
     expect(await Bun.file(shellConfigPath(paths, "fish")).text()).toBe("");
   });
 
-  it("uses zsh option chords over default widgets when zsh is available", async () => {
+  it("uses zsh hyper chords and fallback keybindings when zsh is available", async () => {
     if (!(await commandExists("zsh"))) return;
     const paths = await tempPaths();
     const snippetPath = join(paths.home, "pasta.zsh");
     await Bun.write(snippetPath, shellSnippet("pasta", "zsh"));
+    const script = [
+      `source ${posixPath(snippetPath)}`,
+      "bindkey '^[[99;16u'",
+      "bindkey '^Xc'",
+      "bindkey '^[[112;16u'",
+      "bindkey '^Xp'"
+    ].join("; ");
+    const proc = Bun.spawn(["zsh", "-f", "-c", script], { stdout: "pipe", stderr: "pipe" });
+    const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(stderr).toBe("");
+    expect(code).toBe(0);
+    expect(stdout).toContain("pasta copy");
+    expect(stdout).toContain("pasta paste --clipboard");
+  });
+
+  it("uses explicit zsh option chords over default widgets when zsh is available", async () => {
+    if (!(await commandExists("zsh"))) return;
+    const paths = await tempPaths();
+    const snippetPath = join(paths.home, "pasta.zsh");
+    await Bun.write(snippetPath, shellSnippet("pasta", "zsh", { copyKeys: ["alt+c"], pasteKeys: ["alt+p"] }));
     const script = [
       `source ${posixPath(snippetPath)}`,
       "bindkey '^[c'",
@@ -669,11 +720,11 @@ describe("CLI", () => {
     expect(stdout).not.toContain("history-search-backward");
   });
 
-  it("preserves custom zsh chords and uses fallback keybindings when zsh is available", async () => {
+  it("preserves custom zsh option chords and uses fallback keybindings when zsh is available", async () => {
     if (!(await commandExists("zsh"))) return;
     const paths = await tempPaths();
     const snippetPath = join(paths.home, "pasta.zsh");
-    await Bun.write(snippetPath, shellSnippet("pasta", "zsh"));
+    await Bun.write(snippetPath, shellSnippet("pasta", "zsh", { copyKeys: ["alt+c", "ctrl+x,c"], pasteKeys: ["alt+p", "ctrl+x,p"] }));
     const script = [
       "bindkey -s '^[c' 'existing-copy'",
       "bindkey -s '^[p' 'existing-paste'",

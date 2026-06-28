@@ -256,7 +256,7 @@ async function buildSite(): Promise<void> {
   await mkdir(join(DIST_DIR, ".well-known"), { recursive: true });
   const agentIndex = {
     name: "Pasta Documentation",
-    version: "0.1.11",
+    version: "0.1.12",
     generated_at: "2026-06-27",
     schema_version: "hindsight-agents-v1",
     base_url_assumption: normalizedBase,
