@@ -60,6 +60,17 @@ import { runDaemonLoop } from "./cli/daemon";
 import { ExitCode, type ExitCodeValue } from "./cli/exit-codes";
 import { defaultSecretStoreForHome, requireSecret, SecretName, type SecretStore } from "./cli/secret-store";
 import {
+  GlobalHotkeyInstallError,
+  GlobalHotkeyUnsupportedError,
+  GlobalHotkeyUsageError,
+  globalHotkeySpecHelp,
+  installGlobalHotkeys,
+  isGlobalHotkeyProvider,
+  uninstallGlobalHotkeys,
+  type GlobalHotkeyProvider,
+  type InstallGlobalHotkeyOptions
+} from "./cli/global-hotkeys";
+import {
   installShell,
   isInstallShellKind,
   isUninstallShellKind,
@@ -242,6 +253,42 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
       const installed = await installShell(paths, option(argv, "--command") ?? "pasta", resolvedShell, Bun.env, process.platform, keybindings);
       io.stdout(`installed ${installed}\n${activationHint(resolvedShell, installed)}\n`);
       return ExitCode.ok;
+    }
+
+    if (command === "install-hotkeys") {
+      if (argv.includes("--help")) {
+        io.stdout(commandHelp("install-hotkeys"));
+        return ExitCode.ok;
+      }
+      try {
+        const installed = await installGlobalHotkeys(paths, globalHotkeyOptionsFromArgs(argv));
+        io.stdout(`installed ${installed.copyKey} copy and ${installed.pasteKey} paste hotkeys\n${installed.paths.launchAgentPath}\n`);
+        return ExitCode.ok;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
+        if (error instanceof GlobalHotkeyUsageError) return ExitCode.usage;
+        if (error instanceof GlobalHotkeyUnsupportedError) return ExitCode.unsupported;
+        if (error instanceof GlobalHotkeyInstallError) return ExitCode.unavailable;
+        return ExitCode.internal;
+      }
+    }
+
+    if (command === "uninstall-hotkeys") {
+      if (argv.includes("--help")) {
+        io.stdout(commandHelp("uninstall-hotkeys"));
+        return ExitCode.ok;
+      }
+      try {
+        const removed = await uninstallGlobalHotkeys(paths, { provider: globalHotkeyProviderFromArgs(argv) });
+        io.stdout(`removed Pasta hotkeys from ${removed.launchAgentPath}\n`);
+        return ExitCode.ok;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
+        if (error instanceof GlobalHotkeyUsageError) return ExitCode.usage;
+        if (error instanceof GlobalHotkeyUnsupportedError) return ExitCode.unsupported;
+        if (error instanceof GlobalHotkeyInstallError) return ExitCode.unavailable;
+        return ExitCode.internal;
+      }
     }
 
     if (command === "uninstall-shell") {
@@ -1021,6 +1068,36 @@ function envKeySpec(value: string | undefined): string[] | undefined {
   return trimmed ? [trimmed] : undefined;
 }
 
+function optionValue(argv: string[], name: string, help: string): string | undefined {
+  const index = argv.indexOf(name);
+  if (index === -1) return undefined;
+  const value = argv[index + 1];
+  if (!value || value.startsWith("--")) {
+    throw new GlobalHotkeyUsageError(`${name} requires a value; ${help}`);
+  }
+  return value;
+}
+
+function globalHotkeyProviderFromArgs(argv: string[]): GlobalHotkeyProvider {
+  const provider = optionValue(argv, "--provider", "--provider must be auto or macos") ?? "auto";
+  if (!isGlobalHotkeyProvider(provider)) {
+    throw new GlobalHotkeyUsageError("--provider must be auto or macos");
+  }
+  return provider;
+}
+
+function globalHotkeyOptionsFromArgs(argv: string[]): InstallGlobalHotkeyOptions {
+  const provider = globalHotkeyProviderFromArgs(argv);
+  const command = optionValue(argv, "--command", "--command <command>");
+  const copyKey = optionValue(argv, "--copy-key", globalHotkeySpecHelp()) ?? Bun.env.PASTA_COPY_KEY;
+  const pasteKey = optionValue(argv, "--paste-key", globalHotkeySpecHelp()) ?? Bun.env.PASTA_PASTE_KEY;
+  const options: InstallGlobalHotkeyOptions = { provider, env: Bun.env, platform: process.platform };
+  if (command) options.command = command;
+  if (copyKey) options.copyKey = copyKey;
+  if (pasteKey) options.pasteKey = pasteKey;
+  return options;
+}
+
 function firstPositional(argv: string[]): string | undefined {
   const valueOptions = new Set([
     "--endpoint",
@@ -1040,7 +1117,8 @@ function firstPositional(argv: string[]): string | undefined {
     "--uses",
     "--label",
     "--copy-key",
-    "--paste-key"
+    "--paste-key",
+    "--provider"
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -1338,6 +1416,25 @@ Examples:
   pasta install-shell --copy-key alt+c --paste-key alt+p
   pasta install-shell --command "$PWD/src/cli.ts"
 `,
+    "install-hotkeys": `usage: pasta install-hotkeys [--command <command>] [--provider auto|macos] [--copy-key <key>] [--paste-key <key>]
+
+Installs macOS-wide global hotkeys with a user LaunchAgent.
+
+Supported macOS key specs: hyper+<letter>, cmd+shift+<letter>, ctrl+opt+shift+cmd+<letter>, alt+<letter>, none.
+Defaults: copy hyper+c; paste hyper+p.
+
+Examples:
+  pasta install-hotkeys
+  pasta install-hotkeys --copy-key hyper+b --paste-key hyper+v
+  pasta install-hotkeys --command "$PWD/src/cli.ts"
+`,
+    "uninstall-hotkeys": `usage: pasta uninstall-hotkeys [--provider auto|macos]
+
+Unloads and removes Pasta-generated global hotkey files.
+
+Examples:
+  pasta uninstall-hotkeys
+`,
     "uninstall-shell": `usage: pasta uninstall-shell [--shell all|auto|zsh|bash|fish|powershell]
 
 Clears Pasta-generated shell snippets.
@@ -1379,6 +1476,7 @@ function helpText(): string {
     "  daemon [--once] [--dry-run] [--interval-ms <n>]",
     "  doctor",
     "  reset --yes",
+    "  install-hotkeys | uninstall-hotkeys",
     "  install-shell | uninstall-shell",
     "",
     "Examples:",

@@ -4,7 +4,7 @@ import XCTest
 final class PastaCoreBootstrapTests: XCTestCase {
     func testBootstrapConstantsMatchNativeIOSContract() {
         XCTAssertEqual(PastaCore.bootstrapVersion, "0.2.0-ios-keyboard")
-        XCTAssertEqual(PastaCore.protocolVersion, "0.1.12")
+        XCTAssertEqual(PastaCore.protocolVersion, "0.1.13")
         XCTAssertEqual(PastaCore.directoryBundleMIME, "application/vnd.pasta.directory+zip")
         XCTAssertEqual(PastaCore.appGroupIdentifier, "group.com.thehumanworks.pasta")
         XCTAssertEqual(PastaCore.keychainAccessGroup, "54MXM5JG3R.com.thehumanworks.pasta")

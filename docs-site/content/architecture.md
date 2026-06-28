@@ -76,7 +76,7 @@ flowchart LR
 
 ## What the relay can observe
 
-Account IDs, routing IDs, device IDs, timestamps, sequence numbers, payload kind, MIME type, byte length, pairing activity, and IP-level request metadata. Pasta v0.1.12 does not attempt to hide usage patterns.
+Account IDs, routing IDs, device IDs, timestamps, sequence numbers, payload kind, MIME type, byte length, pairing activity, and IP-level request metadata. Pasta v0.1.13 does not attempt to hide usage patterns.
 
 <!-- @agent -->
 ## Routing model

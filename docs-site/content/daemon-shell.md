@@ -33,7 +33,15 @@ pasta daemon >> ~/.config/pasta/daemon.log 2>&1
 
 Paste on other machines with `pasta paste --clipboard` or shell aliases.
 
-## Shell integration
+## Global and shell integration
+
+Install macOS-wide Hyper shortcuts:
+
+```bash
+pasta install-hotkeys
+```
+
+`install-hotkeys` registers `Hyper+C` for `pasta copy` and `Hyper+P` for `pasta paste --clipboard` through a user LaunchAgent. It checks for conflicts before loading the agent and does not mutate Raycast or system shortcut databases.
 
 Install a reversible snippet:
 
@@ -73,13 +81,13 @@ Implementation lives in `src/cli/shell.ts`. The snippet is a plain shell file �
 
 ## Platform notes
 
-- Daemon watches **text** clipboard only in v0.1.12.
+- Daemon watches **text** clipboard only in v0.1.13.
 - Image auto-sync is not daemon-driven; use explicit `copy --image` / `paste --image`.
 - Clipboard adapter availability varies — run `pasta doctor` first.
 
 ## What's intentionally deferred
 
-Global OS hotkeys, menu bar apps, and background OS services are out of MVP scope. Shell/keybinding integration comes first.
+Linux and Windows global shortcut auto-registration remain deferred because there is no single safe cross-desktop shortcut API. Shell keybindings and explicit commands remain the portable fallback.
 
 <!-- @agent -->
 ## Daemon implementation (`src/cli/daemon.ts`)
@@ -108,10 +116,10 @@ Daemon reads via `() => config?.lastRemotePasteHash`.
 
 ## Shell module (`src/cli/shell.ts`)
 
-- `installShell(paths, command, shell)` — writes a zsh, bash, fish, or PowerShell snippet under Pasta home
-- `uninstallShell(paths, shell)` — clears one generated snippet or all generated snippets
-- `shellSnippet(command, shell)` — pure shell-specific template used by CLI help/tests
-- Full keybinding contract: `docs-site/content/keybindings.md`
+- `installShell(paths, command, shell, env, platform, options)` — writes a zsh, bash, fish, or PowerShell snippet under Pasta home
+- `uninstallShell(paths, shell, env, platform)` — clears one generated snippet or all generated snippets
+- `shellSnippet(command, shell, options)` — pure shell-specific template used by CLI help/tests
+- Global and shell keybinding contract: `docs-site/content/keybindings.md`
 
 ## Clipboard adapter (`src/cli/clipboard.ts`)
 
@@ -119,4 +127,4 @@ Daemon reads via `() => config?.lastRemotePasteHash`.
 
 ## Future scope boundary
 
-Do NOT implement global hotkeys or OS services without a new GDD goal. AGENTS.md: shell integration before global OS hotkeys.
+Do NOT mutate private OS, Raycast, editor, or browser shortcut stores. The approved global shortcut path is Pasta-owned generated files plus documented OS-level providers.

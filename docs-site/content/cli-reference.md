@@ -1,7 +1,7 @@
 ---
 title: CLI Reference
 slug: cli-reference
-description: Every pasta command, flags, and exit codes at v0.1.12.
+description: Every pasta command, flags, and exit codes at v0.1.13.
 nav_order: 4
 ---
 
@@ -78,6 +78,8 @@ Default interval: **750 ms**. Skips republishing text just pulled via `paste --c
 | Command | Description |
 | --- | --- |
 | `reset --yes` | New group key + routing id; old history unreachable |
+| `install-hotkeys [--command <path>] [--provider auto\|macos] [--copy-key <key>] [--paste-key <key>]` | Install macOS-wide Hyper copy/paste hotkeys with a user LaunchAgent |
+| `uninstall-hotkeys [--provider auto\|macos]` | Unload and remove generated global hotkey files |
 | `install-shell [--command <path>] [--shell auto\|zsh\|bash\|fish\|powershell] [--copy-key <key>]... [--paste-key <key>]...` | Write reversible aliases and configurable non-overriding keybindings |
 | `uninstall-shell [--shell all\|auto\|zsh\|bash\|fish\|powershell]` | Clear generated snippet content |
 

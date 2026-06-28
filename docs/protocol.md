@@ -1,6 +1,6 @@
 # Pasta Protocol Spec
 
-Version: `pasta 0.1.12`
+Version: `pasta 0.1.13`
 
 Pasta uses a central HTTPS relay only. Devices encrypt clipboard payloads locally, sign every authenticated request with an app-owned Ed25519 device key, and route state to one Cloudflare Durable Object per encrypted clipboard space. The relay never receives clipboard plaintext or raw group keys.
 

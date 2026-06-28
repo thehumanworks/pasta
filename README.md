@@ -33,13 +33,13 @@ pasta --version
 Install the tagged release globally:
 
 ```bash
-bun install --global github:thehumanworks/pasta#v0.1.12
+bun install --global github:thehumanworks/pasta#v0.1.13
 ```
 
 Run the tagged release:
 
 ```bash
-bunx --bun github:thehumanworks/pasta#v0.1.12 --version
+bunx --bun github:thehumanworks/pasta#v0.1.13 --version
 ```
 
 Install the latest GitHub release through mise:
@@ -380,7 +380,21 @@ pasta paste --out ./received-project
 
 Directory bundles use the same 50 MiB payload limit after bundling. Regular `.zip` files remain file payloads; only Pasta-created directory bundles auto-extract on paste. The paste target directory must not already exist.
 
-## Shell Integration
+## Hotkey And Shell Integration
+
+Install macOS-wide Hyper shortcuts:
+
+```bash
+pasta install-hotkeys
+```
+
+By default, `Hyper+C` runs `pasta copy` and `Hyper+P` runs `pasta paste --clipboard` even when another app has focus. Pasta installs a user LaunchAgent, compiles its small helper with `/usr/bin/swiftc`, and checks for conflicts before loading it.
+
+Regenerate with different global keys:
+
+```bash
+pasta install-hotkeys --copy-key hyper+b --paste-key hyper+v
+```
 
 Install a reversible shell snippet:
 
@@ -409,6 +423,7 @@ PowerShell prints a dot-source command (`. <path>`) instead of `source <path>`.
 Remove the shell snippet:
 
 ```bash
+pasta uninstall-hotkeys
 pasta uninstall-shell
 ```
 

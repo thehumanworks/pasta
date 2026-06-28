@@ -62,7 +62,7 @@ That choice trades metadata visibility (the relay sees *that* you copied, *when*
 ## System identity
 
 - **Name:** Pasta (`pasta` CLI/bin)
-- **Version:** 0.1.12 (`PASTA_VERSION` in `src/shared/protocol.ts`)
+- **Version:** 0.1.13 (`PASTA_VERSION` in `src/shared/protocol.ts`)
 - **License:** UNLICENSED (package.json)
 - **Public repo:** github:thehumanworks/pasta
 

@@ -256,8 +256,8 @@ async function buildSite(): Promise<void> {
   await mkdir(join(DIST_DIR, ".well-known"), { recursive: true });
   const agentIndex = {
     name: "Pasta Documentation",
-    version: "0.1.12",
-    generated_at: "2026-06-27",
+    version: "0.1.13",
+    generated_at: "2026-06-28",
     schema_version: "hindsight-agents-v1",
     base_url_assumption: normalizedBase,
     accept_markdown: "Request /agent/{slug}.md directly, or request /agent/{slug}/ with Accept: text/markdown or text/plain",
@@ -322,7 +322,7 @@ function purposeForPage(slug: string): string {
     case "agent-handbook":
       return "Implementation and quality: agent rules, verification commands, release gates, and footguns.";
     case "keybindings":
-      return "Terminal keybinding setup contract for zsh, bash, fish, and PowerShell.";
+      return "Global macOS hotkey and terminal keybinding setup contract.";
     default:
       return "Reference page for Pasta operators and implementation agents.";
   }

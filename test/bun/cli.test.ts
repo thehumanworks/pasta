@@ -11,6 +11,7 @@ import { runCli } from "../../src/cli";
 import { decryptBytesClip, encryptTextClip, generateDeviceKeyMaterial, generateGroupKey, parseJoinGrantToken } from "../../src/shared/crypto";
 import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, SIGNATURE_HEADERS, type PairingGrantCreateRequest, type StoredClip } from "../../src/shared/protocol";
 import { detectShellKind, shellConfigPath, shellSnippet, type ShellKind } from "../../src/cli/shell";
+import { macosHotkeyPaths, macosHotkeySource, macosLaunchAgentPlist, normalizeGlobalHotkeys } from "../../src/cli/global-hotkeys";
 
 describe("CLI", () => {
   it("prints version and help", async () => {
@@ -31,6 +32,8 @@ describe("CLI", () => {
       [["devices", "--help"], "pasta devices revoke dev_example"],
       [["doctor", "--help"], "pasta doctor"],
       [["reset", "--help"], "pasta reset --yes"],
+      [["install-hotkeys", "--help"], "pasta install-hotkeys --copy-key"],
+      [["uninstall-hotkeys", "--help"], "pasta uninstall-hotkeys"],
       [["install-shell", "--help"], "pasta install-shell --command"],
       [["uninstall-shell", "--help"], "pasta uninstall-shell"],
       [["protocol", "--help"], "pasta protocol"],
@@ -680,6 +683,18 @@ describe("CLI", () => {
     expect(await Bun.file(shellConfigPath(paths, "fish")).text()).toBe("");
   });
 
+  it("reports global hotkey CLI usage errors before touching LaunchAgents", async () => {
+    const paths = await tempPaths();
+    const output: string[] = [];
+
+    expect(await runCli(["install-hotkeys", "--provider", "nope"], { io: capture(output), paths })).toBe(2);
+    expect(output.join("")).toContain("--provider must be auto or macos");
+
+    output.length = 0;
+    expect(await runCli(["install-hotkeys", "--copy-key"], { io: capture(output), paths })).toBe(2);
+    expect(output.join("")).toContain("--copy-key requires a value");
+  });
+
   it("uses zsh hyper chords and fallback keybindings when zsh is available", async () => {
     if (!(await commandExists("zsh"))) return;
     const paths = await tempPaths();
@@ -742,6 +757,35 @@ describe("CLI", () => {
     expect(stdout).toContain("pasta copy");
     expect(stdout).toContain("existing-paste");
     expect(stdout).toContain("pasta paste --clipboard");
+  });
+
+  it("supports macOS global hotkey installer contracts without touching launchd", async () => {
+    const paths = await tempPaths();
+    const output: string[] = [];
+    const hotkeys = normalizeGlobalHotkeys({ copyKey: "hyper+c", pasteKey: "command+shift+p" });
+    expect(hotkeys.map((hotkey) => hotkey.spec)).toEqual(["hyper+c", "shift+cmd+p"]);
+    expect(normalizeGlobalHotkeys({ copyKey: "none" }).map((hotkey) => hotkey.spec)).toEqual(["hyper+p"]);
+    expect(() => normalizeGlobalHotkeys({ copyKey: "cmd+c" })).toThrow("reserved");
+    expect(() => normalizeGlobalHotkeys({ copyKey: "c" })).toThrow("must include a modifier");
+
+    const hotkeyPaths = macosHotkeyPaths(paths, { HOME: paths.home });
+    const plist = macosLaunchAgentPlist(hotkeyPaths);
+    expect(plist).toContain("<key>Label</key>");
+    expect(plist).toContain("<string>work.thehumanworks.pasta.hotkeys</string>");
+    expect(plist).toContain("<key>PASTA_HOME</key>");
+    expect(plist).toContain(paths.home);
+    expect(plist).toContain(hotkeyPaths.binaryPath);
+    expect(plist).toContain(hotkeyPaths.stderrLogPath);
+    expect(plist).not.toContain("Raycast");
+
+    const source = macosHotkeySource(hotkeys);
+    expect(source).toContain("RegisterEventHotKey");
+    expect(source).toContain("kEventHotKeyExclusive");
+    expect(source).toContain("Carbon status");
+    expect(source).toContain("Pasta hotkey conflict");
+
+    expect(await runCli(["install-hotkeys", "--provider", "nope"], { io: capture(output), paths })).toBe(2);
+    expect(output.join("")).toContain("--provider must be auto or macos");
   });
 
   it("discovers clipboard adapter commands for macOS, Linux, and Windows", () => {
