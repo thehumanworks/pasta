@@ -41,7 +41,7 @@ PowerShell users source the printed `.ps1` path from their profile:
 
 ## Conflict behavior
 
-Pasta never overwrites an existing alias, function, or keybinding. For each action it tries the first-choice chord, then the fallback chord. If both are already used by your shell or profile, Pasta leaves your setup unchanged and the aliases still work. Bash has one extra guard: if your Bash build cannot list existing shell-command key handlers, Pasta skips Bash keybindings and installs aliases only.
+Pasta never overwrites an existing alias, function, or user-defined keybinding. For each action it tries the first-choice chord, then the fallback chord. On zsh, Pasta treats the stock `Alt+C`/`Alt+P` widgets as replaceable defaults so those chords work out of the box; if your profile has put a custom binding there, Pasta falls back instead. If both chords are custom-bound, Pasta leaves your setup unchanged and the aliases still work. Bash has one extra guard: if your Bash build cannot list existing shell-command key handlers, Pasta skips Bash keybindings and installs aliases only.
 
 ```bash
 pc  # pasta copy
@@ -87,7 +87,7 @@ Bindings:
 
 | Shell | Copy candidates | Paste candidates | Conflict check |
 | --- | --- | --- | --- |
-| zsh | `^[c`, `^Xc` | `^[p`, `^Xp` | inspect `bindkey` result and bind only when undefined |
+| zsh | `^[c`, `^Xc` | `^[p`, `^Xp` | bind when undefined or when primary chord still has the stock zsh widget; otherwise fall back |
 | bash | `\ec`, `\C-xc` | `\ep`, `\C-xp` | inspect `bind -p` and `bind -X`; skip Bash keybindings when shell-command handlers cannot be listed |
 | fish | `\ec`, `\cxc` | `\ep`, `\cxp` | `bind --query` before `bind` |
 | PowerShell | `Alt+c`, `Ctrl+x,c` | `Alt+p`, `Ctrl+x,p` | `Get-PSReadLineKeyHandler -Chord` before `Set-PSReadLineKeyHandler` |

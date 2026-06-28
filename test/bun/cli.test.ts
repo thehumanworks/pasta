@@ -593,7 +593,8 @@ describe("CLI", () => {
     ]);
     expect(snippets.get("zsh")).toContain("bindkey");
     expect(snippets.get("zsh")).toContain("undefined-key");
-    expect(snippets.get("zsh")).toContain("'^[c' '^Xc'");
+    expect(snippets.get("zsh")).toContain("'^[c:capitalize-word' '^Xc'");
+    expect(snippets.get("zsh")).toContain("'^[p:history-search-backward' '^Xp'");
     expect(snippets.get("zsh")).not.toContain("^P");
     expect(snippets.get("bash")).toContain("bind -p");
     expect(snippets.get("bash")).toContain("bind -X");
@@ -648,7 +649,27 @@ describe("CLI", () => {
     expect(await Bun.file(shellConfigPath(paths, "fish")).text()).toBe("");
   });
 
-  it("preserves existing zsh chords and uses fallback keybindings when zsh is available", async () => {
+  it("uses zsh option chords over default widgets when zsh is available", async () => {
+    if (!(await commandExists("zsh"))) return;
+    const paths = await tempPaths();
+    const snippetPath = join(paths.home, "pasta.zsh");
+    await Bun.write(snippetPath, shellSnippet("pasta", "zsh"));
+    const script = [
+      `source ${posixPath(snippetPath)}`,
+      "bindkey '^[c'",
+      "bindkey '^[p'"
+    ].join("; ");
+    const proc = Bun.spawn(["zsh", "-f", "-c", script], { stdout: "pipe", stderr: "pipe" });
+    const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(stderr).toBe("");
+    expect(code).toBe(0);
+    expect(stdout).toContain("pasta copy");
+    expect(stdout).toContain("pasta paste --clipboard");
+    expect(stdout).not.toContain("capitalize-word");
+    expect(stdout).not.toContain("history-search-backward");
+  });
+
+  it("preserves custom zsh chords and uses fallback keybindings when zsh is available", async () => {
     if (!(await commandExists("zsh"))) return;
     const paths = await tempPaths();
     const snippetPath = join(paths.home, "pasta.zsh");
