@@ -103,6 +103,8 @@ final class SimulatedTextChecker {
 let defaultIterations = 40_000
 let iterations = argumentValue("--iterations").flatMap(Int.init) ?? defaultIterations
 let mode = argumentValue("--mode") ?? "both"
+let maxOptimizedTotalMs = argumentValue("--max-optimized-total-ms").flatMap(Double.init)
+let minImprovementPercent = argumentValue("--min-improvement-percent").flatMap(Double.init)
 
 let layoutKeys = [
     LayoutKey(keyboardType: 0, orientation: 1, width: 393, height: 852, deviceClass: 0, needsInputModeSwitchKey: true),
@@ -176,14 +178,30 @@ for result in results {
     print("\(result.label): \(format(result.milliseconds)) ms checksum=\(result.checksum)")
 }
 
+let optimizedTotal = total(prefix: "optimized", in: results)
+var thresholdFailed = false
+
 if mode == "both" {
     let baseline = total(prefix: "baseline", in: results)
-    let optimized = total(prefix: "optimized", in: results)
-    let delta = baseline - optimized
+    let delta = baseline - optimizedTotal
     let percent = baseline == 0 ? 0 : (delta / baseline) * 100
     print("baseline.total: \(format(baseline)) ms")
-    print("optimized.total: \(format(optimized)) ms")
+    print("optimized.total: \(format(optimizedTotal)) ms")
     print("improvement: \(format(delta)) ms (\(format(percent))% faster)")
+    if let minImprovementPercent, percent < minImprovementPercent {
+        standardError("expected improvement >= \(format(minImprovementPercent))%, got \(format(percent))%")
+        thresholdFailed = true
+    }
+} else if mode == "optimized" {
+    print("optimized.total: \(format(optimizedTotal)) ms")
+}
+
+if let maxOptimizedTotalMs, optimizedTotal > maxOptimizedTotalMs {
+    standardError("expected optimized.total <= \(format(maxOptimizedTotalMs)) ms, got \(format(optimizedTotal)) ms")
+    thresholdFailed = true
+}
+if thresholdFailed {
+    fatalError("keyboard benchmark threshold failed")
 }
 
 func measure(_ label: String, _ operation: () -> Int) -> BenchmarkResult {
@@ -273,4 +291,8 @@ func argumentValue(_ name: String) -> String? {
 
 func format(_ value: Double) -> String {
     String(format: "%.3f", value)
+}
+
+func standardError(_ message: String) {
+    FileHandle.standardError.write(Data((message + "\n").utf8))
 }

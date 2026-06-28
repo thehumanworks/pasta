@@ -102,14 +102,22 @@ final class PastaAppModel: ObservableObject {
                     url.stopAccessingSecurityScopedResource()
                 }
             }
-            let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey, .contentTypeKey])
+            let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey, .contentTypeKey, .fileSizeKey])
             if resourceValues.isDirectory == true {
                 throw PastaAppError.directoryImportNotSupported
             }
-            let data = try Data(contentsOf: url)
+            let fileSize = resourceValues.fileSize ?? 0
+            if fileSize > PastaCore.largePayloadMaxBytes {
+                throw PastaAppError.fileTooLarge(fileSize)
+            }
+            status = "Encrypting \(url.lastPathComponent) (\(Self.formatBytes(fileSize)))..."
+            let data = try await Task.detached(priority: .userInitiated) {
+                try Data(contentsOf: url, options: [.mappedIfSafe])
+            }.value
             let contentType = resourceValues.contentType ?? UTType(filenameExtension: url.pathExtension)
             let mime = contentType?.preferredMIMEType ?? "application/octet-stream"
             let payloadKind = mime.hasPrefix("image/") ? "image" : "file"
+            status = "Uploading encrypted \(Self.formatBytes(data.count))..."
             let clip = try await client.publishFile(
                 bytes: Array(data),
                 fileName: url.lastPathComponent,
@@ -253,11 +261,24 @@ final class PastaAppModel: ObservableObject {
             return "Join token is invalid or incomplete. Paste the full `join token ...` line from Pasta."
         case PastaCryptoError.invalidGrant, PastaCryptoError.cryptoFailed:
             return "Join token crypto check failed. Create a fresh token and paste it without editing."
+        case PastaAppError.notPaired:
+            return "Pair this iPhone before syncing Pasta."
+        case PastaAppError.directoryImportNotSupported:
+            return "Directory import is not supported on iOS yet. Compress the folder first."
+        case PastaAppError.fileTooLarge(let bytes):
+            return "File is \(formatBytes(bytes)); Pasta supports up to \(formatBytes(PastaCore.largePayloadMaxBytes))."
         case let apiError as PastaAPIError:
             return statusMessage(for: apiError)
         default:
             return "Error: \(String(describing: error))"
         }
+    }
+
+    private static func formatBytes(_ bytes: Int) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(bytes))
     }
 
     private static func statusMessage(for error: PastaAPIError) -> String {
@@ -278,6 +299,8 @@ final class PastaAppModel: ObservableObject {
             return "Join token endpoint is invalid. Create a fresh token and try again."
         case .missingClip:
             return "Pasta could not find that clip."
+        case .missingFileEnvelope:
+            return "Pasta file response was incomplete. Try again."
         }
     }
 }
@@ -285,6 +308,7 @@ final class PastaAppModel: ObservableObject {
 enum PastaAppError: Error {
     case notPaired
     case directoryImportNotSupported
+    case fileTooLarge(Int)
 }
 
 struct PastaPreparedExport: Identifiable {

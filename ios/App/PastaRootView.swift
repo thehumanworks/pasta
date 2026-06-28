@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct PastaRootView: View {
     @EnvironmentObject private var model: PastaAppModel
     @State private var isImportingFile = false
+    @State private var pendingDelete: PastaHistoryEntry?
 
     var body: some View {
         NavigationStack {
@@ -131,7 +132,7 @@ struct PastaRootView: View {
                             }
                             Spacer(minLength: 8)
                             Button(role: .destructive) {
-                                Task { await model.deleteHistoryEntry(entry) }
+                                pendingDelete = entry
                             } label: {
                                 if model.deletingClipId == entry.clipId {
                                     ProgressView()
@@ -145,11 +146,13 @@ struct PastaRootView: View {
                             .accessibilityLabel("Delete history entry \(entry.sequence)")
                         }
                     }
+                    #if DEBUG
                     Button {
                         model.seedLocalClip()
                     } label: {
                         Label("Add Local Keyboard Clip", systemImage: "keyboard.badge.ellipsis")
                     }
+                    #endif
                 }
             }
             .navigationTitle("Pasta")
@@ -167,6 +170,21 @@ struct PastaRootView: View {
                 PastaShareSheet(activityItems: [export.url])
                     .ignoresSafeArea()
             }
+            .confirmationDialog("Delete Pasta history entry?", isPresented: deleteDialogPresented, titleVisibility: .visible) {
+                if let entry = pendingDelete {
+                    Button("Delete Clip \(entry.sequence)", role: .destructive) {
+                        pendingDelete = nil
+                        Task { await model.deleteHistoryEntry(entry) }
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingDelete = nil
+                }
+            } message: {
+                if let entry = pendingDelete {
+                    Text("This removes clip \(entry.sequence) from remote Pasta history on all paired devices.")
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .bottomBar) {
                     Text(model.status)
@@ -175,6 +193,17 @@ struct PastaRootView: View {
                 }
             }
         }
+    }
+
+    private var deleteDialogPresented: Binding<Bool> {
+        Binding(
+            get: { pendingDelete != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingDelete = nil
+                }
+            }
+        )
     }
 }
 

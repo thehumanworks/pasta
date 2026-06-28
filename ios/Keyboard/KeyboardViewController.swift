@@ -9,6 +9,8 @@ final class KeyboardViewController: KeyboardInputViewController {
     private var hasAutoRefreshedHistory = false
     private var isRunningLiveAction = false
     private var statusMessage: String?
+    private var hasSetupPastaKeyboardView = false
+    private let toolbarModel = PastaKeyboardToolbarModel()
     private let client = PastaAPIClient()
     private let keychain = PastaKeychainStore()
     private let store = try? PastaAppGroupStore()
@@ -37,7 +39,10 @@ final class KeyboardViewController: KeyboardInputViewController {
         super.viewWillAppear(animated)
         deferKeyboardSurfaceToHost()
         reloadClips()
-        setupPastaKeyboardView()
+        refreshToolbarModel()
+        if !hasSetupPastaKeyboardView {
+            setupPastaKeyboardView()
+        }
         autoRefreshHistoryIfPossible()
     }
 
@@ -63,14 +68,21 @@ final class KeyboardViewController: KeyboardInputViewController {
 
     private func reloadClips() {
         clips = store?.loadKeyboardClips() ?? []
+        refreshToolbarModel()
     }
 
-    private func setupPastaKeyboardView() {
-        let model = PastaKeyboardToolbarModel(
+    private func refreshToolbarModel() {
+        toolbarModel.update(
             clips: clips,
             statusMessage: statusMessage,
             isRunningLiveAction: isRunningLiveAction
         )
+    }
+
+    private func setupPastaKeyboardView() {
+        hasSetupPastaKeyboardView = true
+        refreshToolbarModel()
+        let model = toolbarModel
         setupKeyboardView { [weak self] controller in
             PastaKeyboardView(
                 services: controller.services,
@@ -109,6 +121,7 @@ final class KeyboardViewController: KeyboardInputViewController {
                 if reportsStatus {
                     statusMessage = refreshed.isEmpty ? "No Pasta text history yet." : "Synced \(refreshed.count) Pasta text clips."
                 }
+                refreshToolbarModel()
             }
         }
     }
@@ -137,6 +150,7 @@ final class KeyboardViewController: KeyboardInputViewController {
                 clips = [cached] + clips.filter { $0.clipId != clip.clipId }
                 try store?.saveKeyboardClips(clips)
                 statusMessage = "Published clipboard to Pasta."
+                refreshToolbarModel()
             }
         }
     }
@@ -151,19 +165,28 @@ final class KeyboardViewController: KeyboardInputViewController {
         if let started {
             statusMessage = started
         }
-        setupPastaKeyboardView()
+        refreshToolbarModel()
         defer {
             isRunningLiveAction = false
-            setupPastaKeyboardView()
+            refreshToolbarModel()
         }
         do {
             try await operation()
         } catch PastaKeyboardError.fullAccessRequired {
-            if reportsStatus { statusMessage = "Allow Full Access for live sync." }
+            if reportsStatus { statusMessage = "Allow Full Access to sync Pasta history." }
+            refreshToolbarModel()
         } catch PastaKeyboardError.notPaired {
-            if reportsStatus { statusMessage = "Pair in Pasta before live sync." }
+            if reportsStatus { statusMessage = "Pair this device in Pasta." }
+            refreshToolbarModel()
+        } catch URLError.notConnectedToInternet {
+            if reportsStatus { statusMessage = "Network unavailable. Cached clips still work." }
+            refreshToolbarModel()
+        } catch URLError.timedOut {
+            if reportsStatus { statusMessage = "Pasta sync timed out. Try again." }
+            refreshToolbarModel()
         } catch {
-            if reportsStatus { statusMessage = "Pasta sync failed." }
+            if reportsStatus { statusMessage = "Pasta sync failed. Reopen Pasta if this persists." }
+            refreshToolbarModel()
         }
     }
 
@@ -181,7 +204,7 @@ final class KeyboardViewController: KeyboardInputViewController {
 private struct PastaKeyboardView: View {
     let services: Keyboard.Services
     let state: Keyboard.State
-    let toolbarModel: PastaKeyboardToolbarModel
+    @ObservedObject var toolbarModel: PastaKeyboardToolbarModel
     let insertClip: (String) -> Void
     let publish: () -> Void
 
@@ -282,7 +305,7 @@ private struct PastaKeyboardLayoutKey: Equatable {
 }
 
 private struct PastaKeyboardToolbar<AutocompleteToolbar: View>: View {
-    let model: PastaKeyboardToolbarModel
+    @ObservedObject var model: PastaKeyboardToolbarModel
     let autocompleteToolbar: AutocompleteToolbar
     let insertClip: (String) -> Void
     let publish: () -> Void
@@ -407,13 +430,26 @@ private extension Keyboard.ButtonStyle {
     }
 }
 
-private struct PastaKeyboardToolbarModel {
-    let clips: [PastaKeyboardClip]
-    let statusMessage: String?
-    let isRunningLiveAction: Bool
+@MainActor
+private final class PastaKeyboardToolbarModel: ObservableObject {
+    @Published private(set) var clips: [PastaKeyboardClip]
+    @Published private(set) var statusMessage: String?
+    @Published private(set) var isRunningLiveAction: Bool
+
+    init(clips: [PastaKeyboardClip] = [], statusMessage: String? = nil, isRunningLiveAction: Bool = false) {
+        self.clips = clips
+        self.statusMessage = statusMessage
+        self.isRunningLiveAction = isRunningLiveAction
+    }
 
     var visibleClips: [PastaKeyboardClip] {
         Array(clips.prefix(12))
+    }
+
+    func update(clips: [PastaKeyboardClip], statusMessage: String?, isRunningLiveAction: Bool) {
+        self.clips = clips
+        self.statusMessage = statusMessage
+        self.isRunningLiveAction = isRunningLiveAction
     }
 }
 
