@@ -8,10 +8,11 @@ import { DIRECTORY_BUNDLE_MIME } from "../../src/cli/directory-zip";
 import { readConfig, type PastaConfig, type Paths, writeConfig } from "../../src/cli/config";
 import { authFileForHome, defaultSecretStoreForHome, FileSecretStore, MemorySecretStore, ResilientSecretStore, SecretName, type SecretStore } from "../../src/cli/secret-store";
 import { runCli } from "../../src/cli";
-import { decryptBytesClip, encryptTextClip, generateDeviceKeyMaterial, generateGroupKey, parseJoinGrantToken } from "../../src/shared/crypto";
-import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, SIGNATURE_HEADERS, type PairingGrantCreateRequest, type StoredClip } from "../../src/shared/protocol";
+import { decryptBytesClip, encryptBytesClip, encryptTextClip, generateDeviceKeyMaterial, generateGroupKey, parseJoinGrantToken } from "../../src/shared/crypto";
+import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, SIGNATURE_HEADERS, sha256Base64Url, type PairingGrantCreateRequest, type StoredClip } from "../../src/shared/protocol";
 import { detectShellKind, shellConfigPath, shellSnippet, type ShellKind } from "../../src/cli/shell";
 import { macosHotkeyPaths, macosHotkeySource, macosLaunchAgentPlist, normalizeGlobalHotkeys } from "../../src/cli/global-hotkeys";
+import { bytesToUtf8, fromBase64Url, stableJson, toBase64Url, utf8ToBytes } from "../../src/shared/encoding";
 
 describe("CLI", () => {
   it("prints version and help", async () => {
@@ -31,6 +32,7 @@ describe("CLI", () => {
       [["pair", "--help"], "pasta pair consume"],
       [["devices", "--help"], "pasta devices revoke dev_example"],
       [["doctor", "--help"], "pasta doctor"],
+      [["status", "--help"], "pasta status --json"],
       [["reset", "--help"], "pasta reset --yes"],
       [["install-hotkeys", "--help"], "pasta install-hotkeys --copy-key"],
       [["uninstall-hotkeys", "--help"], "pasta uninstall-hotkeys"],
@@ -275,6 +277,28 @@ describe("CLI", () => {
     expect(await runCli(["devices", "list", "--include-revoked"], deps)).toBe(0);
     expect(output.join("")).toContain("dev_active\tactive\tactive");
     expect(output.join("")).toContain("dev_revoked\trevoked\told");
+
+    output.length = 0;
+    expect(await runCli(["devices", "list", "--json"], deps)).toBe(0);
+    expect(JSON.parse(output.join("")).devices[0].deviceId).toBe("dev_active");
+  });
+
+  it("prints scriptable local status", async () => {
+    const paths = await tempPaths();
+    const secrets = new MemorySecretStore();
+    await secrets.set(SecretName.groupKey, generateGroupKey());
+    const keys = generateDeviceKeyMaterial();
+    await secrets.set(SecretName.signingPrivateKey, keys.signing.privateKey);
+    await secrets.set(SecretName.wrappingPrivateKey, keys.wrapping.privateKey);
+    await writeConfig(sampleConfig(), paths.configPath);
+    const output: string[] = [];
+
+    expect(await runCli(["status", "--json"], { io: capture(output), paths, secrets, clipboard: new MemoryClipboardAdapter("") })).toBe(0);
+    const status = JSON.parse(output.join(""));
+    expect(status.configured).toBe(true);
+    expect(status.clipboard.adapter).toBe("memory");
+    expect(status.secrets.groupKey).toBe(true);
+    expect(status.secrets.signingPrivateKey).toBe(true);
   });
 
   it("copies, pastes, lists history, and avoids daemon publish loops", async () => {
@@ -293,12 +317,15 @@ describe("CLI", () => {
         return { clip };
       }
       if (path === "/v1/clips/latest") return { clip: clips.at(-1) ?? null };
+      if (method === "GET" && path.startsWith("/v1/clips/by-seq/")) {
+        const seq = Number(path.split("/").at(-1));
+        return { clip: clips.find((clip) => clip.seq === seq) ?? null };
+      }
       if (path.startsWith("/v1/clips/history")) return { clips: [...clips].reverse() };
       if (method === "DELETE" && path.startsWith("/v1/clips/")) {
         const clipId = decodeURIComponent(path.split("/").at(-1)!);
         const index = clips.findIndex((clip) => clip.clipId === clipId);
         const deleted = index === -1 ? 0 : clips.splice(index, 1).length;
-        for (let clipIndex = 0; clipIndex < clips.length; clipIndex += 1) clips[clipIndex]!.seq = clipIndex + 1;
         return { deleted, deletedObjects: 0 };
       }
       if (method === "GET" && path.startsWith("/v1/clips/")) {
@@ -322,7 +349,10 @@ describe("CLI", () => {
     expect(clipboard.value).toBe("alpha");
     output.length = 0;
     clipboard.value = "beta";
-    expect(await runCli(["copy", "--clipboard"], deps)).toBe(0);
+    expect(await runCli(["copy", "--clipboard", "--json"], deps)).toBe(0);
+    const copyJson = JSON.parse(output.join(""));
+    expect(copyJson.ok).toBe(true);
+    expect(copyJson.payloadKind).toBe("text");
     output.length = 0;
     expect(await runCli(["paste"], deps)).toBe(0);
     expect(output.join("")).toContain("beta");
@@ -333,6 +363,9 @@ describe("CLI", () => {
     output.length = 0;
     expect(await runCli(["history", "--show"], deps)).toBe(0);
     expect(output.join("")).toContain("alpha");
+    output.length = 0;
+    expect(await runCli(["history", "--json"], deps)).toBe(0);
+    expect(JSON.parse(output.join("")).clips[0].clipId).toBe(clips.at(-1)!.clipId);
 
     await writeConfig({ ...config, lastRemotePasteHash: await import("../../src/shared/protocol").then((m) => m.sha256Base64Url("alpha")) }, paths.configPath);
     clipboard.value = "alpha";
@@ -407,6 +440,10 @@ describe("CLI", () => {
         return { clip };
       }
       if (path === "/v1/clips/latest") return { clip: clips.at(-1) ?? null };
+      if (method === "GET" && path.startsWith("/v1/clips/by-seq/")) {
+        const seq = Number(path.split("/").at(-1));
+        return { clip: clips.find((clip) => clip.seq === seq) ?? null };
+      }
       if (path.startsWith("/v1/clips/history")) return { clips: [...clips].reverse() };
       if (path.startsWith("/v1/clips/")) return { clip: clips.find((clip) => clip.clipId === decodeURIComponent(path.split("/").at(-1)!)) };
       if (method === "GET" && path.startsWith("/v1/files/")) return storedFiles.get(decodeURIComponent(path.split("/").at(-1)!));
@@ -562,6 +599,10 @@ describe("CLI", () => {
         return { clip: stored };
       }
       if (path === "/v1/clips/latest") return { clip: storedFiles.at(-1)?.clip ?? null };
+      if (method === "GET" && path.startsWith("/v1/clips/by-seq/")) {
+        const seq = Number(path.split("/").at(-1));
+        return { clip: storedFiles.find((entry) => entry.clip.seq === seq)?.clip ?? null };
+      }
       if (path.startsWith("/v1/clips/history")) return { clips: storedFiles.map((entry) => entry.clip).reverse() };
       if (method === "GET" && path.startsWith("/v1/files/")) {
         const clipId = decodeURIComponent(path.split("/").at(-1)!);
@@ -826,12 +867,75 @@ describe("CLI", () => {
       inlineThresholdBytes: number;
       maxBytes: number;
       r2KeyFormat: string;
+      transport: string;
       finalizeSemantics: string;
     };
     expect(plan.inlineThresholdBytes).toBe(512 * 1024);
     expect(plan.maxBytes).toBe(50 * 1024 * 1024);
     expect(plan.r2KeyFormat).toBe("spaces/{routing_id}/clips/{clip_id}/{payload_id}");
-    expect(plan.finalizeSemantics).toContain("signed finalize");
+    expect(plan.transport).toContain("v2 raw encrypted body");
+    expect(plan.finalizeSemantics).toContain("rolling back metadata");
+  });
+
+
+  it("uses the v2 binary file transport without JSON/base64 body wrapping", async () => {
+    const keyMaterial = generateDeviceKeyMaterial();
+    const config: PastaConfig = {
+      ...sampleConfig(),
+      verifyPublicKey: keyMaterial.signing.publicKey
+    };
+    const secrets = new MemorySecretStore();
+    await secrets.set(SecretName.signingPrivateKey, keyMaterial.signing.privateKey);
+    const groupKey = generateGroupKey();
+    const plaintext = new Uint8Array([1, 2, 3, 4, 5]);
+    const clip = encryptBytesClip({
+      accountId: config.accountId,
+      routingId: config.routingId,
+      originDeviceId: config.deviceId,
+      bytes: plaintext,
+      payloadKind: "file",
+      mime: "application/octet-stream",
+      groupKey,
+      keyVersion: config.keyVersion
+    });
+    const encryptedBytes = fromBase64Url(clip.ciphertext);
+    const stored: StoredClip = {
+      ...clip,
+      seq: 9,
+      ciphertext: "",
+      storageKind: "r2",
+      r2Key: `spaces/test/clips/${clip.clipId}/payload`
+    };
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (request.method === "POST" && url.pathname === "/v2/files") {
+        const body = new Uint8Array(await request.arrayBuffer());
+        expect(Array.from(body)).toEqual(Array.from(encryptedBytes));
+        expect(request.headers.get("content-type")).toContain("application/octet-stream");
+        expect(request.headers.get(SIGNATURE_HEADERS.bodyHash)).toBe(sha256Base64Url(body));
+        const envelopeHeader = request.headers.get("pasta-file-envelope");
+        expect(envelopeHeader).toBeTruthy();
+        const envelope = JSON.parse(bytesToUtf8(fromBase64Url(envelopeHeader!))) as StoredClip;
+        expect(envelope.clipId).toBe(clip.clipId);
+        expect(envelope.ciphertext).toBe("");
+        return Response.json({ clip: stored }, { status: 201 });
+      }
+      if (request.method === "GET" && url.pathname === `/v2/files/${clip.clipId}/content`) {
+        expect(request.headers.get(SIGNATURE_HEADERS.bodyHash)).toBe(sha256Base64Url(new Uint8Array()));
+        return new Response(requestBodyFromBytes(encryptedBytes), {
+          headers: {
+            "content-type": "application/octet-stream",
+            "pasta-file-envelope": toBase64Url(utf8ToBytes(stableJson(stored)))
+          }
+        });
+      }
+      return Response.json({ error: "not_found" }, { status: 404 });
+    }) as typeof fetch;
+
+    const client = new FetchApiClient(config, secrets, fetchImpl);
+    await expect(client.uploadEncryptedFile(clip)).resolves.toEqual({ clip: stored });
+    await expect(client.downloadEncryptedFile(clip.clipId)).resolves.toEqual({ clip: stored, ciphertext: clip.ciphertext });
   });
 
   it("reports non-JSON HTTP responses without a parser stack", async () => {
@@ -870,6 +974,11 @@ function capture(output: string[], stdin = "") {
     stderr: (text: string) => output.push(text),
     stdinText: async () => stdin
   };
+}
+
+function requestBodyFromBytes(bytes: Uint8Array): BodyInit {
+  const copy = new Uint8Array(bytes);
+  return copy.buffer as ArrayBuffer;
 }
 
 async function commandExists(command: string): Promise<boolean> {

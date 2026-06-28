@@ -5,8 +5,10 @@ export const DIRECTORY_BUNDLE_MIME = "application/vnd.pasta.directory+zip";
 
 interface ZipEntry {
   name: string;
-  bytes: Uint8Array;
   directory: boolean;
+  size: number;
+  crc: number;
+  filePath?: string;
 }
 
 interface WalkState {
@@ -24,7 +26,7 @@ export async function zipDirectory(rootPath: string, maxBytes: number): Promise<
   if (rootStat.isSymbolicLink()) throw new Error("directory copy does not support symlink roots");
   if (!rootStat.isDirectory()) throw new Error(`not a directory: ${rootPath}`);
   const entries = await collectEntries(rootPath, rootPath, { maxBytes, sourceBytes: 0 });
-  const zip = buildZip(entries);
+  const zip = await buildZip(entries);
   if (zip.length > maxBytes) throw new Error(`directory bundle exceeds max size ${maxBytes}`);
   return zip;
 }
@@ -93,17 +95,20 @@ async function collectEntries(rootPath: string, currentPath: string, state: Walk
     const relativeName = zipRelativeName(rootPath, fullPath);
     if (stat.isSymbolicLink()) throw new Error(`directory copy does not support symlink: ${relativeName}`);
     if (stat.isDirectory()) {
-      entries.push({ name: `${relativeName}/`, bytes: new Uint8Array(), directory: true });
+      entries.push({ name: `${relativeName}/`, directory: true, size: 0, crc: 0 });
       entries.push(...await collectEntries(rootPath, fullPath, state));
       continue;
     }
     if (!stat.isFile()) throw new Error(`directory copy supports only files and directories: ${relativeName}`);
     state.sourceBytes += stat.size;
     if (state.sourceBytes > state.maxBytes) throw new Error(`directory bundle exceeds max size ${state.maxBytes}`);
+    const fileBytes = new Uint8Array(await Bun.file(fullPath).arrayBuffer());
     entries.push({
       name: relativeName,
-      bytes: new Uint8Array(await Bun.file(fullPath).arrayBuffer()),
-      directory: false
+      directory: false,
+      size: fileBytes.length,
+      crc: crc32(fileBytes),
+      filePath: fullPath
     });
   }
   return entries;
@@ -117,14 +122,13 @@ function zipRelativeName(rootPath: string, fullPath: string): string {
   return name;
 }
 
-function buildZip(entries: ZipEntry[]): Uint8Array {
+async function buildZip(entries: ZipEntry[]): Promise<Uint8Array> {
   const chunks: Uint8Array[] = [];
   const centralDirectory: Uint8Array[] = [];
   let offset = 0;
   for (const entry of entries) {
     const nameBytes = encoder.encode(entry.name);
     if (nameBytes.length > 0xffff) throw new Error(`zip entry name too long: ${entry.name}`);
-    const crc = crc32(entry.bytes);
     const localHeader = new Uint8Array(30 + nameBytes.length);
     writeUInt32(localHeader, 0, 0x04034b50);
     writeUInt16(localHeader, 4, 20);
@@ -132,13 +136,17 @@ function buildZip(entries: ZipEntry[]): Uint8Array {
     writeUInt16(localHeader, 8, STORE_METHOD);
     writeUInt16(localHeader, 10, 0);
     writeUInt16(localHeader, 12, 33);
-    writeUInt32(localHeader, 14, crc);
-    writeUInt32(localHeader, 18, entry.bytes.length);
-    writeUInt32(localHeader, 22, entry.bytes.length);
+    writeUInt32(localHeader, 14, entry.crc);
+    writeUInt32(localHeader, 18, entry.size);
+    writeUInt32(localHeader, 22, entry.size);
     writeUInt16(localHeader, 26, nameBytes.length);
     writeUInt16(localHeader, 28, 0);
     localHeader.set(nameBytes, 30);
-    chunks.push(localHeader, entry.bytes);
+    chunks.push(localHeader);
+    if (!entry.directory) {
+      if (!entry.filePath) throw new Error(`missing zip source path: ${entry.name}`);
+      chunks.push(new Uint8Array(await Bun.file(entry.filePath).arrayBuffer()));
+    }
 
     const centralHeader = new Uint8Array(46 + nameBytes.length);
     writeUInt32(centralHeader, 0, 0x02014b50);
@@ -148,9 +156,9 @@ function buildZip(entries: ZipEntry[]): Uint8Array {
     writeUInt16(centralHeader, 10, STORE_METHOD);
     writeUInt16(centralHeader, 12, 0);
     writeUInt16(centralHeader, 14, 33);
-    writeUInt32(centralHeader, 16, crc);
-    writeUInt32(centralHeader, 20, entry.bytes.length);
-    writeUInt32(centralHeader, 24, entry.bytes.length);
+    writeUInt32(centralHeader, 16, entry.crc);
+    writeUInt32(centralHeader, 20, entry.size);
+    writeUInt32(centralHeader, 24, entry.size);
     writeUInt16(centralHeader, 28, nameBytes.length);
     writeUInt16(centralHeader, 30, 0);
     writeUInt16(centralHeader, 32, 0);
@@ -161,7 +169,7 @@ function buildZip(entries: ZipEntry[]): Uint8Array {
     centralHeader.set(nameBytes, 46);
     centralDirectory.push(centralHeader);
 
-    offset += localHeader.length + entry.bytes.length;
+    offset += localHeader.length + entry.size;
   }
 
   const centralOffset = offset;
@@ -174,6 +182,7 @@ function buildZip(entries: ZipEntry[]): Uint8Array {
   writeUInt32(eocd, 16, centralOffset);
   return concatBytes([...chunks, ...centralDirectory, eocd]);
 }
+
 
 function resolveZipEntry(root: string, name: string): string {
   if (!name || name.includes("\\") || name.startsWith("/") || /^[A-Za-z]:/u.test(name)) {

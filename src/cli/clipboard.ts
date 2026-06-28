@@ -23,13 +23,16 @@ export interface ClipboardDoctorResult {
 }
 
 export class SystemClipboardAdapter implements ClipboardAdapter {
+  private readonly planCache = new Map<"read" | "write", { name: string; command: string[] }>();
+  private osascriptAvailable: boolean | null = null;
+
   async readText(): Promise<string> {
-    const plan = await chooseClipboardPlan("read");
+    const plan = await this.clipboardPlan("read");
     return runCommand(plan.command);
   }
 
   async writeText(text: string): Promise<void> {
-    const plan = await chooseClipboardPlan("write");
+    const plan = await this.clipboardPlan("write");
     await runCommand(plan.command, text);
   }
 
@@ -37,7 +40,7 @@ export class SystemClipboardAdapter implements ClipboardAdapter {
     if (process.platform !== "darwin") {
       throw new Error("image clipboard is currently supported only on macOS; Linux/Windows remain command-plan assumptions");
     }
-    await requireCommand("osascript");
+    await this.requireOsascript();
     const dir = await mkdtemp(join(tmpdir(), "pasta-image-"));
     const out = join(dir, "clipboard.png");
     try {
@@ -66,7 +69,7 @@ export class SystemClipboardAdapter implements ClipboardAdapter {
     if (process.platform !== "darwin") {
       throw new Error("image clipboard is currently supported only on macOS; Linux/Windows remain command-plan assumptions");
     }
-    await requireCommand("osascript");
+    await this.requireOsascript();
     if (image.mime !== "image/png") throw new Error(`unsupported image MIME for clipboard: ${image.mime}`);
     const dir = await mkdtemp(join(tmpdir(), "pasta-image-"));
     const input = join(dir, "clipboard.png");
@@ -92,6 +95,21 @@ export class SystemClipboardAdapter implements ClipboardAdapter {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  }
+
+  private async clipboardPlan(direction: "read" | "write"): Promise<{ name: string; command: string[] }> {
+    const cached = this.planCache.get(direction);
+    if (cached) return cached;
+    const plan = await chooseClipboardPlan(direction);
+    this.planCache.set(direction, plan);
+    return plan;
+  }
+
+  private async requireOsascript(): Promise<void> {
+    if (this.osascriptAvailable === true) return;
+    if (this.osascriptAvailable === false) throw new Error("osascript is required for image clipboard support");
+    this.osascriptAvailable = await commandExists("osascript");
+    if (!this.osascriptAvailable) throw new Error("osascript is required for image clipboard support");
   }
 
   async doctor(): Promise<ClipboardDoctorResult> {
@@ -198,11 +216,6 @@ async function commandExists(command: string): Promise<boolean> {
   return (await proc.exited) === 0;
 }
 
-async function requireCommand(command: string): Promise<void> {
-  if (!(await commandExists(command))) {
-    throw new Error(`${command} is required for image clipboard support`);
-  }
-}
 
 async function runCommand(command: string[], input?: string): Promise<string> {
   const proc = Bun.spawn(command, {

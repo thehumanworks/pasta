@@ -156,6 +156,14 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
       return result.available ? ExitCode.ok : ExitCode.unavailable;
     }
 
+    if (command === "status") {
+      if (argv.includes("--help")) {
+        io.stdout(commandHelp("status"));
+        return ExitCode.ok;
+      }
+      return await statusCommand(argv.slice(1), io, paths, secrets, clipboard);
+    }
+
     if (command === "copy") {
       return await copyCommand(argv.slice(1), io, paths, secrets, clipboard, deps);
     }
@@ -180,6 +188,7 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
       const once = argv.includes("--once") || argv.includes("--dry-run");
       const dryRun = argv.includes("--dry-run");
       const intervalMs = Number.parseInt(option(argv, "--interval-ms") ?? "750", 10);
+      const maxIntervalMs = Number.parseInt(option(argv, "--max-interval-ms") ?? "5000", 10);
       const config = dryRun
         ? await readConfig(paths.configPath).catch(() => null)
         : await readConfig(paths.configPath);
@@ -190,7 +199,7 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
           await publishText(config, secrets, clientFor(config, secrets, deps), text);
         },
         () => config?.lastRemotePasteHash,
-        { intervalMs, once, dryRun }
+        { intervalMs, maxIntervalMs, once, dryRun }
       );
       io.stdout(JSON.stringify(result) + "\n");
       return ExitCode.ok;
@@ -326,7 +335,8 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
             inlineThresholdBytes: LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES,
             maxBytes: LARGE_PAYLOAD_MAX_BYTES,
             r2KeyFormat: "spaces/{routing_id}/clips/{clip_id}/{payload_id}",
-            finalizeSemantics: "upload encrypted blob first, then signed finalize stores metadata in DO"
+            transport: "v2 raw encrypted body with pasta-file-envelope metadata header and v1 JSON/base64 fallback",
+            finalizeSemantics: "single signed upload stores metadata and encrypted bytes, rolling back metadata if R2 put fails"
           },
           null,
           2
@@ -361,6 +371,7 @@ async function copyCommand(
   const forceImage = argv.includes("--image");
   const forceFile = argv.includes("--file");
   const forceClipboard = argv.includes("--clipboard");
+  const jsonMode = argv.includes("--json");
   if (forceImage && forceFile) {
     io.stderr("copy accepts only one of --image or --file\n");
     return ExitCode.usage;
@@ -372,7 +383,7 @@ async function copyCommand(
 
   if (filePath) {
     const published = await publishPath(config, secrets, client, filePath, mode, option(argv, "--mime"));
-    io.stdout(clipIsImageLike(published) ? "published image\n" : clipIsDirectoryBundle(published) ? `published directory ${published.seq}\n` : `published file ${published.seq}\n`);
+    writePublished(io, published, jsonMode);
     return ExitCode.ok;
   }
 
@@ -383,8 +394,8 @@ async function copyCommand(
 
   if (mode === "image") {
     const image = await clipboard.readImage();
-    await publishImagePayload(config, secrets, client, image.bytes, image.mime);
-    io.stdout("published image\n");
+    const published = await publishImagePayload(config, secrets, client, image.bytes, image.mime);
+    writePublished(io, published, jsonMode);
     return ExitCode.ok;
   }
 
@@ -392,15 +403,15 @@ async function copyCommand(
   if (readClipboard) {
     const image = await clipboard.readImage().catch(() => null);
     if (image) {
-      await publishImagePayload(config, secrets, client, image.bytes, image.mime);
-      io.stdout("published image\n");
+      const published = await publishImagePayload(config, secrets, client, image.bytes, image.mime);
+      writePublished(io, published, jsonMode);
       return ExitCode.ok;
     }
   }
 
   const text = readClipboard ? await clipboard.readText() : await deps.io?.stdinText?.() ?? await defaultIo.stdinText();
-  await publishText(config, secrets, client, text);
-  io.stdout("published\n");
+  const published = await publishText(config, secrets, client, text);
+  writePublished(io, published, jsonMode);
   return ExitCode.ok;
 }
 
@@ -449,6 +460,7 @@ async function pasteCommand(
   }
   const forceImage = argv.includes("--image");
   const forceFile = argv.includes("--file");
+  const jsonMode = argv.includes("--json");
   if (forceImage && forceFile) {
     io.stderr("paste accepts only one of --image or --file\n");
     return ExitCode.usage;
@@ -474,11 +486,13 @@ async function pasteCommand(
       io.stderr(`history entry ${selectedSeq} is ${payload.clip.payloadKind}, not file\n`);
       return ExitCode.unavailable;
     }
+    const destination = out ?? await defaultOutputPath(config, secrets, payload.clip);
     if (clipIsDirectoryBundle(payload.clip)) {
-      await unzipDirectoryBundle(payload.bytes, out ?? await defaultOutputPath(config, secrets, payload.clip));
+      await unzipDirectoryBundle(payload.bytes, destination);
     } else {
-      await Bun.write(out ?? await defaultOutputPath(config, secrets, payload.clip), payload.bytes);
+      await Bun.write(destination, payload.bytes);
     }
+    writePasteDestination(io, jsonMode, payload.clip, destination, "file");
     return ExitCode.ok;
   }
   const clip = await fetchClip(client, selectedSeq);
@@ -498,9 +512,13 @@ async function pasteCommand(
     const plaintext = await decryptStored(config, secrets, clip);
     if (out) {
       await Bun.write(out, plaintext);
+      writePasteDestination(io, jsonMode, clip, out, "file");
     } else if (argv.includes("--clipboard")) {
       await clipboard.writeText(plaintext);
       await updateConfig((current) => ({ ...current, lastRemotePasteHash: sha256Base64Url(plaintext) }), paths.configPath);
+      if (jsonMode) writePasteDestination(io, true, clip, "clipboard", "clipboard");
+    } else if (jsonMode) {
+      writeJson(io, { ok: true, clipId: clip.clipId, seq: clip.seq, payloadKind: clip.payloadKind, text: plaintext });
     } else {
       io.stdout(plaintext);
       if (!plaintext.endsWith("\n")) io.stdout("\n");
@@ -512,19 +530,49 @@ async function pasteCommand(
     ? (await fetchFilePayload(config, secrets, client, clip.clipId)).bytes
     : await decryptStoredBytes(config, secrets, clip);
   if (clipIsDirectoryBundle(clip)) {
-    await unzipDirectoryBundle(bytes, out ?? await defaultOutputPath(config, secrets, clip));
+    const destination = out ?? await defaultOutputPath(config, secrets, clip);
+    await unzipDirectoryBundle(bytes, destination);
+    writePasteDestination(io, jsonMode, clip, destination, "file");
     return ExitCode.ok;
   }
   if (out) {
     await Bun.write(out, bytes);
+    writePasteDestination(io, jsonMode, clip, out, "file");
     return ExitCode.ok;
   }
   if ((mode === "image" || (mode === "auto" && clip.payloadKind === "image")) && isClipboardPng(clip.mime)) {
     await clipboard.writeImage({ mime: "image/png", bytes });
+    if (jsonMode) writePasteDestination(io, true, clip, "clipboard", "clipboard");
     return ExitCode.ok;
   }
-  await Bun.write(await defaultOutputPath(config, secrets, clip), bytes);
+  const destination = await defaultOutputPath(config, secrets, clip);
+  await Bun.write(destination, bytes);
+  writePasteDestination(io, jsonMode, clip, destination, "file");
   return ExitCode.ok;
+}
+
+function writePasteDestination(
+  io: CliIo,
+  jsonMode: boolean,
+  clip: StoredClip,
+  destination: string,
+  destinationKind: "file" | "clipboard"
+): void {
+  if (jsonMode) {
+    writeJson(io, {
+      ok: true,
+      clipId: clip.clipId,
+      seq: clip.seq,
+      payloadKind: clip.payloadKind,
+      mime: clip.mime,
+      destination: destinationKind,
+      path: destinationKind === "file" ? destination : undefined
+    });
+    return;
+  }
+  if (destinationKind === "file") {
+    io.stdout(`wrote ${destination}\n`);
+  }
 }
 
 async function fetchClip(client: ApiClient, seq: number | null): Promise<StoredClip | null> {
@@ -547,7 +595,17 @@ async function fetchFilePayload(
   client: ApiClient,
   clipId: string
 ): Promise<{ clip: StoredClip; bytes: Uint8Array }> {
-  const response = await client.request<{ clip: StoredClip; ciphertext: string }>("GET", `/v1/files/${encodeURIComponent(clipId)}`);
+  let response: { clip: StoredClip; ciphertext: string };
+  if (client.downloadEncryptedFile) {
+    try {
+      response = await client.downloadEncryptedFile(clipId);
+    } catch (error) {
+      if (!isTransportFallbackError(error)) throw error;
+      response = await client.request<{ clip: StoredClip; ciphertext: string }>("GET", `/v1/files/${encodeURIComponent(clipId)}`);
+    }
+  } else {
+    response = await client.request<{ clip: StoredClip; ciphertext: string }>("GET", `/v1/files/${encodeURIComponent(clipId)}`);
+  }
   return {
     clip: response.clip,
     bytes: await decryptStoredBytes(config, secrets, { ...response.clip, ciphertext: response.ciphertext })
@@ -555,6 +613,13 @@ async function fetchFilePayload(
 }
 
 async function resolveClipBySeq(client: ApiClient, seq: number): Promise<StoredClip | null> {
+  try {
+    const response = await client.request<{ clip: StoredClip }>("GET", `/v1/clips/by-seq/${seq}`);
+    return response.clip ?? null;
+  } catch (error) {
+    if (!isTransportFallbackError(error)) throw error;
+  }
+
   let beforeClipId: string | null = null;
   for (let page = 0; page < 1_000; page += 1) {
     const clips = await fetchHistoryPage(client, beforeClipId);
@@ -672,7 +737,17 @@ async function publishFilePayload(
     keyVersion: config.keyVersion
   };
   const clip = encryptBytesClip(metadata ? { ...input, metadata } : input);
-  const response = await client.request<{ clip: StoredClip }>("POST", "/v1/files", clip);
+  let response: { clip: StoredClip };
+  if (client.uploadEncryptedFile) {
+    try {
+      response = await client.uploadEncryptedFile(clip);
+    } catch (error) {
+      if (!isTransportFallbackError(error)) throw error;
+      response = await client.request<{ clip: StoredClip }>("POST", "/v1/files", clip);
+    }
+  } else {
+    response = await client.request<{ clip: StoredClip }>("POST", "/v1/files", clip);
+  }
   return response.clip;
 }
 
@@ -696,52 +771,76 @@ async function historyCommand(
   clipboard: ClipboardAdapter,
   deps: CliDeps
 ): Promise<ExitCodeValue> {
+  const jsonMode = argv.includes("--json");
   const config = await readConfig(paths.configPath);
   const client = clientFor(config, secrets, deps);
   if (argv[0] === "paste") {
-    const seq = parseSeq(argv[1]);
-    if (seq === null) return ExitCode.usage;
-    const selected = await resolveClipBySeq(client, seq);
+    const selector = parseHistorySelector(argv[1]);
+    if (!selector) return ExitCode.usage;
+    const selected = await resolveHistorySelector(client, selector);
     if (!selected) {
-      io.stderr(`no history entry ${seq}\n`);
+      io.stderr(`no history entry ${selector.label}\n`);
       return ExitCode.unavailable;
     }
     const clip = await fetchClipById(client, selected.clipId);
     if (clip.payloadKind !== "text") {
-      io.stderr(`history paste only supports text clips; use pasta paste --seq ${seq} --out <path>\n`);
+      io.stderr(`history paste only supports text clips; use pasta paste --seq ${selected.seq} --out <path>\n`);
       return ExitCode.usage;
     }
     const plaintext = await decryptStored(config, secrets, clip);
     if (argv.includes("--clipboard")) {
       await clipboard.writeText(plaintext);
+      if (jsonMode) writeJson(io, { ok: true, clipId: selected.clipId, seq: selected.seq, destination: "clipboard" });
+    } else if (jsonMode) {
+      writeJson(io, { ok: true, clipId: selected.clipId, seq: selected.seq, text: plaintext });
     } else {
       io.stdout(plaintext + (plaintext.endsWith("\n") ? "" : "\n"));
     }
     return ExitCode.ok;
   }
   if (argv[0] === "delete") {
-    const seq = parseSeq(argv[1]);
-    if (seq === null) return ExitCode.usage;
-    const selected = await resolveClipBySeq(client, seq);
+    const selector = parseHistorySelector(argv[1]);
+    if (!selector) return ExitCode.usage;
+    const selected = await resolveHistorySelector(client, selector);
     if (!selected) {
-      io.stderr(`no history entry ${seq}\n`);
+      io.stderr(`no history entry ${selector.label}\n`);
       return ExitCode.unavailable;
     }
     const response = await client.request<{ deleted: number; deletedObjects: number }>("DELETE", `/v1/clips/${encodeURIComponent(selected.clipId)}`);
     if (response.deleted === 0) {
-      io.stderr(`no history entry ${seq}\n`);
+      io.stderr(`no history entry ${selector.label}\n`);
       return ExitCode.unavailable;
     }
-    io.stdout(`deleted ${seq}\n`);
+    if (jsonMode) {
+      writeJson(io, { ok: true, clipId: selected.clipId, seq: selected.seq, ...response });
+    } else {
+      io.stdout(`deleted ${selector.label}\n`);
+    }
     return ExitCode.ok;
   }
   const response = await client.request<{ clips: StoredClip[] }>("GET", "/v1/clips/history?limit=50");
   const showPlaintext = argv.includes("--show");
+  if (jsonMode) {
+    const clips = await Promise.all(response.clips.map(async (clip) => ({
+      seq: clip.seq,
+      clipId: clip.clipId,
+      createdAt: clip.createdAt,
+      payloadKind: clip.payloadKind,
+      mime: clip.mime,
+      byteLen: clip.byteLen,
+      storageKind: clip.storageKind ?? "inline",
+      preview: showPlaintext && clip.payloadKind === "text"
+        ? await decryptStored(config, secrets, clip)
+        : await renderHistoryClip(config, secrets, clip)
+    })));
+    writeJson(io, { clips });
+    return ExitCode.ok;
+  }
   for (const clip of response.clips) {
     const rendered = showPlaintext && clip.payloadKind === "text"
       ? await decryptStored(config, secrets, clip)
       : await renderHistoryClip(config, secrets, clip);
-    io.stdout(`${clip.seq}\t${new Date(clip.createdAt).toISOString()}\t${rendered}\n`);
+    io.stdout(`${clip.seq}\t${clip.clipId}\t${new Date(clip.createdAt).toISOString()}\t${rendered}\n`);
   }
   return ExitCode.ok;
 }
@@ -765,7 +864,13 @@ async function pairCommand(
     const ticket = option(argv, "--ticket");
     const endpoint = option(argv, "--endpoint");
     const account = option(argv, "--account-id");
-    const parsed = ticket ? parsePairTicket(ticket) : null;
+    let parsed: { endpoint: string; accountId: string; routingId: string } | null = null;
+    try {
+      parsed = ticket ? parsePairTicket(ticket) : null;
+    } catch (error) {
+      io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
+      return ExitCode.usage;
+    }
     const accountId = parsed?.accountId ?? account;
     const routingId = parsed?.routingId ?? option(argv, "--routing-id") ?? "";
     const resolvedEndpoint = parsed?.endpoint ?? endpoint;
@@ -990,6 +1095,10 @@ async function devicesCommand(
   if (argv[0] === "list" || !argv[0]) {
     const path = argv.includes("--include-revoked") ? "/v1/devices?includeRevoked=true" : "/v1/devices";
     const response = await client.request<{ devices: Array<{ deviceId: string; deviceName: string; status: string }> }>("GET", path);
+    if (argv.includes("--json")) {
+      writeJson(io, response);
+      return ExitCode.ok;
+    }
     for (const device of response.devices) {
       io.stdout(`${device.deviceId}\t${device.status}\t${device.deviceName}\n`);
     }
@@ -1030,6 +1139,104 @@ async function devicesCommand(
 
 function clientFor(config: PastaConfig, secrets: SecretStore, deps: Pick<CliDeps, "clientFactory">): ApiClient {
   return deps.clientFactory?.(config, secrets) ?? new FetchApiClient(config, secrets);
+}
+
+async function statusCommand(
+  argv: string[],
+  io: CliIo,
+  paths: Paths,
+  secrets: SecretStore,
+  clipboard: ClipboardAdapter
+): Promise<ExitCodeValue> {
+  const jsonMode = argv.includes("--json");
+  const config = await readConfig(paths.configPath).catch(() => null);
+  const doctor = await clipboard.doctor().catch((error) => ({
+    platform: process.platform,
+    adapter: null,
+    available: false,
+    details: [error instanceof Error ? error.message : String(error)]
+  }));
+  const secretState = {
+    groupKey: Boolean(await secrets.get(SecretName.groupKey)),
+    signingPrivateKey: Boolean(await secrets.get(SecretName.signingPrivateKey)),
+    wrappingPrivateKey: Boolean(await secrets.get(SecretName.wrappingPrivateKey))
+  };
+  const status = {
+    version: PASTA_VERSION,
+    configured: Boolean(config),
+    endpoint: config?.endpoint ?? null,
+    accountId: config?.accountId ?? null,
+    routingId: config?.routingId ?? null,
+    deviceId: config?.deviceId ?? null,
+    deviceName: config?.deviceName ?? null,
+    keyVersion: config?.keyVersion ?? null,
+    lastRemotePasteHash: config?.lastRemotePasteHash ? "set" : "unset",
+    clipboard: doctor,
+    secrets: secretState
+  };
+  if (jsonMode) {
+    writeJson(io, status);
+  } else {
+    io.stdout(`version\t${status.version}\n`);
+    io.stdout(`configured\t${status.configured}\n`);
+    if (config) {
+      io.stdout(`endpoint\t${config.endpoint}\n`);
+      io.stdout(`device\t${config.deviceId}\t${config.deviceName}\n`);
+      io.stdout(`routing\t${config.routingId}\n`);
+    }
+    io.stdout(`clipboard\t${doctor.available ? doctor.adapter : "unavailable"}\n`);
+    io.stdout(`secrets\tgroup=${secretState.groupKey} signing=${secretState.signingPrivateKey} wrapping=${secretState.wrappingPrivateKey}\n`);
+  }
+  return config && doctor.available ? ExitCode.ok : ExitCode.unavailable;
+}
+
+function writePublished(io: CliIo, clip: StoredClip, jsonMode: boolean): void {
+  const summary = {
+    ok: true,
+    clipId: clip.clipId,
+    seq: clip.seq,
+    payloadKind: clip.payloadKind,
+    mime: clip.mime,
+    byteLen: clip.byteLen,
+    storageKind: clip.storageKind ?? "inline"
+  };
+  if (jsonMode) {
+    writeJson(io, summary);
+    return;
+  }
+  const noun = clipIsDirectoryBundle(clip) ? "directory" : clipIsImageLike(clip) ? "image" : clip.payloadKind;
+  io.stdout(`published ${noun} ${clip.seq} ${clip.clipId}\n`);
+}
+
+function writeJson(io: CliIo, value: unknown): void {
+  io.stdout(JSON.stringify(value, null, 2) + "\n");
+}
+
+function isTransportFallbackError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message === "not_found"
+    || message === "invalid_json_response"
+    || message === "missing_file_envelope"
+    || message.startsWith("http_404");
+}
+
+type HistorySelector = { kind: "seq"; seq: number; label: string } | { kind: "clipId"; clipId: string; label: string };
+
+function parseHistorySelector(value: string | undefined): HistorySelector | null {
+  const seq = parseSeq(value);
+  if (seq !== null) return { kind: "seq", seq, label: String(seq) };
+  if (value && /^clip_[A-Za-z0-9_-]+$/u.test(value)) return { kind: "clipId", clipId: value, label: value };
+  return null;
+}
+
+async function resolveHistorySelector(client: ApiClient, selector: HistorySelector): Promise<StoredClip | null> {
+  if (selector.kind === "seq") return await resolveClipBySeq(client, selector.seq);
+  try {
+    return await fetchClipById(client, selector.clipId);
+  } catch (error) {
+    if (isTransportFallbackError(error)) return null;
+    throw error;
+  }
 }
 
 function option(argv: string[], name: string): string | undefined {
@@ -1113,6 +1320,7 @@ function firstPositional(argv: string[]): string | undefined {
     "--path",
     "--command",
     "--interval-ms",
+    "--max-interval-ms",
     "--token",
     "--token-ttl",
     "--device-ttl",
@@ -1178,12 +1386,35 @@ function validateGrantOptions(tokenTtlMs: number, deviceTtlMs: number | null, ma
 }
 
 function parsePairTicket(ticket: string): { endpoint: string; accountId: string; routingId: string } {
-  const url = new URL(ticket);
-  return {
-    endpoint: url.searchParams.get("endpoint") ?? "",
-    accountId: url.searchParams.get("account") ?? "",
-    routingId: url.searchParams.get("routing") ?? ""
-  };
+  let url: URL;
+  try {
+    url = new URL(ticket);
+  } catch {
+    throw new Error("pair ticket must be a pasta://pair URL");
+  }
+  if (url.protocol !== "pasta:" || url.hostname !== "pair") {
+    throw new Error("pair ticket must be a pasta://pair URL");
+  }
+  const endpoint = url.searchParams.get("endpoint") ?? "";
+  const accountId = url.searchParams.get("account") ?? "";
+  const routingId = url.searchParams.get("routing") ?? "";
+  const missing = [
+    ["endpoint", endpoint],
+    ["account", accountId],
+    ["routing", routingId]
+  ].filter(([, value]) => !value).map(([name]) => name);
+  if (missing.length > 0) {
+    throw new Error(`pair ticket is missing ${missing.join(", ")}`);
+  }
+  try {
+    const parsedEndpoint = new URL(endpoint);
+    if (parsedEndpoint.protocol !== "https:" && parsedEndpoint.protocol !== "http:") {
+      throw new Error("unsupported endpoint scheme");
+    }
+  } catch {
+    throw new Error("pair ticket endpoint must be an http(s) URL");
+  }
+  return { endpoint, accountId, routingId };
 }
 
 function mimeForPath(filePath: string, detected: string | undefined): string {
@@ -1318,7 +1549,15 @@ Checks local clipboard adapter availability.
 Examples:
   pasta doctor
 `,
-    copy: `usage: pasta copy [path] [--path <path>] [--clipboard] [--image|--file] [--mime <type>]
+    status: `usage: pasta status [--json]
+
+Prints local configuration, clipboard adapter, and secret-store readiness.
+
+Examples:
+  pasta status
+  pasta status --json
+`,
+    copy: `usage: pasta copy [path] [--path <path>] [--clipboard] [--image|--file] [--mime <type>] [--json]
 
 Copies text, image, file, or directory data. Piped stdin is text. A path is detected as an image when possible, as a directory when it is one, otherwise as a file.
 Directory paths are bundled locally as zip bytes before encryption.
@@ -1335,7 +1574,7 @@ Examples:
   pasta copy --image
   pasta copy --file ./notes.txt --mime text/plain
 `,
-    paste: `usage: pasta paste [--clipboard] [--seq <n>] [--out <path>] [--image|--file]
+    paste: `usage: pasta paste [--clipboard] [--seq <n>] [--out <path>] [--image|--file] [--json]
 
 Pulls the latest or selected encrypted clip, decrypts locally, and routes by payload kind.
 File clips save to the original basename, or output.<ext> when no basename exists; use --out to choose a path.
@@ -1350,9 +1589,9 @@ Examples:
   pasta paste --image --out ./screenshot.png
   pasta paste --file --seq 21 --out ./received.zip
 `,
-    history: `usage: pasta history [--show] | pasta history paste <seq> [--clipboard] | pasta history delete <seq>
+    history: `usage: pasta history [--show] [--json] | pasta history paste <seq|clipId> [--clipboard] [--json] | pasta history delete <seq|clipId> [--json]
 
-Lists history with local text previews and file names, pastes a selected text entry, or deletes a selected history entry.
+Lists history with local text previews, stable clip IDs, and file names; pastes a selected text entry; or deletes a selected history entry.
 
 Examples:
   pasta history
@@ -1360,16 +1599,18 @@ Examples:
   pasta history paste 7
   pasta history paste 7 --clipboard
   pasta history delete 7
+  pasta history delete clip_example
+  pasta history --json
 `,
-    daemon: `usage: pasta daemon [--once] [--dry-run] [--interval-ms <n>]
+    daemon: `usage: pasta daemon [--once] [--dry-run] [--interval-ms <n>] [--max-interval-ms <n>]
 
-Polls the clipboard and auto-publishes local text changes.
+Polls the clipboard and auto-publishes local text changes with adaptive idle backoff.
 
 Examples:
   pasta daemon
   pasta daemon --once
   pasta daemon --dry-run
-  pasta daemon --interval-ms 2000
+  pasta daemon --interval-ms 2000 --max-interval-ms 10000
 `,
     pair: `usage: pasta pair ticket | pasta pair request --ticket <payload> | pasta pair consume
        pasta pair grant create [--token-ttl <duration>] [--device-ttl <duration>] [--uses <n>] [--label <text>] [--json]
@@ -1389,7 +1630,7 @@ Examples:
   PASTA_JOIN_TOKEN="$token" pasta pair join --device-name modal-sandbox
   pasta pair grant revoke grant_example
 `,
-    devices: `usage: pasta devices list [--include-revoked] | pasta devices approve <code> | pasta devices revoke <device>
+    devices: `usage: pasta devices list [--include-revoked] [--json] | pasta devices approve <code> | pasta devices revoke <device>
 
 Lists active devices by default, approves pair requests, or revokes trusted devices.
 Use --include-revoked to show revoked device rows for governance/history.
@@ -1473,12 +1714,13 @@ function helpText(): string {
     "  bootstrap --endpoint <url> [--device-name <name>]",
     "  pair ticket | pair request --ticket <payload> | pair consume",
     "  pair grant create [--json] | pair grant revoke <grantId> | pair join --token <token>",
-    "  devices list [--include-revoked] | devices approve <code> | devices revoke <device>",
-    "  copy [path] [--image|--file] [--mime <type>]",
-    "  paste [--clipboard] [--seq <n>] [--out <path>]",
-    "  history [--show] | history paste <seq>",
-    "  daemon [--once] [--dry-run] [--interval-ms <n>]",
+    "  devices list [--include-revoked] [--json] | devices approve <code> | devices revoke <device>",
+    "  copy [path] [--image|--file] [--mime <type>] [--json]",
+    "  paste [--clipboard] [--seq <n>] [--out <path>] [--json]",
+    "  history [--show] [--json] | history paste <seq|clipId> | history delete <seq|clipId>",
+    "  daemon [--once] [--dry-run] [--interval-ms <n>] [--max-interval-ms <n>]",
     "  doctor",
+    "  status [--json]",
     "  reset --yes",
     "  install-hotkeys | uninstall-hotkeys",
     "  install-shell | uninstall-shell",
