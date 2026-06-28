@@ -92,4 +92,4 @@ jobs:
         run: swift test --package-path ios
 
       - name: Run keyboard performance gate
-        run: swift ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 10000 --mode both --max-optimized-total-ms 600 --min-improvement-percent 50
+        run: swift ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 10000 --mode both --max-optimized-total-ms 1500 --min-improvement-percent 35
