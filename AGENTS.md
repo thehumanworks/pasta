@@ -77,7 +77,10 @@ Working pattern:
 - Privacy stays intact: never publish ordinary keystrokes; read the pasteboard
   only behind an explicit user-tapped action.
 
-Proof: a green `xcodebuild` simulator build and PluginKit registration prove it
+Proof: `swift test --package-path ios` exercises the shared Swift package, not
+`PastaKeyboard.appex`; keyboard-extension changes require a simulator
+`xcodebuild` with an isolated `-derivedDataPath`. A green `xcodebuild`
+simulator build and PluginKit registration prove it
 **compiles and installs**, not that the chrome looks right. Keyboard-extension
 chrome (top strip, safe area, globe, height) only renders correctly in the real
 extension host — the last strip survived a green simulator build and a TestFlight
