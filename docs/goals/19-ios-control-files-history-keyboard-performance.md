@@ -4,7 +4,7 @@ title: "iOS Control Plane Files, History Delete, And Keyboard Performance"
 status: "done"
 confidence_floor: 90
 created: "2026-06-27"
-updated: "2026-06-27"
+updated: "2026-06-29"
 ---
 
 # Goal: iOS Control Plane Files, History Delete, And Keyboard Performance
@@ -334,6 +334,58 @@ Verification Contract:
   docs/goals/19-ios-control-files-history-keyboard-performance.md` - exit 0;
   goal parsed with 5/5 DoD covered and no authoring violations.
 
+### T4C - Fix Immediate Key Press Visual Feedback - [x]
+
+- Re-check the lower-level pressed-state path after device feedback that Pasta
+  keys looked pressed only after a longer tap or pressure change.
+- Add immediate touch-down visual feedback without replacing KeyboardKit key
+  views, gestures, input handling, callouts, autocomplete, globe, or repeat
+  behavior.
+- Keep the mitigation visual-only and privacy-preserving: no ordinary
+  keystrokes are published or inspected.
+
+Verification Contract:
+
+- Local KeyboardKit source inspection identifies the pressed-state root cause.
+- Swift tests cover the feedback timing policy.
+- A simulator app plus keyboard-extension build passes.
+
+**Confidence:** 91/100
+**Closes:** DoD-4
+**Evidence:**
+
+- 2026-06-29 - root-cause source inspection - KeyboardKit
+  `KeyboardViewItem` stores `@State var isPressed` and passes it into
+  `.keyboardButton(...)`; `Keyboard+ButtonGestures.swift` routes press/release
+  through `.keyboardButtonGestures(...)`; `GestureButton.swift` uses
+  `DragGesture(minimumDistance: 0)` and sets `state.isPressed = true` in
+  `tryHandlePress`. This matches the visual symptom: pressed chrome waits for
+  SwiftUI drag gesture delivery instead of UIKit `touchesBegan`.
+- 2026-06-29 - implementation -
+  `ios/Keyboard/KeyboardViewController.swift` wraps each KeyboardKit
+  `params.view` in `PastaImmediateKeyPressFeedback` inside the native
+  `buttonView:` builder. The wrapper adds a non-hit-testing overlay driven by a
+  passive UIKit monitor whose recognizer has `cancelsTouchesInView=false`,
+  `delaysTouchesBegan=false`, and simultaneous recognition, so KeyboardKit
+  still owns key action dispatch, callouts, autocomplete, globe, shift/case,
+  delete repeat, toolbar, and layout.
+- 2026-06-29 - policy tests - `mise exec -- swift test --package-path ios
+  --filter PastaKeyboardTouchFeedbackPolicyTests` - exit 0; 4 tests executed,
+  0 failures. Tests assert zero touch-down delay, no animation, short-tap
+  minimum visibility, and subtle light/dark overlay opacity.
+- 2026-06-29 - full Swift tests - `mise exec -- swift test --package-path ios`
+  - exit 0; 39 XCTest tests executed, 1 gated live-relay smoke skipped without
+  `PASTA_IOS_JOIN_TOKEN`, 0 failures.
+- 2026-06-29 - simulator keyboard build - `mise exec -- xcodebuild -project
+  ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -destination
+  'platform=iOS Simulator,id=3B7957A1-B1DC-4CBA-BE89-AFD66FBF6C70'
+  -derivedDataPath ios/build/DerivedDataImmediatePress build` - exit 0;
+  containing app and embedded `PastaKeyboard.appex` compiled with the immediate
+  visual feedback wrapper.
+- 2026-06-29 - generated package churn check - `ios/Package.resolved` was
+  restored after Xcode regenerated an unrelated KeyboardKit pin and
+  `originHash`; no dependency pins intentionally changed.
+
 ### T5 - Integrate, Release, And Prove Distribution - [x]
 
 - Merge reviewed worktrees into local `main`.
@@ -428,6 +480,25 @@ Verification Contract:
   `91ffd61d-626c-44e4-ab22-552d858c3d0b` with
   `hasAccessToAllBuilds=True`; build `18`
   `d3263208-961b-4db6-990b-e6c4f2b88868` is `processingState=VALID`,
+  `expired=False`, `minOsVersion=17.0`, and
+  `usesNonExemptEncryption=False`.
+- 2026-06-29 - immediate-feedback TestFlight upload - `archive_upload.sh` with
+  `SCHEME=Pasta`, `CONFIGURATION=Release`, `DEVELOPMENT_TEAM=54MXM5JG3R`,
+  `APP_BUILD_VERSION=19`, `EXPECT_NO_NON_EXEMPT_ENCRYPTION=1`,
+  `TESTFLIGHT_BETA_GROUP_NAME=internal`, and
+  `REQUIRE_TESTFLIGHT_GROUP_ASSIGNMENT=1` - exit 0; archive/export/upload
+  produced `ios/build/export-0.1.9-19/Pasta.ipa`, xcodebuild reported
+  `Upload succeeded`, and IPA inspection reported
+  `CFBundleShortVersionString=0.1.9`, `CFBundleVersion=19`,
+  `ITSAppUsesNonExemptEncryption=false`, nested
+  `PlugIns/PastaKeyboard.appex`, `get-task-allow=false`, and basic Apple
+  distribution checks passed.
+- 2026-06-29 - TestFlight processing/group proof for build 19 -
+  `ios/build/apple-release-0.1.9-19/testflight-release.log` shows App Store
+  Connect app `6785005536`; beta group `internal`
+  `91ffd61d-626c-44e4-ab22-552d858c3d0b` with
+  `hasAccessToAllBuilds=True`; build `19`
+  `35e96e7f-9a5a-45c5-9254-8b4ae6b326cd` is `processingState=VALID`,
   `expired=False`, `minOsVersion=17.0`, and
   `usesNonExemptEncryption=False`.
 
