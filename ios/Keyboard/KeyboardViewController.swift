@@ -271,7 +271,11 @@ private struct PastaKeyboardView: View {
             state: state,
             services: services,
             buttonContent: { $0.view },
-            buttonView: { $0.view },
+            buttonView: { params in
+                PastaImmediateKeyPressFeedback(item: params.item) {
+                    params.view
+                }
+            },
             collapsedView: { $0.view },
             emojiKeyboard: { $0.view },
             toolbar: { params in
@@ -316,6 +320,217 @@ private struct PastaKeyboardView: View {
             "\(keyboardContext.needsInputModeSwitchKey)",
             keyboardContext.locale.identifier
         ].joined(separator: "|")
+    }
+}
+
+private struct PastaImmediateKeyPressFeedback<Content: View>: View {
+    let item: KeyboardLayout.Item
+    let content: Content
+
+    @EnvironmentObject private var keyboardContext: KeyboardContext
+    @State private var isTouchDown = false
+    @State private var touchGeneration = 0
+
+    private let policy = PastaKeyboardTouchFeedbackPolicy.standard
+
+    init(item: KeyboardLayout.Item, @ViewBuilder content: () -> Content) {
+        self.item = item
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .overlay(feedbackOverlay.allowsHitTesting(false))
+            .background(PastaTouchDownMonitor(onTouchDownChange: handleTouchDownChange))
+            .onDisappear {
+                touchGeneration += 1
+                isTouchDown = false
+            }
+            .transaction { transaction in
+                transaction.animation = policy.animationDurationSeconds > 0
+                    ? .linear(duration: policy.animationDurationSeconds)
+                    : nil
+            }
+    }
+
+    @ViewBuilder
+    private var feedbackOverlay: some View {
+        if isTouchDown, shouldRenderFeedback {
+            RoundedRectangle(cornerRadius: item.action.standardButtonCornerRadius(for: keyboardContext))
+                .fill(feedbackColor)
+                .padding(item.edgeInsets)
+        }
+    }
+
+    private var feedbackColor: Color {
+        let opacity = keyboardContext.hasDarkColorScheme
+            ? policy.visualFeedbackOpacityDark
+            : policy.visualFeedbackOpacityLight
+        let base = keyboardContext.hasDarkColorScheme ? Color.white : Color.black
+        return base.opacity(opacity)
+    }
+
+    private var shouldRenderFeedback: Bool {
+        !item.action.isSpacer
+    }
+
+    private func handleTouchDownChange(_ isPressed: Bool) {
+        if isPressed {
+            touchGeneration += 1
+            isTouchDown = true
+        } else {
+            scheduleTouchUp()
+        }
+    }
+
+    private func scheduleTouchUp() {
+        let generation = touchGeneration
+        let delay = policy.minimumVisibleNanoseconds
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: delay)
+            guard generation == touchGeneration else { return }
+            isTouchDown = false
+        }
+    }
+}
+
+/// Passive UIKit touch-down observer used only for visual feedback. KeyboardKit
+/// still owns the key gesture, action handler, callouts, and text insertion.
+private struct PastaTouchDownMonitor: UIViewRepresentable {
+    let onTouchDownChange: (Bool) -> Void
+
+    func makeUIView(context: Context) -> PastaTouchDownMonitorView {
+        let view = PastaTouchDownMonitorView()
+        view.onTouchDownChange = onTouchDownChange
+        return view
+    }
+
+    func updateUIView(_ view: PastaTouchDownMonitorView, context: Context) {
+        view.onTouchDownChange = onTouchDownChange
+        view.installRecognizerIfNeeded()
+    }
+
+    static func dismantleUIView(_ view: PastaTouchDownMonitorView, coordinator: ()) {
+        Task { @MainActor in
+            view.removeRecognizer()
+        }
+    }
+}
+
+private final class PastaTouchDownMonitorView: UIView, UIGestureRecognizerDelegate {
+    var onTouchDownChange: ((Bool) -> Void)?
+
+    private lazy var recognizer = PastaTouchDownGestureRecognizer(trackedView: self) { [weak self] isPressed in
+        self?.onTouchDownChange?(isPressed)
+    }
+    private weak var installedHost: UIView?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isOpaque = false
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+        recognizer.cancelsTouchesInView = false
+        recognizer.delaysTouchesBegan = false
+        recognizer.delaysTouchesEnded = false
+        recognizer.delegate = self
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        installRecognizerIfNeeded()
+    }
+
+    func installRecognizerIfNeeded() {
+        guard let window else {
+            removeRecognizer()
+            return
+        }
+        guard installedHost !== window else { return }
+        removeRecognizer()
+        window.addGestureRecognizer(recognizer)
+        installedHost = window
+    }
+
+    func removeRecognizer() {
+        installedHost?.removeGestureRecognizer(recognizer)
+        installedHost = nil
+        onTouchDownChange?(false)
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
+    }
+}
+
+private final class PastaTouchDownGestureRecognizer: UIGestureRecognizer {
+    private weak var trackedView: UIView?
+    private let onTouchDownChange: (Bool) -> Void
+    private weak var activeTouch: UITouch?
+    private var isTouchDown = false {
+        didSet {
+            guard isTouchDown != oldValue else { return }
+            onTouchDownChange(isTouchDown)
+        }
+    }
+
+    init(trackedView: UIView, onTouchDownChange: @escaping (Bool) -> Void) {
+        self.trackedView = trackedView
+        self.onTouchDownChange = onTouchDownChange
+        super.init(target: nil, action: nil)
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard activeTouch == nil else { return }
+        guard let touch = touches.first(where: isTouchInsideTrackedView) else { return }
+        activeTouch = touch
+        isTouchDown = true
+        state = .began
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard let activeTouch, touches.contains(activeTouch) else { return }
+        isTouchDown = isTouchInsideTrackedView(activeTouch)
+        if state == .began || state == .changed {
+            state = .changed
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        finishIfNeeded(for: touches, state: activeTouch == nil ? .failed : .ended)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        finishIfNeeded(for: touches, state: .cancelled)
+    }
+
+    override func reset() {
+        activeTouch = nil
+        isTouchDown = false
+    }
+
+    private func finishIfNeeded(for touches: Set<UITouch>, state newState: UIGestureRecognizer.State) {
+        guard let activeTouch else {
+            state = .failed
+            return
+        }
+        guard touches.contains(activeTouch) else { return }
+        isTouchDown = false
+        self.activeTouch = nil
+        state = newState
+    }
+
+    private func isTouchInsideTrackedView(_ touch: UITouch) -> Bool {
+        guard let view = trackedView, view.window != nil else { return false }
+        let location = touch.location(in: view)
+        return view.bounds.contains(location)
     }
 }
 
@@ -589,19 +804,19 @@ private final class PastaAutocompleteService: AutocompleteService {
     }
 
     func ignoreWord(_ word: String) {
-        wordsLock.withLock { ignored.insert(PastaKeyboardAutocompleteEngine.normalized(word)) }
+        _ = wordsLock.withLock { ignored.insert(PastaKeyboardAutocompleteEngine.normalized(word)) }
     }
 
     func learnWord(_ word: String) {
-        wordsLock.withLock { learned.insert(PastaKeyboardAutocompleteEngine.normalized(word)) }
+        _ = wordsLock.withLock { learned.insert(PastaKeyboardAutocompleteEngine.normalized(word)) }
     }
 
     func removeIgnoredWord(_ word: String) {
-        wordsLock.withLock { ignored.remove(PastaKeyboardAutocompleteEngine.normalized(word)) }
+        _ = wordsLock.withLock { ignored.remove(PastaKeyboardAutocompleteEngine.normalized(word)) }
     }
 
     func unlearnWord(_ word: String) {
-        wordsLock.withLock { learned.remove(PastaKeyboardAutocompleteEngine.normalized(word)) }
+        _ = wordsLock.withLock { learned.remove(PastaKeyboardAutocompleteEngine.normalized(word)) }
     }
 }
 
