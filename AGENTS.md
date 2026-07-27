@@ -79,7 +79,9 @@ Working pattern:
 
 Proof: `swift test --package-path ios` exercises the shared Swift package, not
 `PastaKeyboard.appex`; keyboard-extension changes require a simulator
-`xcodebuild` with an isolated `-derivedDataPath`. A green `xcodebuild`
+`xcodebuild` with an isolated `-derivedDataPath`. Host `swift -e` is not valid
+UIKit or keyboard-extension proof; use simulator-targeted `xcodebuild` or an
+executable built against the simulator SDK. A green `xcodebuild`
 simulator build and PluginKit registration prove it
 **compiles and installs**, not that the chrome looks right. Keyboard-extension
 chrome (top strip, safe area, globe, height) only renders correctly in the real
