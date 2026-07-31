@@ -352,6 +352,16 @@ Verification Contract:
   ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 40000 --mode both
   --min-improvement-percent 60` - exit 0; `baseline.total: 5903.606 ms`,
   `optimized.total: 1754.200 ms`, improvement `4149.406 ms` / `70.286% faster`.
+- 2026-07-31 - render-efficiency follow-up - keyboard controller now isolates
+  toolbar model observation from the key surface, uses one shared UIKit press
+  highlight, exits/coalesces unchanged autocomplete text, and publishes only
+  changed suggestion fingerprints. Host benchmark
+  `swift ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 40000
+  --mode both --min-improvement-percent 60` - exit 0; `baseline.total:
+  5173.210 ms`, `optimized.total: 1905.933 ms`, improvement `3267.278 ms` /
+  `63.158% faster`. Docs build passed; Linux host could not complete
+  `swift test --package-path ios` because system libsodium lacks AEGIS APIs
+  required by swift-sodium, and has no Xcode/simulator for `PastaKeyboard.appex`.
 
 ### T4C - Fix Immediate Key Press Visual Feedback - [x]
 
