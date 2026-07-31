@@ -106,20 +106,24 @@ final class PastaAppModel: ObservableObject {
             if resourceValues.isDirectory == true {
                 throw PastaAppError.directoryImportNotSupported
             }
-            let fileSize = resourceValues.fileSize ?? 0
-            if fileSize > PastaCore.largePayloadMaxBytes {
+            let fileSize = resourceValues.fileSize
+            if let fileSize, fileSize > PastaCore.largePayloadMaxBytes {
                 throw PastaAppError.fileTooLarge(fileSize)
             }
-            status = "Encrypting \(url.lastPathComponent) (\(Self.formatBytes(fileSize)))..."
-            let data = try await Task.detached(priority: .userInitiated) {
-                try Data(contentsOf: url, options: [.mappedIfSafe])
+            if let fileSize {
+                status = "Encrypting \(url.lastPathComponent) (\(Self.formatBytes(fileSize)))..."
+            } else {
+                status = "Reading \(url.lastPathComponent)..."
+            }
+            let bytes = try await Task.detached(priority: .userInitiated) {
+                try PastaBoundedFileReader.readBytes(at: url)
             }.value
             let contentType = resourceValues.contentType ?? UTType(filenameExtension: url.pathExtension)
             let mime = contentType?.preferredMIMEType ?? "application/octet-stream"
             let payloadKind = mime.hasPrefix("image/") ? "image" : "file"
-            status = "Uploading encrypted \(Self.formatBytes(data.count))..."
+            status = "Uploading encrypted \(Self.formatBytes(bytes.count))..."
             let clip = try await client.publishFile(
-                bytes: Array(data),
+                bytes: bytes,
                 fileName: url.lastPathComponent,
                 mime: mime,
                 payloadKind: payloadKind,
@@ -267,6 +271,8 @@ final class PastaAppModel: ObservableObject {
             return "Directory import is not supported on iOS yet. Compress the folder first."
         case PastaAppError.fileTooLarge(let bytes):
             return "File is \(formatBytes(bytes)); Pasta supports up to \(formatBytes(PastaCore.largePayloadMaxBytes))."
+        case PastaFileError.fileTooLarge(let maximumByteCount):
+            return "File exceeds Pasta's \(formatBytes(maximumByteCount)) limit."
         case let apiError as PastaAPIError:
             return statusMessage(for: apiError)
         default:

@@ -125,22 +125,16 @@ public struct PastaKeyboardAutocompleteEngine: Sendable {
     }
 
     private static func currentWord(in text: String) -> String? {
-        let nsText = text as NSString
-        var start = nsText.length
-        while start > 0 {
-            let codeUnit = nsText.character(at: start - 1)
-            guard
-                let scalar = UnicodeScalar(Int(codeUnit)),
-                wordCharacters.contains(scalar)
-            else {
-                break
-            }
-            start -= 1
+        let scalars = text.unicodeScalars
+        var start = scalars.endIndex
+        while start != scalars.startIndex {
+            let previous = scalars.index(before: start)
+            guard wordCharacters.contains(scalars[previous]) else { break }
+            start = previous
         }
 
-        let length = nsText.length - start
-        guard length > 0 else { return nil }
-        return nsText.substring(with: NSRange(location: start, length: length))
+        guard start != scalars.endIndex else { return nil }
+        return String(scalars[start...])
     }
 
     public static func normalized(_ word: String) -> String {

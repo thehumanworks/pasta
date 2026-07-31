@@ -130,6 +130,16 @@ Verification Contract:
   build` - exit 0; app and embedded keyboard extension compiled for simulator
   with file import/export UI.
 - 2026-06-27 - `git diff --check` - exit 0.
+- 2026-07-31 - follow-up review found that the document-provider
+  `.fileSizeKey` guard treated missing metadata as zero and then loaded the
+  complete file before `PastaCrypto` could reject it. `PastaBoundedFileReader`
+  now reads at most the configured 50 MB limit plus one detection byte and
+  returns bytes directly to encryption, preserving the existing encrypted
+  metadata and API behavior.
+- 2026-07-31 - `mise exec -- swift test --package-path ios --filter
+  PastaBoundedFileReaderTests` - exit 0; 2 tests passed for exact-limit reads
+  and early oversized-file rejection. The full Swift suite later passed 42
+  tests with 1 gated live-relay smoke skipped.
 
 ### T3 - Implement Control-Plane History Delete - [x]
 
@@ -333,6 +343,15 @@ Verification Contract:
 - 2026-06-28 - `git diff --check` plus `gdd_status.py --author
   docs/goals/19-ios-control-files-history-keyboard-performance.md` - exit 0;
   goal parsed with 5/5 DoD covered and no authoring violations.
+- 2026-07-31 - follow-up review replaced the UTF-16 code-unit trailing-word
+  scan with a Unicode-scalar index walk, so supplementary-plane letters remain
+  part of the current autocomplete word. `mise exec -- swift test
+  --package-path ios --filter PastaKeyboardAutocompletePolicyTests` - exit 0;
+  8 tests passed, including the new supplementary-plane regression case.
+- 2026-07-31 - keyboard hot-path benchmark - `mise exec -- swift
+  ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 40000 --mode both
+  --min-improvement-percent 60` - exit 0; `baseline.total: 5903.606 ms`,
+  `optimized.total: 1754.200 ms`, improvement `4149.406 ms` / `70.286% faster`.
 
 ### T4C - Fix Immediate Key Press Visual Feedback - [x]
 
@@ -385,6 +404,37 @@ Verification Contract:
 - 2026-06-29 - generated package churn check - `ios/Package.resolved` was
   restored after Xcode regenerated an unrelated KeyboardKit pin and
   `originHash`; no dependency pins intentionally changed.
+- 2026-07-31 - follow-up source review found that the first feedback fix added
+  one whole-window recognizer per non-spacer key, making every keyboard touch
+  traverse many recognizer state machines. It also kept the highlight visible
+  for 90 ms after every release instead of for a 90 ms total minimum.
+- 2026-07-31 - implementation - all non-spacer key bounds now register with one
+  passive `PastaTouchFeedbackCoordinator`; KeyboardKit still owns every key
+  gesture and action. Feedback timing measures elapsed time from touch-down, so
+  quick taps remain visible for the remainder of 90 ms while long presses clear
+  immediately on release.
+- 2026-07-31 - `mise exec -- swift test --package-path ios --filter
+  PastaKeyboardTouchFeedbackPolicyTests` - exit 0; 4 tests passed, including
+  quick-tap remaining time and long-press immediate release. Full Swift tests
+  passed 42 tests with 1 gated live-relay smoke skipped; `mise exec -- bun run
+  check` passed 45 Bun tests and 14 Worker tests; the docs build produced 16
+  pages.
+- 2026-07-31 - isolated simulator build - `mise exec -- xcodebuild -project
+  ios/Pasta.xcodeproj -scheme Pasta -configuration Debug -sdk iphonesimulator
+  -destination 'generic/platform=iOS Simulator' -derivedDataPath
+  /tmp/pasta-review-build CODE_SIGNING_ALLOWED=NO build` - exit 0; the app and
+  embedded `PastaKeyboard.appex` compiled against KeyboardKit 9.9.1.
+- 2026-07-31 - physical-device delivery - signed Debug `xcodebuild` for UDID
+  `00008150-001241EA0A84401C` succeeded; `devicectl device install app` then
+  installed Pasta `0.1.9` build `19` on connected physical iPhone Air
+  `AA3189CF-63E4-5B5B-884D-A39454926E42`, installed-app readback showed bundle
+  `com.thehumanworks.pasta`, and `devicectl device process launch` succeeded.
+  This proves build/install/launch, not the dynamic pressed-state appearance;
+  a real keyboard-host interaction or screenshot was not performed.
+- 2026-07-31 - the configured `gdd_status.py` path was run before this goal
+  update but is absent from `/Users/mish/.agents/skills`; automated GDD parsing
+  could not be repeated. Existing DoD/task coverage and checked state were
+  preserved manually.
 
 ### T5 - Integrate, Release, And Prove Distribution - [x]
 
@@ -517,4 +567,6 @@ Verification Contract:
 
 ## 7. Learnings
 
-*(append-only)*
+- 2026-07-31 - Immediate touch feedback should use one passive recognizer per
+  keyboard, not one window recognizer per key, and minimum highlight duration
+  must be measured from touch-down rather than appended after touch-up.

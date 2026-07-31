@@ -172,6 +172,7 @@ insertion. Pasta no longer edits the generated layout.
 Observable finished state:
 
 - The containing app has a file import/export surface separate from the keyboard. Importing a user-selected document publishes an encrypted `file` clip through `/v1/files`; exporting a remote non-text clip downloads and decrypts into a temporary file, then hands the result to the iOS document/share UI.
+- File import reads at most the 50 MB payload limit plus one detection byte, so missing or stale document-provider size metadata cannot make the app load an unbounded file before rejecting it.
 - The containing app has a history list backed by live Pasta history. Each row shows safe local display text derived from decrypted text or encrypted metadata; no plaintext filename or path is exposed to Worker-visible metadata.
 - Deleting a history row calls `DELETE /v1/clips/:clipId`, confirms the remote result, removes any associated R2 object server-side, and refreshes the app and keyboard caches.
 - History rows and keyboard cache entries keep stable `clipId` as identity. The user-facing `seq` is display metadata only, and cache refresh saves only decrypted text clips for keyboard insertion after history refresh or delete.
@@ -182,7 +183,7 @@ Observable finished state:
 Keyboard performance proof for this release:
 
 - Observed root cause: Pasta-owned helper work around KeyboardKit did avoidable work on typing-sensitive paths. The SwiftUI wrapper rebuilt structural layouts on repeated body evaluations, the one-entry layout cache churned when case/type states alternated, and Pasta autocomplete kept old requests eligible while running system spellchecking/completion work on the main actor for ordinary keypresses.
-- Implemented fix: use a bounded multi-entry structural layout cache; debounce and cancel stale autocomplete requests in the keyboard controller; replace the typing-path `UITextChecker` calls with a bounded pure Swift autocomplete engine; cap autocomplete context to the recent typing suffix; keep KeyboardKit's autocomplete toolbar and standard action handling intact.
+- Implemented fix: use a bounded multi-entry structural layout cache; debounce and cancel stale autocomplete requests in the keyboard controller; replace the typing-path `UITextChecker` calls with a bounded pure Swift autocomplete engine; cap autocomplete context to the recent typing suffix; keep KeyboardKit's autocomplete toolbar and standard action handling intact. Immediate UIKit touch-down feedback uses one passive recognizer shared by the keyboard instead of one window recognizer per key, and its minimum visibility is measured from touch-down rather than added after release.
 - Benchmark: `swift ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 40000 --mode both --min-improvement-percent 60` reports `baseline.total: 6947.720 ms`, `optimized.total: 2246.995 ms`, and `67.659% faster` for the checked-in layout and autocomplete hot-path model.
 
 Non-goals:

@@ -66,4 +66,14 @@ final class PastaKeyboardAutocompletePolicyTests: XCTestCase {
         XCTAssertTrue(suggestions.contains { $0.text == "letters" })
         XCTAssertFalse(suggestions.contains { $0.text == "keyboard" })
     }
+
+    func testEngineKeepsSupplementaryPlaneLettersInTheCurrentWord() {
+        let word = "\u{10400}\u{10428}"
+
+        let suggestions = PastaKeyboardAutocompleteEngine()
+            .suggestions(for: "Typed \(word)")
+
+        XCTAssertEqual(suggestions.first?.text, word)
+        XCTAssertEqual(suggestions.first?.kind, .unknown)
+    }
 }

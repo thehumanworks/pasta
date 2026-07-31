@@ -1,7 +1,37 @@
 import Foundation
 
-public enum PastaFileError: Error, Equatable {
+public enum PastaFileError: Error, Equatable, Sendable {
     case unsafeFileName
+    case invalidMaximumByteCount
+    case fileTooLarge(maximumByteCount: Int)
+}
+
+public enum PastaBoundedFileReader {
+    private static let readChunkByteCount = 64 * 1024
+
+    public static func readBytes(
+        at url: URL,
+        maximumByteCount: Int = PastaCore.largePayloadMaxBytes
+    ) throws -> [UInt8] {
+        guard maximumByteCount >= 0, maximumByteCount < Int.max else {
+            throw PastaFileError.invalidMaximumByteCount
+        }
+
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+
+        let detectionLimit = maximumByteCount + 1
+        var bytes: [UInt8] = []
+        while bytes.count < detectionLimit {
+            let count = min(Self.readChunkByteCount, detectionLimit - bytes.count)
+            guard let chunk = try handle.read(upToCount: count), !chunk.isEmpty else { break }
+            bytes.append(contentsOf: chunk)
+        }
+        guard bytes.count <= maximumByteCount else {
+            throw PastaFileError.fileTooLarge(maximumByteCount: maximumByteCount)
+        }
+        return bytes
+    }
 }
 
 public struct PastaDownloadedFileClip: Equatable, Sendable {

@@ -261,6 +261,7 @@ private struct PastaKeyboardView: View {
 
     @EnvironmentObject private var keyboardContext: KeyboardContext
     @StateObject private var layoutCache = PastaKeyboardLayoutCache()
+    @StateObject private var touchFeedbackCoordinator = PastaTouchFeedbackCoordinator()
 
     var body: some View {
         // Pasta is additive: KeyboardKit owns the keyboard, autocomplete band,
@@ -272,7 +273,10 @@ private struct PastaKeyboardView: View {
             services: services,
             buttonContent: { $0.view },
             buttonView: { params in
-                PastaImmediateKeyPressFeedback(item: params.item) {
+                PastaImmediateKeyPressFeedback(
+                    item: params.item,
+                    coordinator: touchFeedbackCoordinator
+                ) {
                     params.view
                 }
             },
@@ -325,41 +329,49 @@ private struct PastaKeyboardView: View {
 
 private struct PastaImmediateKeyPressFeedback<Content: View>: View {
     let item: KeyboardLayout.Item
+    let coordinator: PastaTouchFeedbackCoordinator
     let content: Content
 
     @EnvironmentObject private var keyboardContext: KeyboardContext
     @State private var isTouchDown = false
     @State private var touchGeneration = 0
+    @State private var touchDownUptimeNanoseconds: UInt64?
 
     private let policy = PastaKeyboardTouchFeedbackPolicy.standard
 
-    init(item: KeyboardLayout.Item, @ViewBuilder content: () -> Content) {
+    init(
+        item: KeyboardLayout.Item,
+        coordinator: PastaTouchFeedbackCoordinator,
+        @ViewBuilder content: () -> Content
+    ) {
         self.item = item
+        self.coordinator = coordinator
         self.content = content()
     }
 
+    @ViewBuilder
     var body: some View {
-        content
-            .overlay(feedbackOverlay.allowsHitTesting(false))
-            .background(PastaTouchDownMonitor(onTouchDownChange: handleTouchDownChange))
-            .onDisappear {
-                touchGeneration += 1
-                isTouchDown = false
-            }
-            .transaction { transaction in
-                transaction.animation = policy.animationDurationSeconds > 0
-                    ? .linear(duration: policy.animationDurationSeconds)
-                    : nil
-            }
+        if item.action.isSpacer {
+            content
+        } else {
+            content
+                .overlay(feedbackOverlay.allowsHitTesting(false))
+                .background(
+                    PastaTouchFeedbackTarget(
+                        coordinator: coordinator,
+                        onTouchDownChange: handleTouchDownChange
+                    )
+                )
+                .onDisappear(perform: resetFeedback)
+                .transaction { $0.animation = nil }
+        }
     }
 
-    @ViewBuilder
     private var feedbackOverlay: some View {
-        if isTouchDown, shouldRenderFeedback {
-            RoundedRectangle(cornerRadius: item.action.standardButtonCornerRadius(for: keyboardContext))
-                .fill(feedbackColor)
-                .padding(item.edgeInsets)
-        }
+        RoundedRectangle(cornerRadius: item.action.standardButtonCornerRadius(for: keyboardContext))
+            .fill(feedbackColor)
+            .padding(item.edgeInsets)
+            .opacity(isTouchDown ? 1 : 0)
     }
 
     private var feedbackColor: Color {
@@ -370,13 +382,10 @@ private struct PastaImmediateKeyPressFeedback<Content: View>: View {
         return base.opacity(opacity)
     }
 
-    private var shouldRenderFeedback: Bool {
-        !item.action.isSpacer
-    }
-
     private func handleTouchDownChange(_ isPressed: Bool) {
         if isPressed {
             touchGeneration += 1
+            touchDownUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
             isTouchDown = true
         } else {
             scheduleTouchUp()
@@ -384,56 +393,65 @@ private struct PastaImmediateKeyPressFeedback<Content: View>: View {
     }
 
     private func scheduleTouchUp() {
+        guard isTouchDown else { return }
         let generation = touchGeneration
-        let delay = policy.minimumVisibleNanoseconds
+        let now = DispatchTime.now().uptimeNanoseconds
+        let elapsed = touchDownUptimeNanoseconds.map { now >= $0 ? now - $0 : 0 } ?? 0
+        let delay = policy.remainingVisibleNanoseconds(after: elapsed)
+        guard delay > 0 else {
+            resetFeedback(ifGeneration: generation)
+            return
+        }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: delay)
-            guard generation == touchGeneration else { return }
-            isTouchDown = false
+            resetFeedback(ifGeneration: generation)
         }
+    }
+
+    private func resetFeedback(ifGeneration generation: Int) {
+        guard generation == touchGeneration else { return }
+        isTouchDown = false
+        touchDownUptimeNanoseconds = nil
+    }
+
+    private func resetFeedback() {
+        touchGeneration += 1
+        isTouchDown = false
+        touchDownUptimeNanoseconds = nil
     }
 }
 
-/// Passive UIKit touch-down observer used only for visual feedback. KeyboardKit
-/// still owns the key gesture, action handler, callouts, and text insertion.
-private struct PastaTouchDownMonitor: UIViewRepresentable {
+/// Registers each key's bounds with one passive recognizer for the keyboard.
+/// KeyboardKit still owns key gestures, actions, callouts, and text insertion.
+private struct PastaTouchFeedbackTarget: UIViewRepresentable {
+    let coordinator: PastaTouchFeedbackCoordinator
     let onTouchDownChange: (Bool) -> Void
 
-    func makeUIView(context: Context) -> PastaTouchDownMonitorView {
-        let view = PastaTouchDownMonitorView()
-        view.onTouchDownChange = onTouchDownChange
+    func makeUIView(context: Context) -> PastaTouchFeedbackTargetView {
+        let view = PastaTouchFeedbackTargetView()
+        view.connect(to: coordinator, onTouchDownChange: onTouchDownChange)
         return view
     }
 
-    func updateUIView(_ view: PastaTouchDownMonitorView, context: Context) {
-        view.onTouchDownChange = onTouchDownChange
-        view.installRecognizerIfNeeded()
+    func updateUIView(_ view: PastaTouchFeedbackTargetView, context: Context) {
+        view.connect(to: coordinator, onTouchDownChange: onTouchDownChange)
     }
 
-    static func dismantleUIView(_ view: PastaTouchDownMonitorView, coordinator: ()) {
-        Task { @MainActor in
-            view.removeRecognizer()
-        }
+    static func dismantleUIView(_ view: PastaTouchFeedbackTargetView, coordinator: ()) {
+        view.disconnect()
     }
 }
 
-private final class PastaTouchDownMonitorView: UIView, UIGestureRecognizerDelegate {
-    var onTouchDownChange: ((Bool) -> Void)?
-
-    private lazy var recognizer = PastaTouchDownGestureRecognizer(trackedView: self) { [weak self] isPressed in
-        self?.onTouchDownChange?(isPressed)
-    }
-    private weak var installedHost: UIView?
+private final class PastaTouchFeedbackTargetView: UIView {
+    private weak var coordinator: PastaTouchFeedbackCoordinator?
+    private var onTouchDownChange: ((Bool) -> Void)?
+    private var isPressed = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         isOpaque = false
         isUserInteractionEnabled = false
         backgroundColor = .clear
-        recognizer.cancelsTouchesInView = false
-        recognizer.delaysTouchesBegan = false
-        recognizer.delaysTouchesEnded = false
-        recognizer.delegate = self
     }
 
     required init?(coder: NSCoder) {
@@ -442,24 +460,118 @@ private final class PastaTouchDownMonitorView: UIView, UIGestureRecognizerDelega
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        installRecognizerIfNeeded()
+        if let window {
+            coordinator?.register(self, in: window)
+        } else {
+            coordinator?.unregister(self)
+        }
     }
 
-    func installRecognizerIfNeeded() {
-        guard let window else {
-            removeRecognizer()
+    func connect(
+        to coordinator: PastaTouchFeedbackCoordinator,
+        onTouchDownChange: @escaping (Bool) -> Void
+    ) {
+        if self.coordinator !== coordinator {
+            self.coordinator?.unregister(self)
+            self.coordinator = coordinator
+        }
+        self.onTouchDownChange = onTouchDownChange
+        if let window {
+            coordinator.register(self, in: window)
+        }
+    }
+
+    func disconnect() {
+        setPressed(false)
+        coordinator?.unregister(self)
+        coordinator = nil
+        onTouchDownChange = nil
+    }
+
+    func setPressed(_ value: Bool) {
+        guard value != isPressed else { return }
+        isPressed = value
+        onTouchDownChange?(value)
+    }
+}
+
+/// A single passive window recognizer fans touch-down state out to registered
+/// key bounds. Keeping one recognizer avoids making every key inspect every
+/// keyboard-host touch.
+private final class PastaTouchFeedbackCoordinator: UIGestureRecognizer, ObservableObject, UIGestureRecognizerDelegate {
+    private var targets: [ObjectIdentifier: PastaTouchFeedbackTargetView] = [:]
+    private weak var activeTouch: UITouch?
+    private weak var activeTarget: PastaTouchFeedbackTargetView?
+
+    init() {
+        super.init(target: nil, action: nil)
+        cancelsTouchesInView = false
+        delaysTouchesBegan = false
+        delaysTouchesEnded = false
+        delegate = self
+    }
+
+    func register(_ target: PastaTouchFeedbackTargetView, in window: UIWindow) {
+        targets[ObjectIdentifier(target)] = target
+        guard view !== window else { return }
+        view?.removeGestureRecognizer(self)
+        window.addGestureRecognizer(self)
+    }
+
+    func unregister(_ target: PastaTouchFeedbackTargetView) {
+        targets[ObjectIdentifier(target)] = nil
+        if activeTarget === target {
+            target.setPressed(false)
+            activeTarget = nil
+            activeTouch = nil
+            if state == .began || state == .changed {
+                state = .cancelled
+            }
+        }
+        if targets.isEmpty {
+            view?.removeGestureRecognizer(self)
+        }
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard activeTouch == nil else { return }
+        guard let touch = touches.first, let target = target(at: touch) else {
+            state = .failed
             return
         }
-        guard installedHost !== window else { return }
-        removeRecognizer()
-        window.addGestureRecognizer(recognizer)
-        installedHost = window
+        activeTouch = touch
+        activeTarget = target
+        target.setPressed(true)
+        state = .began
     }
 
-    func removeRecognizer() {
-        installedHost?.removeGestureRecognizer(recognizer)
-        installedHost = nil
-        onTouchDownChange?(false)
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        guard let activeTouch, let activeTarget, touches.contains(activeTouch) else { return }
+        activeTarget.setPressed(contains(activeTouch, in: activeTarget))
+        if state == .began || state == .changed {
+            state = .changed
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        finishIfNeeded(for: touches, newState: .ended)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        finishIfNeeded(for: touches, newState: .cancelled)
+    }
+
+    override func reset() {
+        activeTarget?.setPressed(false)
+        activeTouch = nil
+        activeTarget = nil
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldReceive touch: UITouch
+    ) -> Bool {
+        target(at: touch) != nil
     }
 
     func gestureRecognizer(
@@ -468,69 +580,26 @@ private final class PastaTouchDownMonitorView: UIView, UIGestureRecognizerDelega
     ) -> Bool {
         true
     }
-}
 
-private final class PastaTouchDownGestureRecognizer: UIGestureRecognizer {
-    private weak var trackedView: UIView?
-    private let onTouchDownChange: (Bool) -> Void
-    private weak var activeTouch: UITouch?
-    private var isTouchDown = false {
-        didSet {
-            guard isTouchDown != oldValue else { return }
-            onTouchDownChange(isTouchDown)
-        }
-    }
-
-    init(trackedView: UIView, onTouchDownChange: @escaping (Bool) -> Void) {
-        self.trackedView = trackedView
-        self.onTouchDownChange = onTouchDownChange
-        super.init(target: nil, action: nil)
-    }
-
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-        guard activeTouch == nil else { return }
-        guard let touch = touches.first(where: isTouchInsideTrackedView) else { return }
-        activeTouch = touch
-        isTouchDown = true
-        state = .began
-    }
-
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
-        guard let activeTouch, touches.contains(activeTouch) else { return }
-        isTouchDown = isTouchInsideTrackedView(activeTouch)
-        if state == .began || state == .changed {
-            state = .changed
-        }
-    }
-
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
-        finishIfNeeded(for: touches, state: activeTouch == nil ? .failed : .ended)
-    }
-
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
-        finishIfNeeded(for: touches, state: .cancelled)
-    }
-
-    override func reset() {
-        activeTouch = nil
-        isTouchDown = false
-    }
-
-    private func finishIfNeeded(for touches: Set<UITouch>, state newState: UIGestureRecognizer.State) {
-        guard let activeTouch else {
-            state = .failed
-            return
-        }
+    private func finishIfNeeded(
+        for touches: Set<UITouch>,
+        newState: UIGestureRecognizer.State
+    ) {
+        guard let activeTouch else { return }
         guard touches.contains(activeTouch) else { return }
-        isTouchDown = false
+        activeTarget?.setPressed(false)
         self.activeTouch = nil
+        activeTarget = nil
         state = newState
     }
 
-    private func isTouchInsideTrackedView(_ touch: UITouch) -> Bool {
-        guard let view = trackedView, view.window != nil else { return false }
-        let location = touch.location(in: view)
-        return view.bounds.contains(location)
+    private func target(at touch: UITouch) -> PastaTouchFeedbackTargetView? {
+        targets.values.first { contains(touch, in: $0) }
+    }
+
+    private func contains(_ touch: UITouch, in target: PastaTouchFeedbackTargetView) -> Bool {
+        guard target.window != nil else { return false }
+        return target.bounds.contains(touch.location(in: target))
     }
 }
 
