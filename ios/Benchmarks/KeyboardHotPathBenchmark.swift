@@ -126,7 +126,7 @@ final class SimulatedTextChecker {
 }
 
 struct AutocompletePolicy {
-    let debounceMilliseconds = 24
+    let debounceMilliseconds = 16
     let maximumContextCharacters = 96
     let minimumCorrectedWordCharacters = 3
     let maximumCorrectedWordCharacters = 32
@@ -192,14 +192,28 @@ let engineAutocorrections = [
     "psta": "pasta"
 ]
 let engineCompletions = [
-    "about", "again", "because", "before", "between", "clipboard",
-    "complete", "completion", "device", "history", "keyboard", "message",
-    "native", "number", "ordinary", "pasta", "paste", "pasted", "pasting",
-    "performance", "privacy", "publish", "quick", "release", "remote",
-    "secure", "shared", "shift", "space", "suggestion", "symbol", "sync",
-    "system", "testing", "text", "thanks", "there", "through", "today",
-    "toolbar", "tomorrow", "trusted", "typed", "typing", "visible",
-    "without"
+    "about", "after", "again", "all", "also", "always", "and", "another",
+    "any", "anyone", "anything", "around", "back", "because", "before",
+    "being", "between", "both", "build", "called", "change", "clipboard",
+    "come", "complete", "completion", "could", "device", "different",
+    "does", "doing", "during", "each", "even", "every", "example",
+    "first", "following", "found", "from", "general", "good", "great",
+    "have", "here", "history", "however", "into", "just", "keyboard",
+    "know", "last", "later", "like", "little", "look", "made", "make",
+    "many", "message", "more", "most", "much", "must", "native", "need",
+    "never", "next", "number", "only", "ordinary", "other", "over",
+    "pasta", "paste", "pasted", "pasting", "people", "performance",
+    "place", "please", "point", "privacy", "probably", "problem",
+    "publish", "quick", "really", "release", "remote", "right", "same",
+    "secure", "see", "should", "shared", "shift", "since", "small",
+    "some", "something", "space", "still", "such", "suggestion", "symbol",
+    "sync", "system", "take", "testing", "text", "than", "thanks", "that",
+    "their", "them", "then", "there", "these", "they", "thing", "think",
+    "this", "those", "through", "time", "today", "together", "toolbar",
+    "tomorrow", "too", "trusted", "typed", "typing", "under", "until",
+    "very", "visible", "want", "well", "were", "what", "when", "where",
+    "which", "while", "will", "with", "without", "work", "would", "year",
+    "your"
 ]
 let engineCompletionsByPrefix: [String: [String]] = {
     var index: [String: [String]] = [:]
@@ -287,6 +301,22 @@ if mode == "optimized" || mode == "both" {
                 continue
             }
             checksum &+= engineSuggestions(for: burst[index]).joined().count
+        }
+        return checksum
+    })
+    results.append(measure("optimized.autocomplete_skip_unchanged_publish") {
+        var checksum = 0
+        var lastFingerprint = 0
+        for i in 0..<iterations {
+            let text = typingSamples[i % typingSamples.count]
+            let suggestions = engineSuggestions(for: text)
+            let fingerprint = suggestions.joined().hashValue
+            if fingerprint == lastFingerprint {
+                checksum &+= 1
+                continue
+            }
+            lastFingerprint = fingerprint
+            checksum &+= suggestions.joined().count
         }
         return checksum
     })

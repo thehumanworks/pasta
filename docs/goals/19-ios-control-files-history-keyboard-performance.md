@@ -570,3 +570,9 @@ Verification Contract:
 - 2026-07-31 - Immediate touch feedback should use one passive recognizer per
   keyboard, not one window recognizer per key, and minimum highlight duration
   must be measured from touch-down rather than appended after touch-up.
+- 2026-07-31 - KeyboardKit's `AutocompleteContext.update(with:)` republishes
+  suggestions, empty emoji suggestions, and empty next-character predictions,
+  which re-evaluates every key. Pasta-owned typing must apply only changed
+  `suggestionsFromService` values, keep toolbar model observation out of the
+  key surface, and use one shared UIKit highlight instead of per-key SwiftUI
+  press overlays.

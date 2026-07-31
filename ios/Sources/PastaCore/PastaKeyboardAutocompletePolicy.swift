@@ -7,7 +7,7 @@ public struct PastaKeyboardAutocompletePolicy: Equatable, Sendable {
     public let maximumCorrectedWordCharacters: Int
 
     public init(
-        debounceMilliseconds: Int = 24,
+        debounceMilliseconds: Int = 16,
         maximumContextCharacters: Int = 96,
         minimumCorrectedWordCharacters: Int = 3,
         maximumCorrectedWordCharacters: Int = 32

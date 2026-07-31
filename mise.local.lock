@@ -67,7 +67,17 @@ checksum = "sha256:04f1ff30ed162d7af1dba7f11ad6a37ef35099de86a7ec6e261b64b1b337a
 url = "https://github.com/DopplerHQ/cli/releases/download/3.76.0/doppler_3.76.0_linux_amd64.tar.gz"
 url_api = "https://api.github.com/repos/DopplerHQ/cli/releases/assets/402869217"
 
+[tools.doppler."platforms.linux-x64-baseline"]
+checksum = "sha256:04f1ff30ed162d7af1dba7f11ad6a37ef35099de86a7ec6e261b64b1b337a3f3"
+url = "https://github.com/DopplerHQ/cli/releases/download/3.76.0/doppler_3.76.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/DopplerHQ/cli/releases/assets/402869217"
+
 [tools.doppler."platforms.linux-x64-musl"]
+checksum = "sha256:04f1ff30ed162d7af1dba7f11ad6a37ef35099de86a7ec6e261b64b1b337a3f3"
+url = "https://github.com/DopplerHQ/cli/releases/download/3.76.0/doppler_3.76.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/DopplerHQ/cli/releases/assets/402869217"
+
+[tools.doppler."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:04f1ff30ed162d7af1dba7f11ad6a37ef35099de86a7ec6e261b64b1b337a3f3"
 url = "https://github.com/DopplerHQ/cli/releases/download/3.76.0/doppler_3.76.0_linux_amd64.tar.gz"
 url_api = "https://api.github.com/repos/DopplerHQ/cli/releases/assets/402869217"
@@ -82,7 +92,17 @@ checksum = "sha256:1a70842d5de95232c5bae732721058690c748db5e5c7510e828116392e9f0
 url = "https://github.com/DopplerHQ/cli/releases/download/3.76.0/doppler_3.76.0_macOS_amd64.tar.gz"
 url_api = "https://api.github.com/repos/DopplerHQ/cli/releases/assets/402869199"
 
+[tools.doppler."platforms.macos-x64-baseline"]
+checksum = "sha256:1a70842d5de95232c5bae732721058690c748db5e5c7510e828116392e9f0682"
+url = "https://github.com/DopplerHQ/cli/releases/download/3.76.0/doppler_3.76.0_macOS_amd64.tar.gz"
+url_api = "https://api.github.com/repos/DopplerHQ/cli/releases/assets/402869199"
+
 [tools.doppler."platforms.windows-x64"]
+checksum = "sha256:fd095b1849eda66547f2bcb4265b31544d9a282a3362d73d82d28262ecd67edd"
+url = "https://github.com/DopplerHQ/cli/releases/download/3.76.0/doppler_3.76.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/DopplerHQ/cli/releases/assets/402869216"
+
+[tools.doppler."platforms.windows-x64-baseline"]
 checksum = "sha256:fd095b1849eda66547f2bcb4265b31544d9a282a3362d73d82d28262ecd67edd"
 url = "https://github.com/DopplerHQ/cli/releases/download/3.76.0/doppler_3.76.0_windows_amd64.zip"
 url_api = "https://api.github.com/repos/DopplerHQ/cli/releases/assets/402869216"
@@ -108,6 +128,7 @@ checksum = "sha256:157a3ade234eec5b8a57dfc2ae5e3ac40f1871a5fd8affac94131d91ca600
 url = "https://github.com/jdx/fnox/releases/download/v1.25.1/fnox-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/fnox/releases/assets/422647964"
 provenance = "github-attestations"
+provenance_verified = true
 
 [tools.fnox."platforms.linux-x64-baseline"]
 checksum = "sha256:157a3ade234eec5b8a57dfc2ae5e3ac40f1871a5fd8affac94131d91ca60023b"
