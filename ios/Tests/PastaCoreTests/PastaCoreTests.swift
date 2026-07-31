@@ -71,6 +71,28 @@ final class PastaCoreBootstrapTests: XCTestCase {
         let entry = PastaHistoryEntry(clip: StoredClip(seq: 1, clip: clip), decryptedText: nil, metadataName: "API_TOKEN")
         XCTAssertNil(entry.keyboardClip)
         XCTAssertEqual(entry.keyboardSecret?.key, "API_TOKEN")
+        XCTAssertEqual(try PastaCrypto.normalizeSecretKey("production/tool/KEY"), "production/tool/KEY")
+        XCTAssertEqual(try PastaCrypto.normalizeSecretKey("API_TOKEN"), "API_TOKEN")
+        XCTAssertThrowsError(try PastaCrypto.normalizeSecretKey("/production/tool/KEY"))
+        let nested = try PastaCrypto.encryptPasskeySecretClip(
+            accountId: "acct_secret",
+            routingId: "space_secret",
+            originDeviceId: "dev_secret",
+            key: "production/tool/KEY",
+            passkey: passkey,
+            value: "nested-secret",
+            groupKey: groupKey
+        )
+        XCTAssertEqual(
+            try PastaCrypto.decryptPasskeySecretClip(
+                groupKey: groupKey,
+                accountId: "acct_secret",
+                routingId: "space_secret",
+                clip: nested,
+                passkey: passkey
+            ),
+            "nested-secret"
+        )
     }
 
     func testJoinTokenExtractionAcceptsCliAndJsonPastes() throws {

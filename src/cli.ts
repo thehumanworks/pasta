@@ -11,6 +11,7 @@ import {
   encryptPasskeySecretClip,
   encryptTextClip,
   createJoinGrantToken,
+  normalizeSecretKey,
   generateDeviceKeyMaterial,
   generateGroupKey,
   hashJoinGrantRedeemSecret,
@@ -883,7 +884,7 @@ async function secretCommand(
   if (subcommand === "get") {
     return await secretGetCommand(argv.slice(1), io, paths, secrets, clipboard, deps);
   }
-  io.stderr("usage: pasta secret set|get --key <key> --passkey <passkey> [--value]\n");
+  io.stderr("usage: pasta secret set|get --key <key-path> --passkey <passkey> [--value]\n");
   return ExitCode.usage;
 }
 
@@ -898,14 +899,21 @@ async function secretSetCommand(
     io.stdout(commandHelp("secret"));
     return ExitCode.ok;
   }
-  const key = option(argv, "--key");
+  const keyArg = option(argv, "--key");
   const passkey = option(argv, "--passkey");
-  if (!key?.trim()) {
+  if (!keyArg?.trim()) {
     io.stderr("secret set requires --key <key>\n");
     return ExitCode.usage;
   }
   if (!passkey) {
     io.stderr("secret set requires --passkey <passkey>\n");
+    return ExitCode.usage;
+  }
+  let key: string;
+  try {
+    key = normalizeSecretKey(keyArg);
+  } catch (error) {
+    io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
     return ExitCode.usage;
   }
   let value: string;
@@ -934,10 +942,10 @@ async function secretGetCommand(
     io.stdout(commandHelp("secret"));
     return ExitCode.ok;
   }
-  const key = option(argv, "--key");
+  const keyArg = option(argv, "--key");
   const passkey = option(argv, "--passkey");
   const jsonMode = argv.includes("--json");
-  if (!key?.trim()) {
+  if (!keyArg?.trim()) {
     io.stderr("secret get requires --key <key>\n");
     return ExitCode.usage;
   }
@@ -945,11 +953,18 @@ async function secretGetCommand(
     io.stderr("secret get requires --passkey <passkey>\n");
     return ExitCode.usage;
   }
+  let key: string;
+  try {
+    key = normalizeSecretKey(keyArg);
+  } catch (error) {
+    io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
+    return ExitCode.usage;
+  }
   const config = await readConfig(paths.configPath);
   const client = clientFor(config, secrets, deps);
-  const clip = await findSecretClip(config, secrets, client, key.trim());
+  const clip = await findSecretClip(config, secrets, client, key);
   if (!clip) {
-    io.stderr(`no secret found for key ${key.trim()}\n`);
+    io.stderr(`no secret found for key ${key}\n`);
     return ExitCode.unavailable;
   }
   let value: string;
@@ -968,12 +983,12 @@ async function secretGetCommand(
   if (argv.includes("--clipboard")) {
     await clipboard.writeText(value);
     if (jsonMode) {
-      writeJson(io, { ok: true, key: key.trim(), clipId: clip.clipId, seq: clip.seq, destination: "clipboard" });
+      writeJson(io, { ok: true, key, clipId: clip.clipId, seq: clip.seq, destination: "clipboard" });
     }
     return ExitCode.ok;
   }
   if (jsonMode) {
-    writeJson(io, { ok: true, key: key.trim(), clipId: clip.clipId, seq: clip.seq, value });
+    writeJson(io, { ok: true, key, clipId: clip.clipId, seq: clip.seq, value });
     return ExitCode.ok;
   }
   io.stdout(value);
@@ -1802,17 +1817,18 @@ Examples:
   pasta history delete clip_example
   pasta history --json
 `,
-    secret: `usage: pasta secret set --key <key> --passkey <passkey> [--value [<value>]] [--json]
-       pasta secret get --key <key> --passkey <passkey> [--clipboard] [--json]
+    secret: `usage: pasta secret set --key <key-path> --passkey <passkey> [--value [<value>]] [--json]
+       pasta secret get --key <key-path> --passkey <passkey> [--clipboard] [--json]
 
 Stores or retrieves a passkey-protected secret in the remote clipboard.
 The secret value is encrypted to the passkey before the normal group-key clip wrap, so paired devices still need the passkey.
+--key is a slash-separated path. A bare first segment needs no leading / (default root), for example KEY or production/tool/KEY.
 If --value is omitted or present without an argument, secret set reads stdin.
 
 Examples:
   printf 'token-value\\n' | pasta secret set --key API_TOKEN --passkey Secret124 --value
-  pasta secret set --key API_TOKEN --passkey Secret124 --value token-value
-  pasta secret get --key API_TOKEN --passkey Secret124
+  pasta secret set --key production/tool/KEY --passkey Secret124 --value token-value
+  pasta secret get --key production/tool/KEY --passkey Secret124
   pasta secret get --key API_TOKEN --passkey Secret124 --clipboard
 `,
     daemon: `usage: pasta daemon [--once] [--dry-run] [--interval-ms <n>] [--max-interval-ms <n>]
@@ -1930,8 +1946,8 @@ function helpText(): string {
     "  devices list [--include-revoked] [--json] | devices approve <code> | devices revoke <device>",
     "  copy [path] [--image|--file] [--mime <type>] [--json]",
     "  paste [--clipboard] [--seq <n>] [--out <path>] [--json]",
-    "  secret set --key <key> --passkey <passkey> [--value]",
-    "  secret get --key <key> --passkey <passkey>",
+    "  secret set --key <key-path> --passkey <passkey> [--value]",
+    "  secret get --key <key-path> --passkey <passkey>",
     "  history [--show] [--json] | history paste <seq|clipId> | history delete <seq|clipId>",
     "  daemon [--once] [--dry-run] [--interval-ms <n>] [--max-interval-ms <n>]",
     "  doctor",

@@ -29,13 +29,20 @@ Pasta adds a nested encryption path for named secrets:
 3. Wrap the resulting envelope bytes as an inline clip with
    `payloadKind: "secret"` and MIME `application/vnd.pasta.secret+json`,
    encrypted to the normal Pasta group key with the existing clip AAD rules.
-4. Store the secret name in encrypted clip metadata (`ClipMetadata.name`) so
+4. Store the secret key path in encrypted clip metadata (`ClipMetadata.name`) so
    trusted devices can list and select secrets without knowing the passkey.
+
+Secret keys are slash-separated paths:
+
+- A bare first segment needs no leading `/`; that is the default root form
+  (`KEY`).
+- Nested paths use additional segments (`production/tool/KEY`).
+- Leading `/`, trailing `/`, empty segments, and `.` / `..` are rejected.
 
 CLI surface:
 
-- `pasta secret set --key KEY --passkey PASS [--value VALUE]`
-- `pasta secret get --key KEY --passkey PASS`
+- `pasta secret set --key KEY|--key production/tool/KEY --passkey PASS [--value VALUE]`
+- `pasta secret get --key KEY|--key production/tool/KEY --passkey PASS`
 - If `--value` is omitted or present without an argument, `set` reads stdin.
 
 iOS keyboard surface:

@@ -54,10 +54,10 @@ Revoked device rows are hidden from `devices list` by default and cannot be reac
 
 | Command | Description |
 | --- | --- |
-| `secret set --key <key> --passkey <passkey> [--value [<value>]]` | Encrypt value to passkey, wrap with group key, publish as `payloadKind: "secret"` |
-| `secret get --key <key> --passkey <passkey> [--clipboard]` | Find newest matching secret by encrypted metadata name and unlock locally |
+| `secret set --key <key-path> --passkey <passkey> [--value [<value>]]` | Encrypt value to passkey, wrap with group key, publish as `payloadKind: "secret"` |
+| `secret get --key <key-path> --passkey <passkey> [--clipboard]` | Find newest matching secret by encrypted metadata path and unlock locally |
 
-If `--value` is omitted or present without an argument, `secret set` reads stdin. Wrong passkeys fail closed. Ordinary `paste` / `history paste` do not unlock secret clips.
+`--key` is a slash-separated path. The first segment needs no leading `/` (`KEY`); nest with more segments (`production/tool/KEY`). If `--value` is omitted or present without an argument, `secret set` reads stdin. Wrong passkeys fail closed. Ordinary `paste` / `history paste` do not unlock secret clips.
 
 ## Images (macOS PNG)
 

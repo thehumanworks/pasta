@@ -38,7 +38,7 @@ Pasta keeps device auth in `$PASTA_HOME/auth.json` with `0600` permissions by de
 
 ## Passkey-protected remote secrets
 
-`pasta secret set` / `pasta secret get` store named values in the remote clipboard with an extra passkey layer. Cloudflare and passkey-less trusted devices can see that a named secret exists (after local group-key metadata decrypt) but cannot recover the value. Passkeys are never sent to the relay. See ADR `docs/adrs/0003-passkey-protected-secrets.md`.
+`pasta secret set` / `pasta secret get` store named values in the remote clipboard with an extra passkey layer. Keys are slash-separated paths (`KEY` at the default root, or `production/tool/KEY`). Cloudflare and passkey-less trusted devices can see that a named secret exists (after local group-key metadata decrypt) but cannot recover the value. Passkeys are never sent to the relay. See ADR `docs/adrs/0003-passkey-protected-secrets.md`.
 
 ## CI and sandbox tokens
 

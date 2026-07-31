@@ -259,8 +259,9 @@ final class KeyboardViewController: KeyboardInputViewController {
                     statusMessage = "Clipboard has no text."
                     return
                 }
+                let normalizedKey = try PastaCrypto.normalizeSecretKey(key)
                 let clip = try await client.publishSecret(
-                    key: key,
+                    key: normalizedKey,
                     passkey: passkey,
                     value: text,
                     configuration: live.configuration,
@@ -270,7 +271,7 @@ final class KeyboardViewController: KeyboardInputViewController {
                 let cached = PastaKeyboardSecret(
                     clipId: clip.clipId,
                     sequence: clip.seq,
-                    key: key.trimmingCharacters(in: .whitespacesAndNewlines),
+                    key: normalizedKey,
                     createdAt: clip.createdAt
                 )
                 secrets = [cached] + secrets.filter { $0.key != cached.key }
@@ -289,7 +290,7 @@ final class KeyboardViewController: KeyboardInputViewController {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         if includeKeyField {
             alert.addTextField { field in
-                field.placeholder = "Secret key"
+                field.placeholder = "Key path (KEY or production/tool/KEY)"
                 field.autocapitalizationType = .none
                 field.autocorrectionType = .no
             }

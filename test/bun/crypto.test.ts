@@ -11,6 +11,7 @@ import {
   generateWrappingKeyPair,
   hashJoinGrantRedeemSecret,
   openJoinGrant,
+  normalizeSecretKey,
   openPasskeySecret,
   parseJoinGrantToken,
   sealJoinGrant,
@@ -186,5 +187,25 @@ describe("protocol crypto", () => {
     });
     expect(openPasskeySecret(envelope, passkey)).toBe(value);
     expect(() => openPasskeySecret(envelope, "wrong-pass")).toThrow();
+  });
+
+  it("treats secret keys as slash-separated paths without a leading slash", () => {
+    expect(normalizeSecretKey("API_TOKEN")).toBe("API_TOKEN");
+    expect(normalizeSecretKey("production/tool/KEY")).toBe("production/tool/KEY");
+    expect(() => normalizeSecretKey("/production/tool/KEY")).toThrow("leading /");
+    expect(() => normalizeSecretKey("production//KEY")).toThrow("empty segment");
+    expect(() => normalizeSecretKey("production/../KEY")).toThrow(". or ..");
+
+    const groupKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
+    const clip = encryptPasskeySecretClip({
+      accountId: "acct_secret",
+      routingId: "space_secret",
+      originDeviceId: "dev_secret",
+      key: "production/tool/KEY",
+      passkey: "Secret124",
+      value: "nested-secret",
+      groupKey
+    });
+    expect(decryptPasskeySecretClip(groupKey, "acct_secret", "space_secret", clip, "Secret124")).toBe("nested-secret");
   });
 });

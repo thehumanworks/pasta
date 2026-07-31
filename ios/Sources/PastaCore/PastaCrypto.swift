@@ -684,9 +684,19 @@ public enum PastaCrypto {
         return derived
     }
 
-    private static func normalizeSecretKey(_ key: String) throws -> String {
-        let normalized = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else { throw PastaCryptoError.invalidKey }
+    public static func normalizeSecretKey(_ key: String) throws -> String {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw PastaCryptoError.invalidKey }
+        guard !trimmed.hasPrefix("/") else { throw PastaCryptoError.invalidKey }
+        guard !trimmed.hasSuffix("/") else { throw PastaCryptoError.invalidKey }
+        let segments = trimmed.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard !segments.contains(where: \.isEmpty) else { throw PastaCryptoError.invalidKey }
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+        for segment in segments {
+            guard segment != ".", segment != ".." else { throw PastaCryptoError.invalidKey }
+            guard segment.unicodeScalars.allSatisfy({ allowed.contains($0) }) else { throw PastaCryptoError.invalidKey }
+        }
+        let normalized = segments.joined(separator: "/")
         guard normalized.count <= 256 else { throw PastaCryptoError.invalidKey }
         return normalized
     }

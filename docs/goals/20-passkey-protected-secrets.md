@@ -180,6 +180,7 @@ it didn't happen. The full procedure (boot loop, confidence rubric, logging cade
 
 - 2026-07-31 - Use nested encryption: passkey-derived key protects the secret value; group-key AEAD wraps that envelope as `payloadKind: "secret"` so Cloudflare and passkey-less trusted devices cannot read the value. Secret name lives in encrypted clip metadata for local listing.
 - 2026-07-31 - KDF is PBKDF2-HMAC-SHA256 (210000 iterations, 16-byte salt, 32-byte key) for portable Bun/Worker and Swift CommonCrypto parity.
+- 2026-07-31 - Secret `--key` values are slash-separated paths. A bare first segment needs no leading `/` (`KEY`); nested keys use more segments (`production/tool/KEY`). Leading `/`, empty segments, and `.`/`..` are rejected.
 
 ---
 
@@ -194,3 +195,4 @@ it didn't happen. The full procedure (boot loop, confidence rubric, logging cade
 - Implemented nested PBKDF2 + XChaCha20 secret clips, Worker allowlist, CLI secret set/get, iOS PastaCore/keyboard UX, ADR 0003, and public docs.
 - Local verification green except Swift host toolchain.
 - Remote deploy blocked by invalid Doppler auth for Cloudflare secrets; DoD-6 left unticked pending credential fix + deploy/smoke.
+- Steer: secret keys are path-like (`KEY` or `production/tool/KEY`); first segment needs no leading `/`.

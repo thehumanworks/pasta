@@ -28,7 +28,7 @@ describe("CLI", () => {
       [["copy", "--help"], "pasta copy ./Downloads/unlimit.png"],
       [["paste", "--help"], "pasta paste --out ./received.bin"],
       [["history", "--help"], "pasta history delete 7"],
-      [["secret", "--help"], "pasta secret set --key API_TOKEN --passkey Secret124 --value"],
+      [["secret", "--help"], "pasta secret set --key production/tool/KEY --passkey Secret124 --value"],
       [["daemon", "--help"], "pasta daemon --interval-ms 2000"],
       [["pair", "--help"], "pasta pair consume"],
       [["devices", "--help"], "pasta devices revoke dev_example"],
@@ -341,12 +341,33 @@ describe("CLI", () => {
     expect(output.join("").trim()).toBe("inline-token");
 
     output.length = 0;
+    expect(await runCli([
+      "secret",
+      "set",
+      "--key",
+      "production/tool/KEY",
+      "--passkey",
+      "Secret124",
+      "--value",
+      "nested-token"
+    ], { ...deps, io: capture(output) })).toBe(0);
+    output.length = 0;
+    expect(await runCli(["secret", "get", "--key", "production/tool/KEY", "--passkey", "Secret124"], deps)).toBe(0);
+    expect(output.join("").trim()).toBe("nested-token");
+    output.length = 0;
+    expect(await runCli(["secret", "set", "--key", "/production/tool/KEY", "--passkey", "Secret124", "--value", "x"], {
+      ...deps,
+      io: capture(output)
+    })).toBe(2);
+    expect(output.join("")).toContain("leading /");
+
+    output.length = 0;
     expect(await runCli(["paste"], deps)).toBe(6);
     expect(output.join("")).toContain("passkey-protected secret");
 
     output.length = 0;
     expect(await runCli(["--help"], { io: capture(output) })).toBe(0);
-    expect(output.join("")).toContain("secret set --key <key> --passkey <passkey>");
+    expect(output.join("")).toContain("secret set --key <key-path> --passkey <passkey>");
   });
 
   it("prints scriptable local status", async () => {

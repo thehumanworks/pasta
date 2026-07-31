@@ -257,11 +257,11 @@ Store a named secret so the remote clipboard holds ciphertext that still needs a
 
 ```bash
 printf 'token-value\n' | pasta secret set --key API_TOKEN --passkey Secret124 --value
-pasta secret set --key API_TOKEN --passkey Secret124 --value token-value
-pasta secret get --key API_TOKEN --passkey Secret124
+pasta secret set --key production/tool/KEY --passkey Secret124 --value token-value
+pasta secret get --key production/tool/KEY --passkey Secret124
 ```
 
-If `--value` is omitted or present without an argument, `secret set` reads stdin. Ordinary `pasta paste` and history paste do not unlock secret clips.
+`--key` is a slash-separated path. A bare first segment needs no leading `/` (`API_TOKEN`); nest with more segments (`production/tool/KEY`). If `--value` is omitted or present without an argument, `secret set` reads stdin. Ordinary `pasta paste` and history paste do not unlock secret clips.
 
 ## Daemon Examples
 

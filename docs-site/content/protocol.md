@@ -24,7 +24,7 @@ Protocol version aligns with **`pasta 0.1.23`**. Run `pasta protocol` for the li
 
 **Clipboard payloads:** XChaCha20-Poly1305 with a 32-byte group key and 24-byte nonce.
 
-**Passkey-protected secrets:** PBKDF2-HMAC-SHA256 (210000 iterations) derives a key from the user passkey; the secret value is sealed with XChaCha20-Poly1305, then that envelope is wrapped again as an inline `payloadKind: "secret"` clip under the group key. Cloudflare never sees the passkey or plaintext value.
+**Passkey-protected secrets:** PBKDF2-HMAC-SHA256 (210000 iterations) derives a key from the user passkey; the secret value is sealed with XChaCha20-Poly1305, then that envelope is wrapped again as an inline `payloadKind: "secret"` clip under the group key. Secret identity is a slash-separated key path (`KEY` or `production/tool/KEY`; no leading `/`). Cloudflare never sees the passkey or plaintext value.
 
 **Additional authenticated data (AAD)** is canonical JSON binding ciphertext to account, routing, clip metadata, payload kind, MIME, byte length, and key version. The server stores an `aadHash`; clients must match.
 

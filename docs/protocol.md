@@ -16,7 +16,7 @@ Pasta uses a central HTTPS relay only. Devices encrypt clipboard payloads locall
 
 - Device request signing: Ed25519 over the canonical request string.
 - Clipboard payloads: XChaCha20-Poly1305 with a 32-byte group key and 24-byte nonce.
-- Passkey-protected secrets: PBKDF2-HMAC-SHA256 (210000 iterations) derives a key from the user passkey; the secret value is sealed with XChaCha20-Poly1305, then that envelope is wrapped again as an inline `payloadKind: "secret"` clip under the group key. See ADR `docs/adrs/0003-passkey-protected-secrets.md`.
+- Passkey-protected secrets: PBKDF2-HMAC-SHA256 (210000 iterations) derives a key from the user passkey; the secret value is sealed with XChaCha20-Poly1305, then that envelope is wrapped again as an inline `payloadKind: "secret"` clip under the group key. Secret identity is a slash-separated key path (`KEY` or `production/tool/KEY`; no leading `/`). See ADR `docs/adrs/0003-passkey-protected-secrets.md`.
 - Pairing grants: X25519 shared secret, HKDF-SHA256, XChaCha20-Poly1305 wrapped group key.
 - Join grants: a trusted device seals the group key with a token-derived seal key for CI/sandbox registration; the relay stores only sealed grant data and a redemption verifier.
 - Short codes: temporary user-visible codes hashed with account context before storage.

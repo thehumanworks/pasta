@@ -548,9 +548,28 @@ function passkeySecretAad(key: string): { purpose: string; key: string } {
   };
 }
 
-function normalizeSecretKey(key: string): string {
-  const normalized = key.trim();
-  if (!normalized) throw new Error("secret key is required");
+export function normalizeSecretKey(key: string): string {
+  const trimmed = key.trim();
+  if (!trimmed) throw new Error("secret key is required");
+  if (trimmed.startsWith("/")) {
+    throw new Error("secret key paths do not use a leading /; use KEY or production/tool/KEY");
+  }
+  if (trimmed.endsWith("/")) {
+    throw new Error("secret key path must not end with /");
+  }
+  const segments = trimmed.split("/");
+  if (segments.some((segment) => segment.length === 0)) {
+    throw new Error("secret key path has an empty segment");
+  }
+  for (const segment of segments) {
+    if (segment === "." || segment === "..") {
+      throw new Error("secret key path segments cannot be . or ..");
+    }
+    if (!/^[A-Za-z0-9._-]+$/u.test(segment)) {
+      throw new Error("secret key path segments may only use letters, digits, '.', '_', and '-'");
+    }
+  }
+  const normalized = segments.join("/");
   if (normalized.length > 256) throw new Error("secret key is too long");
   return normalized;
 }
