@@ -2,22 +2,27 @@ import { describe, expect, it } from "bun:test";
 import {
   createJoinGrantToken,
   decryptBytesClip,
+  decryptPasskeySecretClip,
   decryptTextClip,
   encryptBytesClip,
+  encryptPasskeySecretClip,
   encryptTextClip,
   generateSigningKeyPair,
   generateWrappingKeyPair,
   hashJoinGrantRedeemSecret,
   openJoinGrant,
+  normalizeSecretKey,
+  openPasskeySecret,
   parseJoinGrantToken,
   sealJoinGrant,
+  sealPasskeySecret,
   signCanonicalRequest,
   unwrapGroupKey,
   verifyCanonicalRequest,
   wrapGroupKey
 } from "../../src/shared/crypto";
-import { fromBase64Url, toBase64Url } from "../../src/shared/encoding";
-import { sha256Base64Url, type SignedRequestParts } from "../../src/shared/protocol";
+import { bytesToUtf8, fromBase64Url, toBase64Url } from "../../src/shared/encoding";
+import { SECRET_MIME, sha256Base64Url, type SignedRequestParts } from "../../src/shared/protocol";
 
 describe("protocol crypto", () => {
   it("matches the deterministic text envelope vector and rejects tampering", () => {
@@ -141,5 +146,66 @@ describe("protocol crypto", () => {
       grantId: "grant_ci",
       sealSecret
     })).toThrow();
+  });
+
+  it("encrypts passkey-protected secrets and rejects the wrong passkey", () => {
+    const groupKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
+    const passkey = "Secret124";
+    const value = "super-secret-token";
+    const clip = encryptPasskeySecretClip({
+      accountId: "acct_secret",
+      routingId: "space_secret",
+      originDeviceId: "dev_secret",
+      key: "API_TOKEN",
+      passkey,
+      value,
+      groupKey,
+      keyVersion: 1,
+      clipId: "clip_secret",
+      createdAt: 1782475200000,
+      nonce: "GBcWFRQTEhEQDw4NDAsKCQgHBgUEAwIB",
+      salt: toBase64Url(new Uint8Array(16).fill(9)),
+      passkeyNonce: toBase64Url(new Uint8Array(24).fill(11))
+    });
+
+    expect(clip.payloadKind).toBe("secret");
+    expect(clip.mime).toBe(SECRET_MIME);
+    expect(clip.ciphertext).not.toContain(value);
+    expect(clip.ciphertext).not.toContain(passkey);
+    expect(JSON.stringify(clip)).not.toContain(value);
+    expect(decryptPasskeySecretClip(groupKey, "acct_secret", "space_secret", clip, passkey)).toBe(value);
+    expect(() => decryptPasskeySecretClip(groupKey, "acct_secret", "space_secret", clip, "wrong-pass")).toThrow();
+
+    const outer = bytesToUtf8(decryptBytesClip(groupKey, "acct_secret", "space_secret", clip));
+    expect(outer).not.toContain(value);
+    const envelope = sealPasskeySecret({
+      key: "API_TOKEN",
+      passkey,
+      value,
+      salt: toBase64Url(new Uint8Array(16).fill(9)),
+      nonce: toBase64Url(new Uint8Array(24).fill(11))
+    });
+    expect(openPasskeySecret(envelope, passkey)).toBe(value);
+    expect(() => openPasskeySecret(envelope, "wrong-pass")).toThrow();
+  });
+
+  it("treats secret keys as slash-separated paths without a leading slash", () => {
+    expect(normalizeSecretKey("API_TOKEN")).toBe("API_TOKEN");
+    expect(normalizeSecretKey("production/tool/KEY")).toBe("production/tool/KEY");
+    expect(() => normalizeSecretKey("/production/tool/KEY")).toThrow("leading /");
+    expect(() => normalizeSecretKey("production//KEY")).toThrow("empty segment");
+    expect(() => normalizeSecretKey("production/../KEY")).toThrow(". or ..");
+
+    const groupKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
+    const clip = encryptPasskeySecretClip({
+      accountId: "acct_secret",
+      routingId: "space_secret",
+      originDeviceId: "dev_secret",
+      key: "production/tool/KEY",
+      passkey: "Secret124",
+      value: "nested-secret",
+      groupKey
+    });
+    expect(decryptPasskeySecretClip(groupKey, "acct_secret", "space_secret", clip, "Secret124")).toBe("nested-secret");
   });
 });

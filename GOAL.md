@@ -84,6 +84,7 @@ flowchart LR
 17. [Native iOS integration and release readiness](docs/goals/17-ios-integration-release-readiness.md)
 18. [ClipId identity and gap-free sequence metadata](docs/goals/18-clipid-sequence-refactor.md)
 19. [iOS control plane files, history delete, and keyboard performance](docs/goals/19-ios-control-files-history-keyboard-performance.md)
+20. [Passkey-protected secrets](docs/goals/20-passkey-protected-secrets.md)
 
 ## Native iOS Expansion
 

@@ -1,11 +1,16 @@
 import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { ed25519, x25519 } from "@noble/curves/ed25519.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
+import { pbkdf2 } from "@noble/hashes/pbkdf2.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import {
   aadForClip,
   canonicalRequest,
   clipAadHash,
+  PASSKEY_SECRET_KEY_BYTES,
+  PASSKEY_SECRET_PBKDF2_ITERATIONS,
+  PASSKEY_SECRET_SALT_BYTES,
+  SECRET_MIME,
   type ClipAad,
   type ClipMetadata,
   type EncryptedClip,
@@ -68,7 +73,7 @@ export interface BytesClipEncryptionInput {
   routingId: string;
   originDeviceId: string;
   bytes: Uint8Array;
-  payloadKind: "image" | "file";
+  payloadKind: "image" | "file" | "secret";
   mime: string;
   groupKey: string;
   keyVersion?: number;
@@ -77,6 +82,39 @@ export interface BytesClipEncryptionInput {
   expiresAt?: number | null;
   nonce?: string;
   metadata?: ClipMetadata;
+}
+
+export interface PasskeySecretKdfParams {
+  name: "pbkdf2-sha256";
+  iterations: number;
+  salt: string;
+  dkLen: number;
+}
+
+export interface PasskeySecretEnvelope {
+  v: 1;
+  alg: "PBKDF2-SHA256-XChaCha20-Poly1305";
+  key: string;
+  kdf: PasskeySecretKdfParams;
+  nonce: string;
+  ciphertext: string;
+}
+
+export interface PasskeySecretEncryptionInput {
+  accountId: string;
+  routingId: string;
+  originDeviceId: string;
+  key: string;
+  passkey: string;
+  value: string;
+  groupKey: string;
+  keyVersion?: number;
+  clipId?: string;
+  createdAt?: number;
+  expiresAt?: number | null;
+  nonce?: string;
+  salt?: string;
+  passkeyNonce?: string;
 }
 
 export function generateGroupKey(): string {
@@ -124,7 +162,7 @@ export function verifyCanonicalRequest(parts: SignedRequestParts, signature: str
 }
 
 export function encryptTextClip(input: ClipEncryptionInput): EncryptedClip {
-  const bytesInput: Omit<BytesClipEncryptionInput, "payloadKind"> & { payloadKind: "text" | "image" | "file" } = {
+  const bytesInput: Omit<BytesClipEncryptionInput, "payloadKind"> & { payloadKind: "text" | "image" | "file" | "secret" } = {
     accountId: input.accountId,
     routingId: input.routingId,
     originDeviceId: input.originDeviceId,
@@ -146,7 +184,108 @@ export function encryptBytesClip(input: BytesClipEncryptionInput): EncryptedClip
   return encryptInlineClip(input);
 }
 
-function encryptInlineClip(input: Omit<BytesClipEncryptionInput, "payloadKind"> & { payloadKind: "text" | "image" | "file" }): EncryptedClip {
+export function encryptPasskeySecretClip(input: PasskeySecretEncryptionInput): EncryptedClip {
+  const key = normalizeSecretKey(input.key);
+  const passkey = requireNonEmpty(input.passkey, "passkey");
+  const value = input.value;
+  const sealInput: { key: string; passkey: string; value: string; salt?: string; nonce?: string } = {
+    key,
+    passkey,
+    value
+  };
+  if (input.salt !== undefined) sealInput.salt = input.salt;
+  if (input.passkeyNonce !== undefined) sealInput.nonce = input.passkeyNonce;
+  const envelope = sealPasskeySecret(sealInput);
+  const bytesInput: BytesClipEncryptionInput = {
+    accountId: input.accountId,
+    routingId: input.routingId,
+    originDeviceId: input.originDeviceId,
+    bytes: utf8ToBytes(stableJson(envelope)),
+    payloadKind: "secret",
+    mime: SECRET_MIME,
+    groupKey: input.groupKey,
+    metadata: { name: key }
+  };
+  if (input.keyVersion !== undefined) bytesInput.keyVersion = input.keyVersion;
+  if (input.clipId !== undefined) bytesInput.clipId = input.clipId;
+  if (input.createdAt !== undefined) bytesInput.createdAt = input.createdAt;
+  if (input.expiresAt !== undefined) bytesInput.expiresAt = input.expiresAt;
+  if (input.nonce !== undefined) bytesInput.nonce = input.nonce;
+  return encryptInlineClip(bytesInput);
+}
+
+export function decryptPasskeySecretClip(
+  groupKey: string,
+  accountId: string,
+  routingId: string,
+  clip: EncryptedClip,
+  passkey: string
+): string {
+  if (clip.payloadKind !== "secret") {
+    throw new Error(`unsupported payload kind: ${clip.payloadKind}`);
+  }
+  const envelopeBytes = decryptBytesClip(groupKey, accountId, routingId, clip);
+  const envelope = parsePasskeySecretEnvelope(bytesToUtf8(envelopeBytes));
+  return openPasskeySecret(envelope, passkey);
+}
+
+export function sealPasskeySecret(input: {
+  key: string;
+  passkey: string;
+  value: string;
+  salt?: string;
+  nonce?: string;
+}): PasskeySecretEnvelope {
+  const key = normalizeSecretKey(input.key);
+  const passkey = requireNonEmpty(input.passkey, "passkey");
+  const salt = input.salt ? fromBase64Url(input.salt) : randomBytes(PASSKEY_SECRET_SALT_BYTES);
+  if (salt.length !== PASSKEY_SECRET_SALT_BYTES) {
+    throw new Error(`passkey salt must be ${PASSKEY_SECRET_SALT_BYTES} bytes`);
+  }
+  const nonce = input.nonce ? fromBase64Url(input.nonce) : randomBytes(24);
+  if (nonce.length !== 24) throw new Error("passkey nonce must be 24 bytes");
+  const derived = derivePasskeySecretKey(passkey, salt);
+  const aad = utf8ToBytes(stableJson(passkeySecretAad(key)));
+  const cipher = xchacha20poly1305(derived, nonce, aad);
+  return {
+    v: 1,
+    alg: "PBKDF2-SHA256-XChaCha20-Poly1305",
+    key,
+    kdf: {
+      name: "pbkdf2-sha256",
+      iterations: PASSKEY_SECRET_PBKDF2_ITERATIONS,
+      salt: toBase64Url(salt),
+      dkLen: PASSKEY_SECRET_KEY_BYTES
+    },
+    nonce: toBase64Url(nonce),
+    ciphertext: toBase64Url(cipher.encrypt(utf8ToBytes(input.value)))
+  };
+}
+
+export function openPasskeySecret(envelope: PasskeySecretEnvelope, passkey: string): string {
+  if (envelope.v !== 1) throw new Error("unsupported passkey secret version");
+  if (envelope.alg !== "PBKDF2-SHA256-XChaCha20-Poly1305") throw new Error("unsupported passkey secret algorithm");
+  if (envelope.kdf.name !== "pbkdf2-sha256") throw new Error("unsupported passkey secret KDF");
+  if (envelope.kdf.iterations !== PASSKEY_SECRET_PBKDF2_ITERATIONS) {
+    throw new Error("unsupported passkey secret KDF iterations");
+  }
+  if (envelope.kdf.dkLen !== PASSKEY_SECRET_KEY_BYTES) throw new Error("unsupported passkey secret key length");
+  const key = normalizeSecretKey(envelope.key);
+  const derived = derivePasskeySecretKey(requireNonEmpty(passkey, "passkey"), fromBase64Url(envelope.kdf.salt));
+  const aad = utf8ToBytes(stableJson(passkeySecretAad(key)));
+  const cipher = xchacha20poly1305(derived, fromBase64Url(envelope.nonce), aad);
+  return bytesToUtf8(cipher.decrypt(fromBase64Url(envelope.ciphertext)));
+}
+
+export function parsePasskeySecretEnvelope(raw: string): PasskeySecretEnvelope {
+  const parsed = JSON.parse(raw) as PasskeySecretEnvelope;
+  if (parsed.v !== 1 || typeof parsed.key !== "string" || typeof parsed.ciphertext !== "string") {
+    throw new Error("invalid passkey secret envelope");
+  }
+  return parsed;
+}
+
+function encryptInlineClip(input: Omit<BytesClipEncryptionInput, "payloadKind"> & { payloadKind: "text" | "image" | "file" | "secret" }): EncryptedClip {
   const clip: EncryptedClip = {
     clipId: input.clipId ?? `clip_${randomBase64Url(16)}`,
     originDeviceId: input.originDeviceId,
@@ -393,6 +532,51 @@ function assertSecretBytes(value: string, label: string): void {
   if (fromBase64Url(value).length !== 32) {
     throw new Error(`${label} must be 32 bytes`);
   }
+}
+
+function derivePasskeySecretKey(passkey: string, salt: Uint8Array): Uint8Array {
+  return pbkdf2(sha256, utf8ToBytes(passkey), salt, {
+    c: PASSKEY_SECRET_PBKDF2_ITERATIONS,
+    dkLen: PASSKEY_SECRET_KEY_BYTES
+  });
+}
+
+function passkeySecretAad(key: string): { purpose: string; key: string } {
+  return {
+    purpose: "pasta.passkey-secret.v1",
+    key
+  };
+}
+
+export function normalizeSecretKey(key: string): string {
+  const trimmed = key.trim();
+  if (!trimmed) throw new Error("secret key is required");
+  if (trimmed.startsWith("/")) {
+    throw new Error("secret key paths do not use a leading /; use KEY or production/tool/KEY");
+  }
+  if (trimmed.endsWith("/")) {
+    throw new Error("secret key path must not end with /");
+  }
+  const segments = trimmed.split("/");
+  if (segments.some((segment) => segment.length === 0)) {
+    throw new Error("secret key path has an empty segment");
+  }
+  for (const segment of segments) {
+    if (segment === "." || segment === "..") {
+      throw new Error("secret key path segments cannot be . or ..");
+    }
+    if (!/^[A-Za-z0-9._-]+$/u.test(segment)) {
+      throw new Error("secret key path segments may only use letters, digits, '.', '_', and '-'");
+    }
+  }
+  const normalized = segments.join("/");
+  if (normalized.length > 256) throw new Error("secret key is too long");
+  return normalized;
+}
+
+function requireNonEmpty(value: string, label: string): string {
+  if (!value) throw new Error(`${label} is required`);
+  return value;
 }
 
 function encryptClipMetadata(

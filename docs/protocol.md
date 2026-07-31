@@ -1,6 +1,6 @@
 # Pasta Protocol Spec
 
-Version: `pasta 0.1.21`
+Version: `pasta 0.1.23`
 
 Pasta uses a central HTTPS relay only. Devices encrypt clipboard payloads locally, sign every authenticated request with an app-owned Ed25519 device key, and route state to one Cloudflare Durable Object per encrypted clipboard space. The relay never receives clipboard plaintext or raw group keys.
 
@@ -16,6 +16,7 @@ Pasta uses a central HTTPS relay only. Devices encrypt clipboard payloads locall
 
 - Device request signing: Ed25519 over the canonical request string.
 - Clipboard payloads: XChaCha20-Poly1305 with a 32-byte group key and 24-byte nonce.
+- Passkey-protected secrets: PBKDF2-HMAC-SHA256 (210000 iterations) derives a key from the user passkey; the secret value is sealed with XChaCha20-Poly1305, then that envelope is wrapped again as an inline `payloadKind: "secret"` clip under the group key. Secret identity is a slash-separated key path (`KEY` or `production/tool/KEY`; no leading `/`). See ADR `docs/adrs/0003-passkey-protected-secrets.md`.
 - Pairing grants: X25519 shared secret, HKDF-SHA256, XChaCha20-Poly1305 wrapped group key.
 - Join grants: a trusted device seals the group key with a token-derived seal key for CI/sandbox registration; the relay stores only sealed grant data and a redemption verifier.
 - Short codes: temporary user-visible codes hashed with account context before storage.
@@ -66,6 +67,8 @@ The Worker rejects stale timestamps outside five minutes, bad body hashes, unkno
 | --- | --- | --- | --- | --- | --- |
 | `bootstrap` | `POST /v1/accounts/bootstrap` | none | first-device public keys, account/routing/device metadata | registered account/device | D1 `accounts`, `devices` |
 | `copy` | `POST /v1/clips` or `POST /v1/files` | device signature | encrypted text envelope, image/file bytes, or client-zipped directory bundle | clip metadata with display `seq` | Durable Object `clips`, optional R2 object |
+| `secret set` | `POST /v1/clips` | device signature | passkey-nested secret envelope wrapped with the group key (`payloadKind: "secret"`) | clip metadata with display `seq` | Durable Object `clips` |
+| `secret get` | `GET /v1/clips/history` then `/v1/clips/:clipId` | device signature | history scan for encrypted secret metadata name, then local passkey unlock | decrypted secret value on device only | D1 `last_seen_at` |
 | `paste` | `GET /v1/clips/latest` or `/v1/clips/:clipId` | device signature | empty signed request | encrypted clip | D1 `last_seen_at` |
 | `history` | `GET /v1/clips/history` | device signature | `before` clipId, `limit` query | encrypted clip list with display `seq` | D1 `last_seen_at` |
 | `history delete` | `DELETE /v1/clips/:clipId` | device signature | selected clip id | delete count and deleted object count | DO clip row delete, optional R2 object delete |

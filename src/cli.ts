@@ -5,10 +5,13 @@ import QRCode from "qrcode";
 import {
   decryptClipMetadata,
   decryptBytesClip,
+  decryptPasskeySecretClip,
   decryptTextClip,
   encryptBytesClip,
+  encryptPasskeySecretClip,
   encryptTextClip,
   createJoinGrantToken,
+  normalizeSecretKey,
   generateDeviceKeyMaterial,
   generateGroupKey,
   hashJoinGrantRedeemSecret,
@@ -30,6 +33,7 @@ import {
   MAX_HISTORY_LIMIT,
   PASTA_VERSION,
   PROTOCOL_ENDPOINTS,
+  SECRET_MIME,
   type BootstrapRequest,
   type ClipMetadata,
   type EncryptedClip,
@@ -178,6 +182,15 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<ExitCo
         return ExitCode.ok;
       }
       return await historyCommand(argv.slice(1), io, paths, secrets, clipboard, deps);
+    }
+
+    if (command === "secret") {
+      const secretArgv = argv.slice(1);
+      if (secretArgv.includes("--help") || !secretArgv[0] || secretArgv[0] === "help") {
+        io.stdout(commandHelp("secret"));
+        return ExitCode.ok;
+      }
+      return await secretCommand(secretArgv, io, paths, secrets, clipboard, deps);
     }
 
     if (command === "daemon") {
@@ -511,6 +524,10 @@ async function pasteCommand(
     io.stderr(`latest clip is ${clip.payloadKind}, not file\n`);
     return ExitCode.unavailable;
   }
+  if (clip.payloadKind === "secret") {
+    io.stderr("latest clip is a passkey-protected secret; use pasta secret get --key <key> --passkey <passkey>\n");
+    return ExitCode.unsupported;
+  }
   if (clip.payloadKind === "text") {
     const plaintext = await decryptStored(config, secrets, clip);
     if (out) {
@@ -786,6 +803,10 @@ async function historyCommand(
       return ExitCode.unavailable;
     }
     const clip = await fetchClipById(client, selected.clipId);
+    if (clip.payloadKind === "secret") {
+      io.stderr("history paste does not unlock passkey-protected secrets; use pasta secret get --key <key> --passkey <passkey>\n");
+      return ExitCode.usage;
+    }
     if (clip.payloadKind !== "text") {
       io.stderr(`history paste only supports text clips; use pasta paste --seq ${selected.seq} --out <path>\n`);
       return ExitCode.usage;
@@ -846,6 +867,190 @@ async function historyCommand(
     io.stdout(`${clip.seq}\t${clip.clipId}\t${new Date(clip.createdAt).toISOString()}\t${rendered}\n`);
   }
   return ExitCode.ok;
+}
+
+async function secretCommand(
+  argv: string[],
+  io: CliIo,
+  paths: Paths,
+  secrets: SecretStore,
+  clipboard: ClipboardAdapter,
+  deps: CliDeps
+): Promise<ExitCodeValue> {
+  const subcommand = argv[0];
+  if (subcommand === "set") {
+    return await secretSetCommand(argv.slice(1), io, paths, secrets, deps);
+  }
+  if (subcommand === "get") {
+    return await secretGetCommand(argv.slice(1), io, paths, secrets, clipboard, deps);
+  }
+  io.stderr("usage: pasta secret set|get --key <key-path> --passkey <passkey> [--value]\n");
+  return ExitCode.usage;
+}
+
+async function secretSetCommand(
+  argv: string[],
+  io: CliIo,
+  paths: Paths,
+  secrets: SecretStore,
+  deps: CliDeps
+): Promise<ExitCodeValue> {
+  if (argv.includes("--help")) {
+    io.stdout(commandHelp("secret"));
+    return ExitCode.ok;
+  }
+  const keyArg = option(argv, "--key");
+  const passkey = option(argv, "--passkey");
+  if (!keyArg?.trim()) {
+    io.stderr("secret set requires --key <key>\n");
+    return ExitCode.usage;
+  }
+  if (!passkey) {
+    io.stderr("secret set requires --passkey <passkey>\n");
+    return ExitCode.usage;
+  }
+  let key: string;
+  try {
+    key = normalizeSecretKey(keyArg);
+  } catch (error) {
+    io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
+    return ExitCode.usage;
+  }
+  let value: string;
+  try {
+    value = await readSecretValue(argv, io, deps);
+  } catch (error) {
+    io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
+    return ExitCode.usage;
+  }
+  const config = await readConfig(paths.configPath);
+  const client = clientFor(config, secrets, deps);
+  const published = await publishSecret(config, secrets, client, key, passkey, value);
+  writePublished(io, published, argv.includes("--json"));
+  return ExitCode.ok;
+}
+
+async function secretGetCommand(
+  argv: string[],
+  io: CliIo,
+  paths: Paths,
+  secrets: SecretStore,
+  clipboard: ClipboardAdapter,
+  deps: CliDeps
+): Promise<ExitCodeValue> {
+  if (argv.includes("--help")) {
+    io.stdout(commandHelp("secret"));
+    return ExitCode.ok;
+  }
+  const keyArg = option(argv, "--key");
+  const passkey = option(argv, "--passkey");
+  const jsonMode = argv.includes("--json");
+  if (!keyArg?.trim()) {
+    io.stderr("secret get requires --key <key>\n");
+    return ExitCode.usage;
+  }
+  if (!passkey) {
+    io.stderr("secret get requires --passkey <passkey>\n");
+    return ExitCode.usage;
+  }
+  let key: string;
+  try {
+    key = normalizeSecretKey(keyArg);
+  } catch (error) {
+    io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
+    return ExitCode.usage;
+  }
+  const config = await readConfig(paths.configPath);
+  const client = clientFor(config, secrets, deps);
+  const clip = await findSecretClip(config, secrets, client, key);
+  if (!clip) {
+    io.stderr(`no secret found for key ${key}\n`);
+    return ExitCode.unavailable;
+  }
+  let value: string;
+  try {
+    value = decryptPasskeySecretClip(
+      await requireSecret(secrets, SecretName.groupKey),
+      config.accountId,
+      config.routingId,
+      clip,
+      passkey
+    );
+  } catch {
+    io.stderr("incorrect passkey or corrupt secret envelope\n");
+    return ExitCode.auth;
+  }
+  if (argv.includes("--clipboard")) {
+    await clipboard.writeText(value);
+    if (jsonMode) {
+      writeJson(io, { ok: true, key, clipId: clip.clipId, seq: clip.seq, destination: "clipboard" });
+    }
+    return ExitCode.ok;
+  }
+  if (jsonMode) {
+    writeJson(io, { ok: true, key, clipId: clip.clipId, seq: clip.seq, value });
+    return ExitCode.ok;
+  }
+  io.stdout(value);
+  if (!value.endsWith("\n")) io.stdout("\n");
+  return ExitCode.ok;
+}
+
+async function readSecretValue(argv: string[], io: CliIo, deps: CliDeps): Promise<string> {
+  const index = argv.indexOf("--value");
+  if (index === -1) {
+    return (await deps.io?.stdinText?.() ?? await io.stdinText()).replace(/\n$/u, "");
+  }
+  const next = argv[index + 1];
+  if (!next || next.startsWith("--")) {
+    return (await deps.io?.stdinText?.() ?? await io.stdinText()).replace(/\n$/u, "");
+  }
+  return next;
+}
+
+async function publishSecret(
+  config: PastaConfig,
+  secrets: SecretStore,
+  client: ApiClient,
+  key: string,
+  passkey: string,
+  value: string
+): Promise<StoredClip> {
+  const groupKey = await requireSecret(secrets, SecretName.groupKey);
+  const clip = encryptPasskeySecretClip({
+    accountId: config.accountId,
+    routingId: config.routingId,
+    originDeviceId: config.deviceId,
+    key,
+    passkey,
+    value,
+    groupKey,
+    keyVersion: config.keyVersion
+  });
+  const response = await client.request<{ clip: StoredClip }>("POST", "/v1/clips", clip);
+  return response.clip;
+}
+
+async function findSecretClip(
+  config: PastaConfig,
+  secrets: SecretStore,
+  client: ApiClient,
+  key: string
+): Promise<StoredClip | null> {
+  let beforeClipId: string | null = null;
+  for (let page = 0; page < 1_000; page += 1) {
+    const clips = await fetchHistoryPage(client, beforeClipId);
+    if (clips.length === 0) return null;
+    for (const clip of clips) {
+      if (clip.payloadKind !== "secret" || clip.mime !== SECRET_MIME) continue;
+      const metadata = await decryptStoredMetadata(config, secrets, clip);
+      if (metadata?.name === key) {
+        return fetchClipById(client, clip.clipId);
+      }
+    }
+    beforeClipId = clips[clips.length - 1]!.clipId;
+  }
+  throw new Error("secret history scan exceeded page limit");
 }
 
 async function pairCommand(
@@ -1317,6 +1522,9 @@ function firstPositional(argv: string[]): string | undefined {
     "--ticket",
     "--account-id",
     "--routing-id",
+    "--key",
+    "--passkey",
+    "--value",
     "--seq",
     "--out",
     "--mime",
@@ -1454,6 +1662,10 @@ async function renderHistoryClip(config: PastaConfig, secrets: SecretStore, clip
   const base = `${clip.payloadKind} ${clip.mime} ${clip.byteLen} bytes encrypted`;
   if (clip.payloadKind === "text") {
     return `${base} ${JSON.stringify(previewText(await decryptStored(config, secrets, clip)))}`;
+  }
+  if (clip.payloadKind === "secret") {
+    const metadata = await decryptStoredMetadata(config, secrets, clip);
+    return `${base} ${JSON.stringify(metadata?.name ?? "secret")}`;
   }
   if (clip.payloadKind === "file") {
     return `${base} ${JSON.stringify(await displayFileName(config, secrets, clip))}`;
@@ -1605,6 +1817,20 @@ Examples:
   pasta history delete clip_example
   pasta history --json
 `,
+    secret: `usage: pasta secret set --key <key-path> --passkey <passkey> [--value [<value>]] [--json]
+       pasta secret get --key <key-path> --passkey <passkey> [--clipboard] [--json]
+
+Stores or retrieves a passkey-protected secret in the remote clipboard.
+The secret value is encrypted to the passkey before the normal group-key clip wrap, so paired devices still need the passkey.
+--key is a slash-separated path. A bare first segment needs no leading / (default root), for example KEY or production/tool/KEY.
+If --value is omitted or present without an argument, secret set reads stdin.
+
+Examples:
+  printf 'token-value\\n' | pasta secret set --key API_TOKEN --passkey Secret124 --value
+  pasta secret set --key production/tool/KEY --passkey Secret124 --value token-value
+  pasta secret get --key production/tool/KEY --passkey Secret124
+  pasta secret get --key API_TOKEN --passkey Secret124 --clipboard
+`,
     daemon: `usage: pasta daemon [--once] [--dry-run] [--interval-ms <n>] [--max-interval-ms <n>]
 
 Polls the clipboard and auto-publishes local text changes with adaptive idle backoff.
@@ -1720,6 +1946,8 @@ function helpText(): string {
     "  devices list [--include-revoked] [--json] | devices approve <code> | devices revoke <device>",
     "  copy [path] [--image|--file] [--mime <type>] [--json]",
     "  paste [--clipboard] [--seq <n>] [--out <path>] [--json]",
+    "  secret set --key <key-path> --passkey <passkey> [--value]",
+    "  secret get --key <key-path> --passkey <passkey>",
     "  history [--show] [--json] | history paste <seq|clipId> | history delete <seq|clipId>",
     "  daemon [--once] [--dry-run] [--interval-ms <n>] [--max-interval-ms <n>]",
     "  doctor",

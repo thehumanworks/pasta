@@ -20,9 +20,79 @@ final class PastaCoreBootstrapTests: XCTestCase {
 
     func testKeyboardOnlyDirectlyInsertsText() {
         XCTAssertEqual(PastaClipInsertability.keyboardAction(for: .text), .insertText)
+        XCTAssertEqual(PastaClipInsertability.keyboardAction(for: .secret), .unlockSecret)
         XCTAssertEqual(PastaClipInsertability.keyboardAction(for: .image), .handoff)
         XCTAssertEqual(PastaClipInsertability.keyboardAction(for: .file), .handoff)
         XCTAssertEqual(PastaClipInsertability.keyboardAction(for: .directoryBundle), .handoff)
+    }
+
+    func testPasskeySecretRoundTripRejectsWrongPasskey() throws {
+        let groupKey = try PastaCrypto.generateGroupKey()
+        let value = "super-secret-token"
+        let passkey = "Secret124"
+        let clip = try PastaCrypto.encryptPasskeySecretClip(
+            accountId: "acct_secret",
+            routingId: "space_secret",
+            originDeviceId: "dev_secret",
+            key: "API_TOKEN",
+            passkey: passkey,
+            value: value,
+            groupKey: groupKey,
+            clipId: "clip_secret",
+            createdAt: 1_782_475_200_000,
+            nonce: PastaEncoding.base64URLEncode(Array(repeating: 11, count: 24)),
+            salt: PastaEncoding.base64URLEncode(Array(repeating: 9, count: 16)),
+            passkeyNonce: PastaEncoding.base64URLEncode(Array(repeating: 13, count: 24))
+        )
+        XCTAssertEqual(clip.payloadKind, "secret")
+        XCTAssertEqual(clip.mime, PastaCore.secretMime)
+        XCTAssertFalse(clip.ciphertext.contains(value))
+        XCTAssertEqual(
+            try PastaCrypto.decryptPasskeySecretClip(
+                groupKey: groupKey,
+                accountId: "acct_secret",
+                routingId: "space_secret",
+                clip: clip,
+                passkey: passkey
+            ),
+            value
+        )
+        XCTAssertThrowsError(
+            try PastaCrypto.decryptPasskeySecretClip(
+                groupKey: groupKey,
+                accountId: "acct_secret",
+                routingId: "space_secret",
+                clip: clip,
+                passkey: "wrong-pass"
+            )
+        ) { error in
+            XCTAssertEqual(error as? PastaCryptoError, .incorrectPasskey)
+        }
+        let entry = PastaHistoryEntry(clip: StoredClip(seq: 1, clip: clip), decryptedText: nil, metadataName: "API_TOKEN")
+        XCTAssertNil(entry.keyboardClip)
+        XCTAssertEqual(entry.keyboardSecret?.key, "API_TOKEN")
+        XCTAssertEqual(try PastaCrypto.normalizeSecretKey("production/tool/KEY"), "production/tool/KEY")
+        XCTAssertEqual(try PastaCrypto.normalizeSecretKey("API_TOKEN"), "API_TOKEN")
+        XCTAssertThrowsError(try PastaCrypto.normalizeSecretKey("/production/tool/KEY"))
+        let nested = try PastaCrypto.encryptPasskeySecretClip(
+            accountId: "acct_secret",
+            routingId: "space_secret",
+            originDeviceId: "dev_secret",
+            key: "production/tool/KEY",
+            passkey: passkey,
+            value: "nested-secret",
+            groupKey: groupKey
+        )
+        XCTAssertEqual(
+            try PastaCrypto.decryptPasskeySecretClip(
+                groupKey: groupKey,
+                accountId: "acct_secret",
+                routingId: "space_secret",
+                clip: nested,
+                passkey: passkey
+            ),
+            "nested-secret"
+        )
     }
 
     func testJoinTokenExtractionAcceptsCliAndJsonPastes() throws {

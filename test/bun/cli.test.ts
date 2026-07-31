@@ -8,8 +8,8 @@ import { DIRECTORY_BUNDLE_MIME } from "../../src/cli/directory-zip";
 import { readConfig, type PastaConfig, type Paths, writeConfig } from "../../src/cli/config";
 import { authFileForHome, defaultSecretStoreForHome, FileSecretStore, MemorySecretStore, ResilientSecretStore, SecretName, type SecretStore } from "../../src/cli/secret-store";
 import { runCli } from "../../src/cli";
-import { decryptBytesClip, encryptBytesClip, encryptTextClip, generateDeviceKeyMaterial, generateGroupKey, parseJoinGrantToken } from "../../src/shared/crypto";
-import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, SIGNATURE_HEADERS, sha256Base64Url, type PairingGrantCreateRequest, type StoredClip } from "../../src/shared/protocol";
+import { decryptBytesClip, decryptPasskeySecretClip, encryptBytesClip, encryptTextClip, generateDeviceKeyMaterial, generateGroupKey, parseJoinGrantToken } from "../../src/shared/crypto";
+import { LARGE_PAYLOAD_INLINE_THRESHOLD_BYTES, LARGE_PAYLOAD_MAX_BYTES, PASTA_VERSION, SECRET_MIME, SIGNATURE_HEADERS, sha256Base64Url, type PairingGrantCreateRequest, type StoredClip } from "../../src/shared/protocol";
 import { detectShellKind, shellConfigPath, shellSnippet, type ShellKind } from "../../src/cli/shell";
 import { macosHotkeyPaths, macosHotkeySource, macosLaunchAgentPlist, normalizeGlobalHotkeys } from "../../src/cli/global-hotkeys";
 import { bytesToUtf8, fromBase64Url, stableJson, toBase64Url, utf8ToBytes } from "../../src/shared/encoding";
@@ -28,6 +28,7 @@ describe("CLI", () => {
       [["copy", "--help"], "pasta copy ./Downloads/unlimit.png"],
       [["paste", "--help"], "pasta paste --out ./received.bin"],
       [["history", "--help"], "pasta history delete 7"],
+      [["secret", "--help"], "pasta secret set --key production/tool/KEY --passkey Secret124 --value"],
       [["daemon", "--help"], "pasta daemon --interval-ms 2000"],
       [["pair", "--help"], "pasta pair consume"],
       [["devices", "--help"], "pasta devices revoke dev_example"],
@@ -281,6 +282,92 @@ describe("CLI", () => {
     output.length = 0;
     expect(await runCli(["devices", "list", "--json"], deps)).toBe(0);
     expect(JSON.parse(output.join("")).devices[0].deviceId).toBe("dev_active");
+  });
+
+  it("sets and gets passkey-protected secrets from stdin or --value", async () => {
+    const paths = await tempPaths();
+    const secrets = new MemorySecretStore();
+    const groupKey = generateGroupKey();
+    await secrets.set(SecretName.groupKey, groupKey);
+    await secrets.set(SecretName.wrappingPrivateKey, generateDeviceKeyMaterial().wrapping.privateKey);
+    await writeConfig(sampleConfig(), paths.configPath);
+    const clips: StoredClip[] = [];
+    const client = new MockApiClient(({ method, path, body }) => {
+      if (method === "POST" && path === "/v1/clips") {
+        const clip = { ...(body as StoredClip), seq: clips.length + 1 };
+        clips.push(clip);
+        return { clip };
+      }
+      if (path === "/v1/clips/latest") return { clip: clips.at(-1) ?? null };
+      if (path.startsWith("/v1/clips/history")) return { clips: [...clips].reverse() };
+      if (method === "GET" && path.startsWith("/v1/clips/")) {
+        const clipId = decodeURIComponent(path.split("/").at(-1)!);
+        return { clip: clips.find((clip) => clip.clipId === clipId) };
+      }
+      throw new Error(`unexpected ${method} ${path}`);
+    });
+    const output: string[] = [];
+    const deps = {
+      io: capture(output, "token-from-stdin"),
+      paths,
+      secrets,
+      clipboard: new MemoryClipboardAdapter(""),
+      clientFactory: () => client
+    };
+
+    expect(await runCli(["secret", "set", "--key", "API_TOKEN", "--passkey", "Secret124", "--value"], deps)).toBe(0);
+    expect(clips).toHaveLength(1);
+    expect(clips[0]?.payloadKind).toBe("secret");
+    expect(clips[0]?.mime).toBe(SECRET_MIME);
+    expect(JSON.stringify(clips[0])).not.toContain("token-from-stdin");
+    expect(JSON.stringify(clips[0])).not.toContain("Secret124");
+
+    output.length = 0;
+    expect(await runCli(["secret", "get", "--key", "API_TOKEN", "--passkey", "Secret124"], deps)).toBe(0);
+    expect(output.join("").trim()).toBe("token-from-stdin");
+    expect(decryptPasskeySecretClip(groupKey, "acct_test", "space_test", clips[0]!, "Secret124")).toBe("token-from-stdin");
+
+    output.length = 0;
+    expect(await runCli(["secret", "get", "--key", "API_TOKEN", "--passkey", "wrong"], deps)).toBe(4);
+    expect(output.join("")).toContain("incorrect passkey");
+
+    output.length = 0;
+    expect(await runCli(["secret", "set", "--key", "API_TOKEN", "--passkey", "Secret124", "--value", "inline-token"], {
+      ...deps,
+      io: capture(output)
+    })).toBe(0);
+    output.length = 0;
+    expect(await runCli(["secret", "get", "--key", "API_TOKEN", "--passkey", "Secret124"], deps)).toBe(0);
+    expect(output.join("").trim()).toBe("inline-token");
+
+    output.length = 0;
+    expect(await runCli([
+      "secret",
+      "set",
+      "--key",
+      "production/tool/KEY",
+      "--passkey",
+      "Secret124",
+      "--value",
+      "nested-token"
+    ], { ...deps, io: capture(output) })).toBe(0);
+    output.length = 0;
+    expect(await runCli(["secret", "get", "--key", "production/tool/KEY", "--passkey", "Secret124"], deps)).toBe(0);
+    expect(output.join("").trim()).toBe("nested-token");
+    output.length = 0;
+    expect(await runCli(["secret", "set", "--key", "/production/tool/KEY", "--passkey", "Secret124", "--value", "x"], {
+      ...deps,
+      io: capture(output)
+    })).toBe(2);
+    expect(output.join("")).toContain("leading /");
+
+    output.length = 0;
+    expect(await runCli(["paste"], deps)).toBe(6);
+    expect(output.join("")).toContain("passkey-protected secret");
+
+    output.length = 0;
+    expect(await runCli(["--help"], { io: capture(output) })).toBe(0);
+    expect(output.join("")).toContain("secret set --key <key-path> --passkey <passkey>");
   });
 
   it("prints scriptable local status", async () => {

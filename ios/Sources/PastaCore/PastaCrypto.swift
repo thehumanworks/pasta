@@ -1,4 +1,5 @@
 import Clibsodium
+import CommonCrypto
 import CryptoKit
 import Foundation
 import Sodium
@@ -12,6 +13,7 @@ public enum PastaCryptoError: Error, Equatable {
     case unsupportedPayloadKind
     case aadMismatch
     case payloadTooLarge
+    case incorrectPasskey
 }
 
 public struct PastaKeyPair: Equatable, Sendable {
@@ -170,13 +172,137 @@ public enum PastaCrypto {
     }
 
     public static func encryptBytesClip(_ input: BytesClipEncryptionInput) throws -> EncryptedClip {
-        guard input.payloadKind == "file" || input.payloadKind == "image" else {
+        guard input.payloadKind == "file" || input.payloadKind == "image" || input.payloadKind == "secret" else {
             throw PastaCryptoError.unsupportedPayloadKind
         }
         guard input.bytes.count <= PastaCore.largePayloadMaxBytes else {
             throw PastaCryptoError.payloadTooLarge
         }
         return try encryptInlineClip(input)
+    }
+
+    public static func encryptPasskeySecretClip(
+        accountId: String,
+        routingId: String,
+        originDeviceId: String,
+        key: String,
+        passkey: String,
+        value: String,
+        groupKey: String,
+        keyVersion: Int = 1,
+        clipId: String? = nil,
+        createdAt: Int64? = nil,
+        expiresAt: Int64? = nil,
+        nonce: String? = nil,
+        salt: String? = nil,
+        passkeyNonce: String? = nil
+    ) throws -> EncryptedClip {
+        let normalizedKey = try normalizeSecretKey(key)
+        let envelope = try sealPasskeySecret(
+            key: normalizedKey,
+            passkey: passkey,
+            value: value,
+            salt: salt,
+            nonce: passkeyNonce
+        )
+        let envelopeJSON = try PastaEncoding.stableJSONString(envelope)
+        return try encryptInlineClip(
+            BytesClipEncryptionInput(
+                accountId: accountId,
+                routingId: routingId,
+                originDeviceId: originDeviceId,
+                bytes: PastaEncoding.bytes(envelopeJSON),
+                payloadKind: "secret",
+                mime: PastaCore.secretMime,
+                groupKey: groupKey,
+                keyVersion: keyVersion,
+                clipId: clipId,
+                createdAt: createdAt,
+                expiresAt: expiresAt,
+                nonce: nonce,
+                metadata: ClipMetadata(name: normalizedKey)
+            )
+        )
+    }
+
+    public static func decryptPasskeySecretClip(
+        groupKey: String,
+        accountId: String,
+        routingId: String,
+        clip: EncryptedClip,
+        passkey: String
+    ) throws -> String {
+        guard clip.payloadKind == "secret" else { throw PastaCryptoError.unsupportedPayloadKind }
+        let envelopeBytes = try decryptBytesClip(
+            groupKey: groupKey,
+            accountId: accountId,
+            routingId: routingId,
+            clip: clip
+        )
+        let envelope = try JSONDecoder().decode(PasskeySecretEnvelope.self, from: Data(envelopeBytes))
+        do {
+            return try openPasskeySecret(envelope, passkey: passkey)
+        } catch {
+            throw PastaCryptoError.incorrectPasskey
+        }
+    }
+
+    public static func sealPasskeySecret(
+        key: String,
+        passkey: String,
+        value: String,
+        salt: String? = nil,
+        nonce: String? = nil
+    ) throws -> PasskeySecretEnvelope {
+        let normalizedKey = try normalizeSecretKey(key)
+        guard !passkey.isEmpty else { throw PastaCryptoError.invalidKey }
+        let saltBytes = try salt.map(PastaEncoding.base64URLDecode) ?? PastaEncoding.randomBytes(count: PastaCore.passkeySecretSaltBytes)
+        guard saltBytes.count == PastaCore.passkeySecretSaltBytes else { throw PastaCryptoError.invalidKey }
+        let nonceBytes = try nonce.map(PastaEncoding.base64URLDecode) ?? PastaEncoding.randomBytes(count: 24)
+        guard nonceBytes.count == 24 else { throw PastaCryptoError.invalidKey }
+        let derived = try derivePasskeySecretKey(passkey: passkey, salt: saltBytes)
+        let aad = PastaEncoding.bytes(try PastaEncoding.stableJSONString(PasskeySecretAAD(purpose: "pasta.passkey-secret.v1", key: normalizedKey)))
+        guard let encrypted = encryptWithNonce(
+            message: PastaEncoding.bytes(value),
+            key: derived,
+            nonce: nonceBytes,
+            additionalData: aad
+        ) else {
+            throw PastaCryptoError.cryptoFailed
+        }
+        return PasskeySecretEnvelope(
+            v: 1,
+            alg: "PBKDF2-SHA256-XChaCha20-Poly1305",
+            key: normalizedKey,
+            kdf: PasskeySecretKDF(
+                name: "pbkdf2-sha256",
+                iterations: PastaCore.passkeySecretPbkdf2Iterations,
+                salt: PastaEncoding.base64URLEncode(saltBytes),
+                dkLen: PastaCore.passkeySecretKeyBytes
+            ),
+            nonce: PastaEncoding.base64URLEncode(encrypted.nonce),
+            ciphertext: PastaEncoding.base64URLEncode(encrypted.authenticatedCipherText)
+        )
+    }
+
+    public static func openPasskeySecret(_ envelope: PasskeySecretEnvelope, passkey: String) throws -> String {
+        guard envelope.v == 1 else { throw PastaCryptoError.unsupportedPayloadKind }
+        guard envelope.alg == "PBKDF2-SHA256-XChaCha20-Poly1305" else { throw PastaCryptoError.unsupportedPayloadKind }
+        guard envelope.kdf.name == "pbkdf2-sha256" else { throw PastaCryptoError.unsupportedPayloadKind }
+        guard envelope.kdf.iterations == PastaCore.passkeySecretPbkdf2Iterations else { throw PastaCryptoError.unsupportedPayloadKind }
+        guard envelope.kdf.dkLen == PastaCore.passkeySecretKeyBytes else { throw PastaCryptoError.unsupportedPayloadKind }
+        let normalizedKey = try normalizeSecretKey(envelope.key)
+        let derived = try derivePasskeySecretKey(passkey: passkey, salt: try PastaEncoding.base64URLDecode(envelope.kdf.salt))
+        let aad = PastaEncoding.bytes(try PastaEncoding.stableJSONString(PasskeySecretAAD(purpose: "pasta.passkey-secret.v1", key: normalizedKey)))
+        guard let decrypted = Sodium().aead.xchacha20poly1305ietf.decrypt(
+            authenticatedCipherText: try PastaEncoding.base64URLDecode(envelope.ciphertext),
+            secretKey: derived,
+            nonce: try PastaEncoding.base64URLDecode(envelope.nonce),
+            additionalData: aad
+        ) else {
+            throw PastaCryptoError.incorrectPasskey
+        }
+        return try PastaEncoding.string(decrypted)
     }
 
     public static func decryptTextClip(
@@ -205,7 +331,9 @@ public enum PastaCrypto {
         routingId: String,
         clip: EncryptedClip
     ) throws -> [UInt8] {
-        guard clip.payloadKind == "file" || clip.payloadKind == "image" else { throw PastaCryptoError.unsupportedPayloadKind }
+        guard clip.payloadKind == "file" || clip.payloadKind == "image" || clip.payloadKind == "secret" else {
+            throw PastaCryptoError.unsupportedPayloadKind
+        }
         let aad = aadForClip(accountId: accountId, routingId: routingId, clip: clip)
         guard clipAADHash(aad) == clip.aadHash else { throw PastaCryptoError.aadMismatch }
         guard let decrypted = Sodium().aead.xchacha20poly1305ietf.decrypt(
@@ -538,6 +666,61 @@ public enum PastaCrypto {
         guard status == 0 else { return nil }
         return (cipherText, nonce)
     }
+
+    private static func derivePasskeySecretKey(passkey: String, salt: [UInt8]) throws -> [UInt8] {
+        var derived = [UInt8](repeating: 0, count: PastaCore.passkeySecretKeyBytes)
+        let status = CCKeyDerivationPBKDF(
+            CCPBKDFAlgorithm(kCCPBKDF2),
+            passkey,
+            passkey.utf8.count,
+            salt,
+            salt.count,
+            CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+            UInt32(PastaCore.passkeySecretPbkdf2Iterations),
+            &derived,
+            derived.count
+        )
+        guard status == kCCSuccess else { throw PastaCryptoError.cryptoFailed }
+        return derived
+    }
+
+    public static func normalizeSecretKey(_ key: String) throws -> String {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw PastaCryptoError.invalidKey }
+        guard !trimmed.hasPrefix("/") else { throw PastaCryptoError.invalidKey }
+        guard !trimmed.hasSuffix("/") else { throw PastaCryptoError.invalidKey }
+        let segments = trimmed.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard !segments.contains(where: \.isEmpty) else { throw PastaCryptoError.invalidKey }
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+        for segment in segments {
+            guard segment != ".", segment != ".." else { throw PastaCryptoError.invalidKey }
+            guard segment.unicodeScalars.allSatisfy({ allowed.contains($0) }) else { throw PastaCryptoError.invalidKey }
+        }
+        let normalized = segments.joined(separator: "/")
+        guard normalized.count <= 256 else { throw PastaCryptoError.invalidKey }
+        return normalized
+    }
+}
+
+public struct PasskeySecretKDF: Codable, Equatable, Sendable {
+    public let name: String
+    public let iterations: Int
+    public let salt: String
+    public let dkLen: Int
+}
+
+public struct PasskeySecretEnvelope: Codable, Equatable, Sendable {
+    public let v: Int
+    public let alg: String
+    public let key: String
+    public let kdf: PasskeySecretKDF
+    public let nonce: String
+    public let ciphertext: String
+}
+
+private struct PasskeySecretAAD: Codable {
+    let purpose: String
+    let key: String
 }
 
 private struct SealedJoinGrant: Codable {

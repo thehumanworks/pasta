@@ -1,14 +1,14 @@
 ---
 title: Protocol & Crypto
 slug: protocol
-description: Wire format, signing, encryption, and API endpoints for Pasta v0.1.19.
+description: Wire format, signing, encryption, and API endpoints for Pasta v0.1.23.
 nav_order: 6
 ---
 
 <!-- @human -->
 ## Version
 
-Protocol version aligns with **`pasta 0.1.19`**. Run `pasta protocol` for the live endpoint map from your installed CLI.
+Protocol version aligns with **`pasta 0.1.23`**. Run `pasta protocol` for the live endpoint map from your installed CLI.
 
 ## Identifiers
 
@@ -23,6 +23,8 @@ Protocol version aligns with **`pasta 0.1.19`**. Run `pasta protocol` for the li
 ## Encryption
 
 **Clipboard payloads:** XChaCha20-Poly1305 with a 32-byte group key and 24-byte nonce.
+
+**Passkey-protected secrets:** PBKDF2-HMAC-SHA256 (210000 iterations) derives a key from the user passkey; the secret value is sealed with XChaCha20-Poly1305, then that envelope is wrapped again as an inline `payloadKind: "secret"` clip under the group key. Secret identity is a slash-separated key path (`KEY` or `production/tool/KEY`; no leading `/`). Cloudflare never sees the passkey or plaintext value.
 
 **Additional authenticated data (AAD)** is canonical JSON binding ciphertext to account, routing, clip metadata, payload kind, MIME, byte length, and key version. The server stores an `aadHash`; clients must match.
 
@@ -121,7 +123,7 @@ MAX_HISTORY_LIMIT = 100
 
 ## EncryptedClip shape
 
-Fields: `clipId`, `originDeviceId`, `createdAt`, `expiresAt`, `payloadKind` (`text`|`image`|`file`), `mime`, `byteLen`, `keyVersion`, `nonce`, `aadHash`, `ciphertext`, optional `storageKind`, `payloadId`, `r2Key`.
+Fields: `clipId`, `originDeviceId`, `createdAt`, `expiresAt`, `payloadKind` (`text`|`image`|`file`|`secret`), `mime`, `byteLen`, `keyVersion`, `nonce`, `aadHash`, `ciphertext`, optional `storageKind`, `payloadId`, `r2Key`.
 
 `StoredClip` adds display `seq`. `clipId` remains the stable identity for API paths, R2 keys, and client caches.
 

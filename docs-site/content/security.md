@@ -11,6 +11,7 @@ nav_order: 10
 | Asset | Protection |
 | --- | --- |
 | Clipboard plaintext | Encrypted before upload; decrypted only on device |
+| Passkey-protected secrets | Nested encryption: passkey seals the value, group key wraps the envelope; wrong passkeys fail closed |
 | Group key | `$PASTA_HOME/auth.json` by default; wrapped for pairing |
 | Device private keys | `$PASTA_HOME/auth.json` by default |
 | Request integrity | Ed25519 signatures + body hash |
@@ -34,6 +35,10 @@ nav_order: 10
 ## Local secrets
 
 Pasta keeps device auth in `$PASTA_HOME/auth.json` with `0600` permissions by default. OS credential storage is disabled unless you opt in with `$PASTA_HOME/settings.json` or an environment variable such as `PASTA_AUTH_STORE=keychain`. This keeps SSH and other noninteractive terminals working without sending secrets to the relay or storing them in `config.json`.
+
+## Passkey-protected remote secrets
+
+`pasta secret set` / `pasta secret get` store named values in the remote clipboard with an extra passkey layer. Keys are slash-separated paths (`KEY` at the default root, or `production/tool/KEY`). Cloudflare and passkey-less trusted devices can see that a named secret exists (after local group-key metadata decrypt) but cannot recover the value. Passkeys are never sent to the relay. See ADR `docs/adrs/0003-passkey-protected-secrets.md`.
 
 ## CI and sandbox tokens
 

@@ -6,6 +6,7 @@ import UIKit
 @MainActor
 final class KeyboardViewController: KeyboardInputViewController {
     private var clips: [PastaKeyboardClip] = []
+    private var secrets: [PastaKeyboardSecret] = []
     private var hasAutoRefreshedHistory = false
     private var isRunningLiveAction = false
     private var statusMessage: String?
@@ -125,6 +126,7 @@ final class KeyboardViewController: KeyboardInputViewController {
     private func refreshToolbarModel() {
         toolbarModel.update(
             clips: clips,
+            secrets: secrets,
             statusMessage: statusMessage,
             isRunningLiveAction: isRunningLiveAction
         )
@@ -140,7 +142,9 @@ final class KeyboardViewController: KeyboardInputViewController {
                 state: controller.state,
                 toolbarModel: model,
                 insertClip: { [weak self] text in self?.textDocumentProxy.insertText(text) },
-                publish: { [weak self] in self?.publishClipboardText() }
+                publish: { [weak self] in self?.publishClipboardText() },
+                unlockSecret: { [weak self] secret in self?.promptUnlockSecret(secret) },
+                setSecret: { [weak self] in self?.promptSetSecretFromClipboard() }
             )
         }
         deferKeyboardSurfaceToHost()
@@ -162,15 +166,19 @@ final class KeyboardViewController: KeyboardInputViewController {
                 reportsStatus: reportsStatus
             ) {
                 let live = try liveContext()
-                let refreshed = try await client.history(
+                let entries = try await client.historyEntries(
                     configuration: live.configuration,
                     groupKey: live.groupKey,
                     signingPrivateKey: live.signingPrivateKey
                 )
+                let refreshed = PastaHistoryEntry.keyboardClips(from: entries)
+                secrets = PastaHistoryEntry.keyboardSecrets(from: entries)
                 clips = refreshed
                 try store?.saveKeyboardClips(refreshed)
                 if reportsStatus {
-                    statusMessage = refreshed.isEmpty ? "No Pasta text history yet." : "Synced \(refreshed.count) Pasta text clips."
+                    statusMessage = refreshed.isEmpty && secrets.isEmpty
+                        ? "No Pasta history yet."
+                        : "Synced \(refreshed.count) text and \(secrets.count) secret clips."
                 }
                 refreshToolbarModel()
             }
@@ -204,6 +212,118 @@ final class KeyboardViewController: KeyboardInputViewController {
                 refreshToolbarModel()
             }
         }
+    }
+
+    private func promptUnlockSecret(_ secret: PastaKeyboardSecret) {
+        presentPasskeyAlert(
+            title: "Unlock Secret",
+            message: "Enter the passkey for \(secret.key).",
+            includeKeyField: false
+        ) { [weak self] _, passkey in
+            self?.unlockSecret(secret, passkey: passkey)
+        }
+    }
+
+    private func promptSetSecretFromClipboard() {
+        presentPasskeyAlert(
+            title: "Set Secret",
+            message: "Publish the clipboard text as a passkey-protected secret.",
+            includeKeyField: true
+        ) { [weak self] key, passkey in
+            self?.setSecretFromClipboard(key: key ?? "", passkey: passkey)
+        }
+    }
+
+    private func unlockSecret(_ secret: PastaKeyboardSecret, passkey: String) {
+        Task {
+            await runLiveAction(started: "Unlocking secret...") {
+                let live = try liveContext()
+                let value = try await client.unlockSecret(
+                    clipId: secret.clipId,
+                    passkey: passkey,
+                    configuration: live.configuration,
+                    groupKey: live.groupKey,
+                    signingPrivateKey: live.signingPrivateKey
+                )
+                textDocumentProxy.insertText(value)
+                statusMessage = "Inserted secret \(secret.key)."
+            }
+        }
+    }
+
+    private func setSecretFromClipboard(key: String, passkey: String) {
+        Task {
+            await runLiveAction(started: "Publishing secret...") {
+                let live = try liveContext()
+                guard let text = UIPasteboard.general.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    statusMessage = "Clipboard has no text."
+                    return
+                }
+                let normalizedKey = try PastaCrypto.normalizeSecretKey(key)
+                let clip = try await client.publishSecret(
+                    key: normalizedKey,
+                    passkey: passkey,
+                    value: text,
+                    configuration: live.configuration,
+                    groupKey: live.groupKey,
+                    signingPrivateKey: live.signingPrivateKey
+                )
+                let cached = PastaKeyboardSecret(
+                    clipId: clip.clipId,
+                    sequence: clip.seq,
+                    key: normalizedKey,
+                    createdAt: clip.createdAt
+                )
+                secrets = [cached] + secrets.filter { $0.key != cached.key }
+                statusMessage = "Published secret \(cached.key)."
+                refreshToolbarModel()
+            }
+        }
+    }
+
+    private func presentPasskeyAlert(
+        title: String,
+        message: String,
+        includeKeyField: Bool,
+        onConfirm: @escaping (_ key: String?, _ passkey: String) -> Void
+    ) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        if includeKeyField {
+            alert.addTextField { field in
+                field.placeholder = "Key path (KEY or production/tool/KEY)"
+                field.autocapitalizationType = .none
+                field.autocorrectionType = .no
+            }
+        }
+        alert.addTextField { field in
+            field.placeholder = "Passkey"
+            field.isSecureTextEntry = true
+            field.autocapitalizationType = .none
+            field.autocorrectionType = .no
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Continue", style: .default) { _ in
+            let fields = alert.textFields ?? []
+            if includeKeyField {
+                let key = fields.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let passkey = fields.dropFirst().first?.text ?? ""
+                guard !key.isEmpty, !passkey.isEmpty else {
+                    self.statusMessage = "Secret key and passkey are required."
+                    self.refreshToolbarModel()
+                    return
+                }
+                onConfirm(key, passkey)
+            } else {
+                let passkey = fields.first?.text ?? ""
+                guard !passkey.isEmpty else {
+                    self.statusMessage = "Passkey is required."
+                    self.refreshToolbarModel()
+                    return
+                }
+                onConfirm(nil, passkey)
+            }
+        })
+        present(alert, animated: true)
     }
 
     private func runLiveAction(
@@ -258,6 +378,8 @@ private struct PastaKeyboardView: View {
     @ObservedObject var toolbarModel: PastaKeyboardToolbarModel
     let insertClip: (String) -> Void
     let publish: () -> Void
+    let unlockSecret: (PastaKeyboardSecret) -> Void
+    let setSecret: () -> Void
 
     @EnvironmentObject private var keyboardContext: KeyboardContext
     @StateObject private var layoutCache = PastaKeyboardLayoutCache()
@@ -287,7 +409,9 @@ private struct PastaKeyboardView: View {
                     model: toolbarModel,
                     autocompleteToolbar: params.view,
                     insertClip: insertClip,
-                    publish: publish
+                    publish: publish,
+                    unlockSecret: unlockSecret,
+                    setSecret: setSecret
                 )
             }
         )
@@ -653,6 +777,8 @@ private struct PastaKeyboardToolbar<AutocompleteToolbar: View>: View {
     let autocompleteToolbar: AutocompleteToolbar
     let insertClip: (String) -> Void
     let publish: () -> Void
+    let unlockSecret: (PastaKeyboardSecret) -> Void
+    let setSecret: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -662,6 +788,8 @@ private struct PastaKeyboardToolbar<AutocompleteToolbar: View>: View {
                 isEnabled: !model.isRunningLiveAction,
                 action: publish
             )
+            divider
+            secretMenu
             divider
             autocompleteToolbar
                 .frame(maxWidth: .infinity)
@@ -716,6 +844,35 @@ private struct PastaKeyboardToolbar<AutocompleteToolbar: View>: View {
         .foregroundStyle(PastaToolbarAppearance.foreground)
         .background(Color.clear)
         .accessibilityLabel("Paste from Pasta History")
+    }
+
+    private var secretMenu: some View {
+        Menu {
+            Button("Set Secret from Clipboard") {
+                setSecret()
+            }
+            .disabled(model.isRunningLiveAction)
+            if model.visibleSecrets.isEmpty {
+                Button("No Pasta secrets") {}
+                    .disabled(true)
+            } else {
+                ForEach(model.visibleSecrets, id: \.clipId) { secret in
+                    Button(secret.key) {
+                        unlockSecret(secret)
+                    }
+                    .disabled(model.isRunningLiveAction)
+                }
+            }
+        } label: {
+            Image(systemName: "key.fill")
+                .font(PastaToolbarAppearance.iconFont)
+                .frame(width: PastaToolbarAppearance.actionWidth, height: PastaToolbarAppearance.toolbarHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(PastaToolbarAppearance.foreground)
+        .background(Color.clear)
+        .accessibilityLabel("Pasta Secrets")
     }
 
     private var divider: some View {
@@ -777,11 +934,18 @@ private extension Keyboard.ButtonStyle {
 @MainActor
 private final class PastaKeyboardToolbarModel: ObservableObject {
     @Published private(set) var clips: [PastaKeyboardClip]
+    @Published private(set) var secrets: [PastaKeyboardSecret]
     @Published private(set) var statusMessage: String?
     @Published private(set) var isRunningLiveAction: Bool
 
-    init(clips: [PastaKeyboardClip] = [], statusMessage: String? = nil, isRunningLiveAction: Bool = false) {
+    init(
+        clips: [PastaKeyboardClip] = [],
+        secrets: [PastaKeyboardSecret] = [],
+        statusMessage: String? = nil,
+        isRunningLiveAction: Bool = false
+    ) {
         self.clips = clips
+        self.secrets = secrets
         self.statusMessage = statusMessage
         self.isRunningLiveAction = isRunningLiveAction
     }
@@ -790,8 +954,18 @@ private final class PastaKeyboardToolbarModel: ObservableObject {
         Array(clips.prefix(12))
     }
 
-    func update(clips: [PastaKeyboardClip], statusMessage: String?, isRunningLiveAction: Bool) {
+    var visibleSecrets: [PastaKeyboardSecret] {
+        Array(secrets.prefix(12))
+    }
+
+    func update(
+        clips: [PastaKeyboardClip],
+        secrets: [PastaKeyboardSecret],
+        statusMessage: String?,
+        isRunningLiveAction: Bool
+    ) {
         self.clips = clips
+        self.secrets = secrets
         self.statusMessage = statusMessage
         self.isRunningLiveAction = isRunningLiveAction
     }
@@ -947,6 +1121,9 @@ private extension PastaKeyboardToolbarModel {
                 PastaKeyboardClip(clipId: "clip_preview_2", sequence: 2, title: "melissa_bikini@icloud.com", text: "melissa_bikini@icloud.com", createdAt: 0),
                 PastaKeyboardClip(clipId: "clip_preview_1", sequence: 1, title: "1172", text: "1172", createdAt: 0)
             ],
+            secrets: [
+                PastaKeyboardSecret(clipId: "clip_secret_1", sequence: 4, key: "API_TOKEN", createdAt: 0)
+            ],
             statusMessage: nil,
             isRunningLiveAction: false
         )
@@ -969,7 +1146,9 @@ private struct PastaKeyboardPreviewHost: View {
                 state: controller.state,
                 toolbarModel: .preview,
                 insertClip: { _ in },
-                publish: {}
+                publish: {},
+                unlockSecret: { _ in },
+                setSecret: {}
             )
         }
         .keyboardState(controller.state)
@@ -989,7 +1168,9 @@ private struct PastaKeyboardPreviewHost: View {
             suggestionAction: { _ in }
         ),
         insertClip: { _ in },
-        publish: {}
+        publish: {},
+        unlockSecret: { _ in },
+        setSecret: {}
     )
     .frame(width: 393, height: 60)
     .background(Color.keyboardBackground)

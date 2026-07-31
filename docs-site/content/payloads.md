@@ -6,15 +6,16 @@ nav_order: 9
 ---
 
 <!-- @human -->
-## Three payload kinds
+## Payload kinds
 
 | Kind | Commands | Storage |
 | --- | --- | --- |
 | `text` | `copy`, `paste`, `history` | Inline in Durable Object |
+| `secret` | `secret set`, `secret get` | Inline in Durable Object; nested passkey encryption |
 | `image` | `copy --image`, `paste --image` | Inline or R2 encrypted blob |
 | `file` | `copy <path>`, `paste [--out <path>]` | R2 encrypted blob |
 
-All kinds are **encrypted on your device** before upload. Cloudflare stores ciphertext and metadata. File basenames are encrypted for trusted devices; local paths and plaintext names are not stored in Worker, DO, or R2 metadata.
+All kinds are **encrypted on your device** before upload. Cloudflare stores ciphertext and metadata. File basenames are encrypted for trusted devices; local paths and plaintext names are not stored in Worker, DO, or R2 metadata. Secret values add a passkey layer so the group key alone cannot recover them.
 
 ## Images
 

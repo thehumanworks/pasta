@@ -185,6 +185,69 @@ public struct PastaAPIClient: Sendable {
         return PastaHistoryEntry.keyboardClips(from: entries)
     }
 
+    public func historySecrets(configuration: PastaDeviceConfiguration, groupKey: String, signingPrivateKey: String, limit: Int = PastaCore.defaultHistoryLimit) async throws -> [PastaKeyboardSecret] {
+        let entries = try await historyEntries(
+            configuration: configuration,
+            groupKey: groupKey,
+            signingPrivateKey: signingPrivateKey,
+            limit: limit
+        )
+        return PastaHistoryEntry.keyboardSecrets(from: entries)
+    }
+
+    public func publishSecret(
+        key: String,
+        passkey: String,
+        value: String,
+        configuration: PastaDeviceConfiguration,
+        groupKey: String,
+        signingPrivateKey: String
+    ) async throws -> StoredClip {
+        let clip = try PastaCrypto.encryptPasskeySecretClip(
+            accountId: configuration.accountId,
+            routingId: configuration.routingId,
+            originDeviceId: configuration.deviceId,
+            key: key,
+            passkey: passkey,
+            value: value,
+            groupKey: groupKey,
+            keyVersion: configuration.keyVersion
+        )
+        let response: ClipResponse = try await request(
+            endpoint: configuration.endpoint,
+            method: "POST",
+            path: "/v1/clips",
+            body: clip,
+            configuration: configuration,
+            signingPrivateKey: signingPrivateKey
+        )
+        return response.clip
+    }
+
+    public func unlockSecret(
+        clipId: String,
+        passkey: String,
+        configuration: PastaDeviceConfiguration,
+        groupKey: String,
+        signingPrivateKey: String
+    ) async throws -> String {
+        let response: ClipResponse = try await request(
+            endpoint: configuration.endpoint,
+            method: "GET",
+            path: "/v1/clips/\(Self.escapePathComponent(clipId))",
+            body: Optional<EmptyBody>.none,
+            configuration: configuration,
+            signingPrivateKey: signingPrivateKey
+        )
+        return try PastaCrypto.decryptPasskeySecretClip(
+            groupKey: groupKey,
+            accountId: configuration.accountId,
+            routingId: configuration.routingId,
+            clip: response.clip.encryptedClip,
+            passkey: passkey
+        )
+    }
+
     public func historyEntries(configuration: PastaDeviceConfiguration, groupKey: String, signingPrivateKey: String, limit: Int = PastaCore.defaultHistoryLimit) async throws -> [PastaHistoryEntry] {
         let response: ClipsResponse = try await request(
             endpoint: configuration.endpoint,
