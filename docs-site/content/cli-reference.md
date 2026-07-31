@@ -1,7 +1,7 @@
 ---
 title: CLI Reference
 slug: cli-reference
-description: Every pasta command, flags, and exit codes at v0.1.19.
+description: Every pasta command, flags, and exit codes at v0.1.23.
 nav_order: 4
 ---
 
@@ -49,6 +49,15 @@ Revoked device rows are hidden from `devices list` by default and cannot be reac
 | `copy --clipboard` | Force OS clipboard input when stdin is not a TTY, including global hotkeys |
 | `history [--show]` | List local text previews and file names; `--show` decrypts full text locally |
 | `history paste <seq> [--clipboard]` | Paste specific history entry |
+
+## Passkey-protected secrets
+
+| Command | Description |
+| --- | --- |
+| `secret set --key <key> --passkey <passkey> [--value [<value>]]` | Encrypt value to passkey, wrap with group key, publish as `payloadKind: "secret"` |
+| `secret get --key <key> --passkey <passkey> [--clipboard]` | Find newest matching secret by encrypted metadata name and unlock locally |
+
+If `--value` is omitted or present without an argument, `secret set` reads stdin. Wrong passkeys fail closed. Ordinary `paste` / `history paste` do not unlock secret clips.
 
 ## Images (macOS PNG)
 
@@ -107,6 +116,8 @@ argv[0] routes to handlers. Inject deps via `CliDeps`: `io`, `paths`, `secrets`,
 | --- | --- | --- |
 | `bootstrap` | `POST /v1/accounts/bootstrap` | none |
 | `copy` text/clipboard image | `POST /v1/clips` | signed |
+| `secret set` | `POST /v1/clips` | signed |
+| `secret get` | `GET /v1/clips/history` + `/v1/clips/:clipId` | signed |
 | `copy <path>` file/image path | `POST /v1/files` | signed |
 | `paste`, `history` | `GET /v1/clips/*` | signed |
 | `paste` file payload | `GET /v1/files/:clipId` | signed |

@@ -11,6 +11,7 @@ import {
   JOIN_GRANT_TOKEN_TTL_MAX_MS,
   LARGE_PAYLOAD_MAX_BYTES,
   MAX_OPEN_PAIRING_SESSIONS,
+  SECRET_MIME,
   sha256Base64Url,
   TEXT_INLINE_LIMIT_BYTES,
   type BootstrapRequest,
@@ -644,8 +645,11 @@ function validateClip(auth: AuthContext, clip: EncryptedClip): void {
   requireString(clip.ciphertext, "ciphertext");
   validateClipMetadata(clip);
   if (clip.originDeviceId !== auth.deviceId) throw new Error("origin device mismatch");
-  if (clip.payloadKind !== "text" && clip.payloadKind !== "image") throw new Error("unsupported payload kind");
+  if (clip.payloadKind !== "text" && clip.payloadKind !== "image" && clip.payloadKind !== "secret") {
+    throw new Error("unsupported payload kind");
+  }
   if (clip.payloadKind === "text" && clip.mime !== "text/plain; charset=utf-8") throw new Error("bad text MIME");
+  if (clip.payloadKind === "secret" && clip.mime !== SECRET_MIME) throw new Error("bad secret MIME");
   if (clip.payloadKind === "image" && !clip.mime.startsWith("image/")) throw new Error("bad image MIME");
   if (clip.byteLen < 0 || clip.byteLen > TEXT_INLINE_LIMIT_BYTES) throw new Error("clip too large for inline payload");
   const aad = aadForClip(auth.accountId, auth.routingId, clip);

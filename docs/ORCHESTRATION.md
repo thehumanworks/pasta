@@ -27,7 +27,7 @@ Use the `moo` MCP server as the coordination plane. The first Moo MCP call in a 
 Current active goal:
 
 ```bash
-python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" --author docs/goals/11-ios-build-environment.md
+python3 "$HOME/.agents/skills/goal-driven-development/scripts/gdd_status.py" --author docs/goals/20-passkey-protected-secrets.md
 ```
 
 Native iOS expansion starts at Goal 11. Goals 12-17 remain blocked until their

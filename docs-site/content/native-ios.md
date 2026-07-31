@@ -53,6 +53,7 @@ The keyboard is intentionally close to the stock iOS keyboard in daily use:
 - Pasta's actions live in KeyboardKit's native top toolbar slot around KeyboardKit's own autocomplete view, so suggestions and autocorrect remain visible above the keys;
 - compact side action icons stay transparent and match the native suggestion-row height and centering;
 - Paste opens a history menu; selecting a text item inserts it into the active text field;
+- Secrets open from a separate key menu; unlocking requires an explicit passkey prompt before insertion, and setting a secret uses the clipboard value only after the user supplies a key name and passkey;
 - Pasta never publishes ordinary keystrokes as clips.
 
 Typing latency is a release blocker when the Pasta keyboard is perceptibly slower than the same KeyboardKit surface without Pasta additions. Performance work must preserve all keyboard behavior above, identify hot paths with repeatable measurements, and report before/after scores for representative typing input.
@@ -100,6 +101,7 @@ History deletion is destructive and remote. The app must present the selected cl
 The keyboard can always make the safe decision from public clip metadata:
 
 - `payloadKind: "text"` is insertable;
+- `payloadKind: "secret"` requires an explicit passkey unlock before insert;
 - `payloadKind: "image"` is not text-insertable;
 - `payloadKind: "file"` is not text-insertable;
 - `mime: "application/vnd.pasta.directory+zip"` is a directory bundle and must not be treated as normal text or a generic zip.

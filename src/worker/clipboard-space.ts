@@ -58,7 +58,7 @@ export class ClipboardSpace extends DurableObject<Env> {
 
   async publishClip(actor: Actor, clip: EncryptedClip): Promise<StoredClip> {
     this.initializeSchema();
-    if (clip.payloadKind !== "text" && clip.payloadKind !== "image") {
+    if (clip.payloadKind !== "text" && clip.payloadKind !== "image" && clip.payloadKind !== "secret") {
       throw new Error("unsupported payload kind");
     }
     const seq = this.nextSeq();

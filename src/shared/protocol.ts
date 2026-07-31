@@ -1,7 +1,11 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { fromBase64Url, stableJson, toBase64Url, utf8ToBytes } from "./encoding";
 
-export const PASTA_VERSION = "0.1.22";
+export const PASTA_VERSION = "0.1.23";
+export const SECRET_MIME = "application/vnd.pasta.secret+json";
+export const PASSKEY_SECRET_PBKDF2_ITERATIONS = 210_000;
+export const PASSKEY_SECRET_SALT_BYTES = 16;
+export const PASSKEY_SECRET_KEY_BYTES = 32;
 export const SIGNING_VERSION = "PASTA-SIGN-V1";
 export const REQUEST_TOLERANCE_MS = 5 * 60 * 1000;
 export const REQUEST_NONCE_TTL_MS = 10 * 60 * 1000;
@@ -61,6 +65,24 @@ export const PROTOCOL_ENDPOINTS: ProtocolEndpoint[] = [
     request: "encrypted text envelope and metadata",
     response: "stored clip metadata with monotonic display sequence",
     mutation: "Durable Object clips insert"
+  },
+  {
+    command: "secret set",
+    method: "POST",
+    path: "/v1/clips",
+    auth: "device-signature",
+    request: "passkey-nested secret envelope encrypted to the group key",
+    response: "stored secret clip metadata with monotonic display sequence",
+    mutation: "Durable Object clips insert"
+  },
+  {
+    command: "secret get",
+    method: "GET",
+    path: "/v1/clips/history",
+    auth: "device-signature",
+    request: "history scan for matching encrypted secret metadata name",
+    response: "selected encrypted secret clip for local passkey unlock",
+    mutation: "D1 device last_seen_at when stale"
   },
   {
     command: "copy file",
@@ -190,7 +212,7 @@ export const PROTOCOL_ENDPOINTS: ProtocolEndpoint[] = [
   }
 ];
 
-export type PayloadKind = "text" | "image" | "file";
+export type PayloadKind = "text" | "image" | "file" | "secret";
 
 export interface ClipAad {
   accountId: string;

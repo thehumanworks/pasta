@@ -7,6 +7,7 @@ Pasta is intentionally central-service based. P2P, LAN discovery, SSH, tailnets,
 ## What It Supports
 
 - Text clipboard copy, paste, history, and daemon polling.
+- Passkey-protected named secrets via `pasta secret set` / `pasta secret get` (also on the iOS keyboard).
 - Pairing with a short code or terminal QR, approved by an existing device.
 - Noninteractive CI/sandbox pairing through expiring join grants created by a trusted device.
 - Device listing, revocation, and encrypted-space reset.
@@ -249,6 +250,18 @@ Delete a selected history entry:
 ```bash
 pasta history delete 12
 ```
+
+## Passkey-Protected Secrets
+
+Store a named secret so the remote clipboard holds ciphertext that still needs a passkey on unlock. The value is encrypted to the passkey before the normal group-key wrap, so a paired device without the passkey cannot read it.
+
+```bash
+printf 'token-value\n' | pasta secret set --key API_TOKEN --passkey Secret124 --value
+pasta secret set --key API_TOKEN --passkey Secret124 --value token-value
+pasta secret get --key API_TOKEN --passkey Secret124
+```
+
+If `--value` is omitted or present without an argument, `secret set` reads stdin. Ordinary `pasta paste` and history paste do not unlock secret clips.
 
 ## Daemon Examples
 

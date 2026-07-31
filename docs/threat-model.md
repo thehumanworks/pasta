@@ -33,6 +33,7 @@
 ## Protections
 
 - Clipboard payloads are encrypted before upload.
+- Passkey-protected secrets use nested encryption so the group key alone cannot recover the secret value.
 - The relay receives ciphertext and metadata, not plaintext.
 - Device requests require Ed25519 signatures and registered active device state.
 - Request replay is blocked by timestamp window plus per-device nonce storage.

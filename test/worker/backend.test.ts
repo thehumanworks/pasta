@@ -6,8 +6,10 @@ import { REGISTRY_SCHEMA_SQL } from "../../src/worker/registry-schema";
 import {
   decryptClipMetadata,
   decryptBytesClip,
+  decryptPasskeySecretClip,
   decryptTextClip,
   encryptBytesClip,
+  encryptPasskeySecretClip,
   encryptTextClip,
   generateDeviceKeyMaterial,
   generateGroupKey,
@@ -90,6 +92,32 @@ describe("Worker backend", () => {
     expect(JSON.stringify(dump)).not.toContain("PNG");
     expect(JSON.stringify(dump)).toContain(clip.ciphertext);
   });
+
+  it("stores passkey-protected secret clips as ciphertext without plaintext or passkey leakage", async () => {
+    const device = await bootstrap();
+    const groupKey = generateGroupKey();
+    const value = "plain secret must not be stored";
+    const passkey = "Secret124";
+    const clip = encryptPasskeySecretClip({
+      accountId: device.accountId,
+      routingId: device.routingId,
+      originDeviceId: device.deviceId,
+      key: "API_TOKEN",
+      passkey,
+      value,
+      groupKey,
+      keyVersion: 1
+    });
+    await expectStatus(await signedFetch(device, "POST", "/v1/clips", clip), 201);
+    const latest = await (await signedFetch(device, "GET", "/v1/clips/latest")).json() as { clip: StoredClip };
+    expect(latest.clip.payloadKind).toBe("secret");
+    expect(decryptPasskeySecretClip(groupKey, device.accountId, device.routingId, latest.clip, passkey)).toBe(value);
+    expect(decryptClipMetadata(groupKey, device.accountId, device.routingId, latest.clip)?.name).toBe("API_TOKEN");
+    const dump = await env.CLIPBOARD.getByName(device.routingId).debugDump();
+    expect(JSON.stringify(dump)).not.toContain(value);
+    expect(JSON.stringify(dump)).not.toContain(passkey);
+    expect(JSON.stringify(dump)).toContain(clip.ciphertext);
+  }, 30_000);
 
   it("uses clipId routes and preserves monotonic display sequences after delete and retention", async () => {
     const device = await bootstrap();
