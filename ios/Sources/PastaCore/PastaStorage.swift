@@ -67,6 +67,7 @@ public final class PastaAppGroupStore {
     private let defaults: UserDefaults
     private let configKey = "pasta.device.configuration"
     private let clipsKey = "pasta.keyboard.cachedTextClips"
+    private let secretsKey = "pasta.keyboard.cachedSecretNames"
 
     public init(appGroupIdentifier: String = PastaCore.appGroupIdentifier) throws {
         guard let defaults = UserDefaults(suiteName: appGroupIdentifier) else {
@@ -101,8 +102,24 @@ public final class PastaAppGroupStore {
         return clips
     }
 
+    /// Caches secret key paths and clip ids only. Secret values stay remote and
+    /// need the passkey, so nothing decryptable is written here.
+    public func saveKeyboardSecrets(_ secrets: [PastaKeyboardSecret]) throws {
+        defaults.set(try JSONEncoder().encode(secrets), forKey: secretsKey)
+    }
+
+    public func loadKeyboardSecrets() -> [PastaKeyboardSecret] {
+        guard let data = defaults.data(forKey: secretsKey),
+              let secrets = try? JSONDecoder().decode([PastaKeyboardSecret].self, from: data)
+        else {
+            return []
+        }
+        return secrets
+    }
+
     public func clear() {
         defaults.removeObject(forKey: configKey)
         defaults.removeObject(forKey: clipsKey)
+        defaults.removeObject(forKey: secretsKey)
     }
 }

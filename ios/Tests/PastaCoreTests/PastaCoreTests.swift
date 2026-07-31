@@ -290,11 +290,18 @@ final class PastaCoreStorageTests: XCTestCase {
         )
         try store.saveConfiguration(configuration)
         try store.saveKeyboardClips([PastaKeyboardClip(clipId: "clip_cached", sequence: 7, title: "Hello", text: "Hello", createdAt: 1)])
+        try store.saveKeyboardSecrets([PastaKeyboardSecret(clipId: "clip_secret", sequence: 8, key: "API_TOKEN", createdAt: 2)])
         XCTAssertEqual(store.loadConfiguration(), configuration)
         XCTAssertEqual(store.loadKeyboardClips().map(\.sequence), [7])
         XCTAssertEqual(store.loadKeyboardClips().map(\.clipId), ["clip_cached"])
+        XCTAssertEqual(store.loadKeyboardSecrets().map(\.key), ["API_TOKEN"])
+        XCTAssertEqual(store.loadKeyboardSecrets().map(\.clipId), ["clip_secret"])
         XCTAssertNil(UserDefaults.standard.data(forKey: "pasta.device.configuration"))
         XCTAssertNil(UserDefaults.standard.data(forKey: "pasta.keyboard.cachedTextClips"))
+        XCTAssertNil(UserDefaults.standard.data(forKey: "pasta.keyboard.cachedSecretNames"))
+
+        store.clear()
+        XCTAssertTrue(store.loadKeyboardSecrets().isEmpty)
     }
 
     func testKeychainStoreDoesNotMirrorSecretsIntoUserDefaults() throws {

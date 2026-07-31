@@ -54,6 +54,7 @@ The keyboard is intentionally close to the stock iOS keyboard in daily use:
 - compact side action icons stay transparent and match the native suggestion-row height and centering;
 - Paste opens a history menu; selecting a text item inserts it into the active text field;
 - Secrets open from a separate key menu; unlocking requires an explicit passkey prompt before insertion, and setting a secret uses the clipboard value only after the user supplies a key name and passkey;
+- the passkey prompt is drawn inside the keyboard's own toolbar band and the user types it on the Pasta keys, because a keyboard extension may not present an alert or host a text field (see "Issues encountered and fixes");
 - Pasta never publishes ordinary keystrokes as clips.
 
 Typing latency is a release blocker when the Pasta keyboard is perceptibly slower than the same KeyboardKit surface without Pasta additions. Performance work must preserve all keyboard behavior above, identify hot paths with repeatable measurements, and report before/after scores for representative typing input.
@@ -474,7 +475,9 @@ Build a shared Swift package used by the app, keyboard extension, share extensio
 - XChaCha20-Poly1305 for text, bytes, and encrypted metadata;
 - `EncryptedClip`, `StoredClip`, `ClipMetadata`, and endpoint request/response models;
 - Keychain access-group storage for group key, signing private key, wrapping private key;
-- App Group shared store for non-secret config, cached text history, sync timestamps, and keyboard state.
+- App Group shared store for non-secret config, cached text history, cached secret key paths and clip ids, sync timestamps, and keyboard state.
+
+Cached secret entries hold only the key path and clip id so the key menu is populated on a cold keyboard launch. Secret values and passkeys are never cached; unlocking always re-fetches the clip and asks for the passkey.
 
 Do not store the group key or private keys in `UserDefaults`, app-group files, logs, crash breadcrumbs, or analytics. Keychain access group is the only shared secret surface.
 
@@ -489,6 +492,17 @@ Do not store the group key or private keys in `UserDefaults`, app-group files, l
 5. User taps a text clip.
 6. Keyboard calls `textDocumentProxy.insertText(plaintext)`.
 7. No host app pasteboard operation occurs.
+
+### Secret set and unlock from keyboard
+
+1. User opens the key menu and picks either Set Secret from Clipboard or a listed secret key path.
+2. Keyboard checks Full Access and pairing first, then opens the prompt in its own toolbar band.
+3. `KeyboardContext.textInputProxy` points at a Pasta proxy, so the keys type into the prompt instead of the host document, and autocomplete is disabled.
+4. Set collects a key path (validated as a slash-separated path) and then a masked passkey; unlock collects only the masked passkey for the selected clip.
+5. Return or the confirm button submits; cancel discards the buffered values.
+6. Clearing `textInputProxy` restores host typing before the network call runs.
+7. Set encrypts the current clipboard text to the passkey and publishes it; unlock re-fetches the clip, decrypts locally, and inserts through `originalTextDocumentProxy`.
+8. Passkeys stay in memory for the single operation and are never cached, published, or sent to the relay.
 
 ### Explicit iPhone clipboard publish
 
@@ -578,6 +592,15 @@ Agent warning: case is behavior, not styling. Verify inserted lowercase text, si
 **Issue: active Shift was low-contrast in Dark Mode.**
 Why it happened: active Shift styling can inherit a dark fill in the hosted keyboard surface, making the Shift glyph hard to distinguish from the key background.
 Fix: keep KeyboardKit's standard key style by default, but explicitly map active Shift in Dark Mode to a white fill with black foreground. Cover the token mapping with Light/Dark automated tests.
+
+**Issue: tapping "Set Secret from Clipboard" in the keyboard's key menu did nothing, and the keyboard often stopped responding.**
+Why it happened: the passkey prompt was a `UIAlertController` with text fields, presented from the keyboard's `UIInputViewController`. iOS forbids both halves of that. A custom keyboard may draw only inside the primary view of its input view controller, and alerts are unavailable to `com.apple.keyboard-service` extensions, so the presentation was dropped instead of showing UI. A `UITextField` in a keyboard extension is equally unusable: it takes over the responder chain and invalidates the host `textDocumentProxy`, which is why the keyboard stopped inserting text afterwards.
+Fix: draw the prompt inside Pasta's existing toolbar band and collect the key path and passkey from the keyboard's own keys by setting `KeyboardContext.textInputProxy` to a Pasta-owned `UITextDocumentProxy`. KeyboardKit resolves every insert and delete through that context proxy, so the native keys, gestures, and keyboard height are untouched, and clearing `textInputProxy` hands input straight back to the host document. The passkey is masked in the band, autocomplete is disabled while the prompt is open so passkey characters never reach suggestions or learned words, and unlocked values are inserted through `originalTextDocumentProxy`.
+Agent warning: never reintroduce `UIAlertController`, `UIAlertView`, `UITextField`, or `UITextView` in the keyboard extension, and never present a view controller from it. In-keyboard input must go through `textInputProxy` with Pasta-rendered views.
+
+**Issue: `textInputProxy` routing is shared with KeyboardKit's keyboard-switch button.**
+Why it matters: KeyboardKit's globe button detaches `textInputProxy` on touch and restores the previous value half a second later. Left unhandled that produces two defects: key presses during the window reach the host document while Pasta's prompt is still on screen, which can leak passkey characters into the app being typed into; and a prompt cancelled during the window comes back as a reattached Pasta proxy with no prompt behind it, silently swallowing every key press until the extension restarts.
+Fix: observe `KeyboardContext.$textInputProxy`. Cancel the prompt when the proxy is detached, drop a Pasta proxy that is reattached with no prompt active, and forward inserts and deletes to `originalTextDocumentProxy` whenever no prompt is collecting input.
 
 **Issue: keyboard looked embedded but failed review risk because it required Full Access.**
 Fix: keep the keyboard functional without Full Access by reading cached text history from the containing app's last sync, and explain that live refresh/publish needs Full Access.

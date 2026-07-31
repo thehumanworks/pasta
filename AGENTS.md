@@ -75,7 +75,27 @@ Working pattern:
   **Never** key `.id` on `keyboardCase` — it tears the keyboard down on every
   auto-capitalization flip mid-typing and cancels in-flight gestures.
 - Privacy stays intact: never publish ordinary keystrokes; read the pasteboard
-  only behind an explicit user-tapped action.
+ only behind an explicit user-tapped action.
+- **Never present UIKit modals or host text fields in the extension.** A custom
+ keyboard may draw only inside its input view controller's primary view, and
+ alerts are unavailable to `com.apple.keyboard-service`, so
+ `UIAlertController`/`UIAlertView` and any `present(_:animated:)` call silently
+ fail. `UITextField`/`UITextView` inside the extension hijack the responder
+ chain and invalidate the host `textDocumentProxy`, which leaves the keyboard
+ unable to type at all. This is what broke the first passkey prompt.
+- For input that Pasta itself must capture (passkeys, search), render Pasta views
+ inside the existing toolbar band and set `KeyboardContext.textInputProxy` to a
+ Pasta-owned `UITextDocumentProxy`. KeyboardKit routes every insert and delete
+ through the context proxy, so the native keys stay intact; clear the proxy to
+ return input to the host, disable autocomplete while it is active, and insert
+ host text through `originalTextDocumentProxy`.
+- `textInputProxy` routing is not exclusively Pasta's. KeyboardKit's
+ keyboard-switch (globe) button detaches the proxy on touch and restores it
+ 0.5s later (`Keyboard+NextKeyboardButton.swift`), so any Pasta capture must
+ observe `$textInputProxy`: close the capture UI when the proxy is detached so
+ keystrokes cannot land in the host document under Pasta's own prompt, and make
+ a reattached Pasta proxy forward to the host instead of dropping key presses.
+ Dropping them leaves the keyboard unable to type until the extension restarts.
 
 Proof: `swift test --package-path ios` exercises the shared Swift package, not
 `PastaKeyboard.appex`; keyboard-extension changes require a simulator

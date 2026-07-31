@@ -263,6 +263,8 @@ pasta secret get --key production/tool/KEY --passkey Secret124
 
 `--key` is a slash-separated path. A bare first segment needs no leading `/` (`API_TOKEN`); nest with more segments (`production/tool/KEY`). If `--value` is omitted or present without an argument, `secret set` reads stdin. Ordinary `pasta paste` and history paste do not unlock secret clips.
 
+On the iOS keyboard, the key icon opens the same two actions. Set Secret from Clipboard asks for a key path and passkey; tapping a listed key path asks for its passkey and then inserts the value. Both prompts appear in the keyboard's own toolbar band and you type into them with the Pasta keys — the passkey is masked, excluded from autocomplete, and never cached.
+
 ## Daemon Examples
 
 Run one clipboard poll without publishing:

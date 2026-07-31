@@ -51,6 +51,15 @@ iOS keyboard surface:
 - Unlocking a secret requires an explicit passkey prompt before insertion.
 - Setting a secret requires an explicit key name + passkey and uses the current
   clipboard text as the value only after user action.
+- The prompt is rendered inside the keyboard's own toolbar band and reads the
+  user's key presses through `KeyboardContext.textInputProxy`. A keyboard
+  extension may draw only inside its primary view and cannot present
+  `UIAlertController`, and an in-extension `UITextField` invalidates the host
+  text document proxy, so neither is an option.
+- Passkeys are masked while typed, kept in memory for one operation, excluded
+  from autocomplete and learned words, and never cached or published.
+- The app-group cache may hold secret key paths and clip ids so the key menu
+  works on a cold keyboard launch. It must never hold secret values or passkeys.
 
 Ordinary `paste` and keyboard text-history insert paths reject or skip secret
 payloads so nested ciphertext cannot be mistaken for clipboard text.

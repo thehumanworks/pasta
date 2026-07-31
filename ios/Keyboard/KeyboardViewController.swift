@@ -1,3 +1,4 @@
+import Combine
 import KeyboardKit
 import PastaCore
 import SwiftUI
@@ -7,6 +8,9 @@ import UIKit
 final class KeyboardViewController: KeyboardInputViewController {
     private var clips: [PastaKeyboardClip] = []
     private var secrets: [PastaKeyboardSecret] = []
+    private var secretPrompt: PastaSecretPrompt?
+    private var secretPromptProxy: PastaSecretPromptProxy?
+    private var textInputRoutingObserver: AnyCancellable?
     private var hasAutoRefreshedHistory = false
     private var isRunningLiveAction = false
     private var statusMessage: String?
@@ -39,6 +43,7 @@ final class KeyboardViewController: KeyboardInputViewController {
                 keyboardContext: state.keyboardContext,
                 repeatGestureTimer: services.repeatGestureTimer
             )
+            observeTextInputRouting()
             setupPastaKeyboardView()
         }
     }
@@ -61,6 +66,12 @@ final class KeyboardViewController: KeyboardInputViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         deferKeyboardSurfaceToHost()
+    }
+
+    /// Keeps passkey characters out of autocomplete, learned words, and the
+    /// suggestion band while the Pasta secret prompt owns text input.
+    override var isAutocompleteEnabled: Bool {
+        secretPrompt == nil && super.isAutocompleteEnabled
     }
 
     override func performAutocomplete() {
@@ -120,6 +131,7 @@ final class KeyboardViewController: KeyboardInputViewController {
 
     private func reloadClips() {
         clips = store?.loadKeyboardClips() ?? []
+        secrets = store?.loadKeyboardSecrets() ?? []
         refreshToolbarModel()
     }
 
@@ -127,6 +139,7 @@ final class KeyboardViewController: KeyboardInputViewController {
         toolbarModel.update(
             clips: clips,
             secrets: secrets,
+            secretPrompt: secretPrompt,
             statusMessage: statusMessage,
             isRunningLiveAction: isRunningLiveAction
         )
@@ -141,10 +154,12 @@ final class KeyboardViewController: KeyboardInputViewController {
                 services: controller.services,
                 state: controller.state,
                 toolbarModel: model,
-                insertClip: { [weak self] text in self?.textDocumentProxy.insertText(text) },
+                insertClip: { [weak self] text in self?.insertIntoHostDocument(text) },
                 publish: { [weak self] in self?.publishClipboardText() },
-                unlockSecret: { [weak self] secret in self?.promptUnlockSecret(secret) },
-                setSecret: { [weak self] in self?.promptSetSecretFromClipboard() }
+                unlockSecret: { [weak self] secret in self?.beginSecretPrompt(.unlock(clipId: secret.clipId, key: secret.key)) },
+                setSecret: { [weak self] in self?.beginSecretPrompt(.setFromClipboard) },
+                submitSecretPrompt: { [weak self] in self?.submitSecretPrompt() },
+                cancelSecretPrompt: { [weak self] in self?.cancelSecretPrompt() }
             )
         }
         deferKeyboardSurfaceToHost()
@@ -172,9 +187,11 @@ final class KeyboardViewController: KeyboardInputViewController {
                     signingPrivateKey: live.signingPrivateKey
                 )
                 let refreshed = PastaHistoryEntry.keyboardClips(from: entries)
-                secrets = PastaHistoryEntry.keyboardSecrets(from: entries)
+                let refreshedSecrets = PastaHistoryEntry.keyboardSecrets(from: entries)
+                secrets = refreshedSecrets
                 clips = refreshed
                 try store?.saveKeyboardClips(refreshed)
+                try store?.saveKeyboardSecrets(refreshedSecrets)
                 if reportsStatus {
                     statusMessage = refreshed.isEmpty && secrets.isEmpty
                         ? "No Pasta history yet."
@@ -214,39 +231,152 @@ final class KeyboardViewController: KeyboardInputViewController {
         }
     }
 
-    private func promptUnlockSecret(_ secret: PastaKeyboardSecret) {
-        presentPasskeyAlert(
-            title: "Unlock Secret",
-            message: "Enter the passkey for \(secret.key).",
-            includeKeyField: false
-        ) { [weak self] _, passkey in
-            self?.unlockSecret(secret, passkey: passkey)
+    /// Opens the in-keyboard prompt and routes the keys into it.
+    ///
+    /// Keyboard extensions may not present `UIAlertController` and may not draw
+    /// outside their primary view, so the prompt lives in Pasta's toolbar band
+    /// and reads the user's key presses through `textInputProxy`.
+    private func beginSecretPrompt(_ intent: PastaSecretPromptIntent) {
+        guard !isRunningLiveAction else { return }
+        guard hasFullAccess else {
+            statusMessage = "Allow Full Access to use Pasta secrets."
+            refreshToolbarModel()
+            return
+        }
+        guard store?.loadConfiguration() != nil else {
+            statusMessage = "Pair this device in Pasta."
+            refreshToolbarModel()
+            return
+        }
+        secretPrompt = PastaSecretPrompt(intent: intent)
+        statusMessage = nil
+        routeTextInputToSecretPrompt()
+        refreshToolbarModel()
+    }
+
+    private func routeTextInputToSecretPrompt() {
+        let proxy = PastaSecretPromptProxy(
+            insertText: { [weak self] text in self?.handleSecretPromptInsert(text) },
+            deleteBackward: { [weak self] in self?.handleSecretPromptDeleteBackward() },
+            hasText: { [weak self] in self?.promptOrHostHasText() ?? false }
+        )
+        secretPromptProxy = proxy
+        state.keyboardContext.textInputProxy = proxy
+        resetAutocomplete()
+    }
+
+    /// KeyboardKit's keyboard-switch button detaches `textInputProxy` while the
+    /// switcher is open and reattaches it half a second later. Without this,
+    /// key presses in that window would reach the host document while the prompt
+    /// is still on screen, and a prompt cancelled during it would come back as a
+    /// reattached proxy that swallows all typing.
+    private func observeTextInputRouting() {
+        textInputRoutingObserver = state.keyboardContext.$textInputProxy
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] proxy in
+                self?.handleTextInputProxyChange(proxy)
+            }
+    }
+
+    private func handleTextInputProxyChange(_ proxy: UITextDocumentProxy?) {
+        guard proxy != nil else {
+            cancelSecretPrompt()
+            return
+        }
+        guard secretPrompt == nil, proxy === secretPromptProxy else { return }
+        state.keyboardContext.textInputProxy = nil
+        secretPromptProxy = nil
+    }
+
+    private func endSecretPrompt() {
+        secretPrompt = nil
+        secretPromptProxy = nil
+        state.keyboardContext.textInputProxy = nil
+        resetAutocomplete()
+        refreshToolbarModel()
+    }
+
+    private func cancelSecretPrompt() {
+        guard secretPrompt != nil else { return }
+        statusMessage = nil
+        endSecretPrompt()
+    }
+
+    private func handleSecretPromptInsert(_ text: String) {
+        // A reattached proxy must never swallow key presses: with no prompt
+        // collecting input, the host document owns them.
+        guard var prompt = secretPrompt else {
+            insertIntoHostDocument(text)
+            return
+        }
+        let result = prompt.insert(text)
+        secretPrompt = prompt
+        refreshToolbarModel()
+        if result == .submitRequested {
+            submitSecretPrompt()
         }
     }
 
-    private func promptSetSecretFromClipboard() {
-        presentPasskeyAlert(
-            title: "Set Secret",
-            message: "Publish the clipboard text as a passkey-protected secret.",
-            includeKeyField: true
-        ) { [weak self] key, passkey in
-            self?.setSecretFromClipboard(key: key ?? "", passkey: passkey)
+    private func handleSecretPromptDeleteBackward() {
+        guard var prompt = secretPrompt else {
+            state.keyboardContext.originalTextDocumentProxy.deleteBackward()
+            return
+        }
+        prompt.deleteBackward()
+        secretPrompt = prompt
+        refreshToolbarModel()
+    }
+
+    private func promptOrHostHasText() -> Bool {
+        if let secretPrompt {
+            return !secretPrompt.isCurrentFieldEmpty
+        }
+        return state.keyboardContext.originalTextDocumentProxy.hasText
+    }
+
+    private func submitSecretPrompt() {
+        guard var prompt = secretPrompt else { return }
+        do {
+            let advance = try prompt.advance()
+            switch advance {
+            case .awaitingPasskey:
+                secretPrompt = prompt
+                refreshToolbarModel()
+            case .ready(let submission):
+                endSecretPrompt()
+                perform(submission)
+            }
+        } catch let error as PastaSecretPromptError {
+            statusMessage = error.message
+            refreshToolbarModel()
+        } catch {
+            statusMessage = "Secret prompt failed. Try again."
+            refreshToolbarModel()
         }
     }
 
-    private func unlockSecret(_ secret: PastaKeyboardSecret, passkey: String) {
+    private func perform(_ submission: PastaSecretPromptSubmission) {
+        switch submission.intent {
+        case .setFromClipboard:
+            setSecretFromClipboard(key: submission.keyPath, passkey: submission.passkey)
+        case .unlock(let clipId, let key):
+            unlockSecret(clipId: clipId, key: key, passkey: submission.passkey)
+        }
+    }
+
+    private func unlockSecret(clipId: String, key: String, passkey: String) {
         Task {
             await runLiveAction(started: "Unlocking secret...") {
                 let live = try liveContext()
                 let value = try await client.unlockSecret(
-                    clipId: secret.clipId,
+                    clipId: clipId,
                     passkey: passkey,
                     configuration: live.configuration,
                     groupKey: live.groupKey,
                     signingPrivateKey: live.signingPrivateKey
                 )
-                textDocumentProxy.insertText(value)
-                statusMessage = "Inserted secret \(secret.key)."
+                insertIntoHostDocument(value)
+                statusMessage = "Inserted secret \(key)."
             }
         }
     }
@@ -259,9 +389,8 @@ final class KeyboardViewController: KeyboardInputViewController {
                     statusMessage = "Clipboard has no text."
                     return
                 }
-                let normalizedKey = try PastaCrypto.normalizeSecretKey(key)
                 let clip = try await client.publishSecret(
-                    key: normalizedKey,
+                    key: key,
                     passkey: passkey,
                     value: text,
                     configuration: live.configuration,
@@ -271,59 +400,20 @@ final class KeyboardViewController: KeyboardInputViewController {
                 let cached = PastaKeyboardSecret(
                     clipId: clip.clipId,
                     sequence: clip.seq,
-                    key: normalizedKey,
+                    key: key,
                     createdAt: clip.createdAt
                 )
                 secrets = [cached] + secrets.filter { $0.key != cached.key }
+                try? store?.saveKeyboardSecrets(secrets)
                 statusMessage = "Published secret \(cached.key)."
                 refreshToolbarModel()
             }
         }
     }
 
-    private func presentPasskeyAlert(
-        title: String,
-        message: String,
-        includeKeyField: Bool,
-        onConfirm: @escaping (_ key: String?, _ passkey: String) -> Void
-    ) {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        if includeKeyField {
-            alert.addTextField { field in
-                field.placeholder = "Key path (KEY or production/tool/KEY)"
-                field.autocapitalizationType = .none
-                field.autocorrectionType = .no
-            }
-        }
-        alert.addTextField { field in
-            field.placeholder = "Passkey"
-            field.isSecureTextEntry = true
-            field.autocapitalizationType = .none
-            field.autocorrectionType = .no
-        }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Continue", style: .default) { _ in
-            let fields = alert.textFields ?? []
-            if includeKeyField {
-                let key = fields.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                let passkey = fields.dropFirst().first?.text ?? ""
-                guard !key.isEmpty, !passkey.isEmpty else {
-                    self.statusMessage = "Secret key and passkey are required."
-                    self.refreshToolbarModel()
-                    return
-                }
-                onConfirm(key, passkey)
-            } else {
-                let passkey = fields.first?.text ?? ""
-                guard !passkey.isEmpty else {
-                    self.statusMessage = "Passkey is required."
-                    self.refreshToolbarModel()
-                    return
-                }
-                onConfirm(nil, passkey)
-            }
-        })
-        present(alert, animated: true)
+    /// Always targets the host document, never a live Pasta prompt proxy.
+    private func insertIntoHostDocument(_ text: String) {
+        state.keyboardContext.originalTextDocumentProxy.insertText(text)
     }
 
     private func runLiveAction(
@@ -372,6 +462,58 @@ final class KeyboardViewController: KeyboardInputViewController {
     }
 }
 
+/// Receives key presses while the Pasta secret prompt is open.
+///
+/// KeyboardKit resolves every insert and delete through
+/// `KeyboardContext.textDocumentProxy`, which prefers `textInputProxy` when one
+/// is set. Routing through a proxy keeps the native keys and gestures intact and
+/// avoids a `UITextField` in the extension, which would break the responder
+/// chain and invalidate the host text document proxy.
+private final class PastaSecretPromptProxy: NSObject, UITextDocumentProxy {
+    private let onInsertText: (String) -> Void
+    private let onDeleteBackward: () -> Void
+    private let hasTextProvider: () -> Bool
+    private let identifier = UUID()
+
+    init(
+        insertText: @escaping (String) -> Void,
+        deleteBackward: @escaping () -> Void,
+        hasText: @escaping () -> Bool
+    ) {
+        onInsertText = insertText
+        onDeleteBackward = deleteBackward
+        hasTextProvider = hasText
+        super.init()
+    }
+
+    var documentContextBeforeInput: String? { nil }
+    var documentContextAfterInput: String? { nil }
+    var selectedText: String? { nil }
+    var documentInputMode: UITextInputMode? { nil }
+    var documentIdentifier: UUID { identifier }
+
+    var hasText: Bool { hasTextProvider() }
+
+    var autocapitalizationType: UITextAutocapitalizationType = .none
+    var autocorrectionType: UITextAutocorrectionType = .no
+    var spellCheckingType: UITextSpellCheckingType = .no
+    var keyboardType: UIKeyboardType = .asciiCapable
+    var returnKeyType: UIReturnKeyType = .done
+    var isSecureTextEntry = true
+
+    func insertText(_ text: String) {
+        onInsertText(text)
+    }
+
+    func deleteBackward() {
+        onDeleteBackward()
+    }
+
+    func adjustTextPosition(byCharacterOffset offset: Int) {}
+    func setMarkedText(_ markedText: String, selectedRange: NSRange) {}
+    func unmarkText() {}
+}
+
 private struct PastaKeyboardView: View {
     let services: Keyboard.Services
     let state: Keyboard.State
@@ -380,6 +522,8 @@ private struct PastaKeyboardView: View {
     let publish: () -> Void
     let unlockSecret: (PastaKeyboardSecret) -> Void
     let setSecret: () -> Void
+    let submitSecretPrompt: () -> Void
+    let cancelSecretPrompt: () -> Void
 
     @EnvironmentObject private var keyboardContext: KeyboardContext
     @StateObject private var layoutCache = PastaKeyboardLayoutCache()
@@ -411,7 +555,9 @@ private struct PastaKeyboardView: View {
                     insertClip: insertClip,
                     publish: publish,
                     unlockSecret: unlockSecret,
-                    setSecret: setSecret
+                    setSecret: setSecret,
+                    submitSecretPrompt: submitSecretPrompt,
+                    cancelSecretPrompt: cancelSecretPrompt
                 )
             }
         )
@@ -779,8 +925,30 @@ private struct PastaKeyboardToolbar<AutocompleteToolbar: View>: View {
     let publish: () -> Void
     let unlockSecret: (PastaKeyboardSecret) -> Void
     let setSecret: () -> Void
+    let submitSecretPrompt: () -> Void
+    let cancelSecretPrompt: () -> Void
 
     var body: some View {
+        Group {
+            if let prompt = model.secretPrompt {
+                // The prompt reuses the toolbar band so the keys below stay
+                // native and keep the same keyboard height, and so autocomplete
+                // never sees passkey characters.
+                PastaSecretPromptRow(
+                    prompt: prompt,
+                    submit: submitSecretPrompt,
+                    cancel: cancelSecretPrompt
+                )
+            } else {
+                actionRow
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: PastaToolbarAppearance.toolbarHeight)
+        .background(Color.clear)
+    }
+
+    private var actionRow: some View {
         HStack(spacing: 0) {
             iconButton(
                 accessibilityLabel: "Publish Clipboard",
@@ -797,9 +965,6 @@ private struct PastaKeyboardToolbar<AutocompleteToolbar: View>: View {
             divider
             pasteMenu
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: PastaToolbarAppearance.toolbarHeight)
-        .background(Color.clear)
     }
 
     private func iconButton(
@@ -882,6 +1047,56 @@ private struct PastaKeyboardToolbar<AutocompleteToolbar: View>: View {
     }
 }
 
+/// Compact passkey entry inside the keyboard's own primary view.
+private struct PastaSecretPromptRow: View {
+    let prompt: PastaSecretPrompt
+    let submit: () -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: cancel) {
+                Image(systemName: "xmark")
+                    .font(PastaToolbarAppearance.iconFont)
+                    .frame(width: PastaToolbarAppearance.actionWidth, height: PastaToolbarAppearance.toolbarHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Cancel Pasta Secret")
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(prompt.caption)
+                    .font(.system(size: 11, weight: .semibold))
+                    .opacity(0.65)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                Text(prompt.isCurrentFieldEmpty ? prompt.placeholder : prompt.displayValue)
+                    .font(.system(size: 15, weight: .regular, design: .monospaced))
+                    .opacity(prompt.isCurrentFieldEmpty ? 0.4 : 1)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel("\(prompt.title). \(prompt.caption)")
+
+            Button(action: submit) {
+                Text(prompt.submitTitle)
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(height: PastaToolbarAppearance.toolbarHeight)
+                    .padding(.horizontal, 12)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .allowsHitTesting(!prompt.isCurrentFieldEmpty)
+            .opacity(prompt.isCurrentFieldEmpty ? 0.35 : 1)
+            .accessibilityLabel(prompt.submitTitle)
+        }
+        .padding(.trailing, 4)
+        .foregroundStyle(PastaToolbarAppearance.foreground)
+        .background(Color.clear)
+    }
+}
+
 private enum PastaToolbarAppearance {
     static let foreground = Color.keyboardButtonForeground
     static let separator = Color.keyboardButtonForeground.opacity(0.20)
@@ -935,17 +1150,20 @@ private extension Keyboard.ButtonStyle {
 private final class PastaKeyboardToolbarModel: ObservableObject {
     @Published private(set) var clips: [PastaKeyboardClip]
     @Published private(set) var secrets: [PastaKeyboardSecret]
+    @Published private(set) var secretPrompt: PastaSecretPrompt?
     @Published private(set) var statusMessage: String?
     @Published private(set) var isRunningLiveAction: Bool
 
     init(
         clips: [PastaKeyboardClip] = [],
         secrets: [PastaKeyboardSecret] = [],
+        secretPrompt: PastaSecretPrompt? = nil,
         statusMessage: String? = nil,
         isRunningLiveAction: Bool = false
     ) {
         self.clips = clips
         self.secrets = secrets
+        self.secretPrompt = secretPrompt
         self.statusMessage = statusMessage
         self.isRunningLiveAction = isRunningLiveAction
     }
@@ -961,11 +1179,13 @@ private final class PastaKeyboardToolbarModel: ObservableObject {
     func update(
         clips: [PastaKeyboardClip],
         secrets: [PastaKeyboardSecret],
+        secretPrompt: PastaSecretPrompt?,
         statusMessage: String?,
         isRunningLiveAction: Bool
     ) {
         self.clips = clips
         self.secrets = secrets
+        self.secretPrompt = secretPrompt
         self.statusMessage = statusMessage
         self.isRunningLiveAction = isRunningLiveAction
     }
@@ -1128,6 +1348,14 @@ private extension PastaKeyboardToolbarModel {
             isRunningLiveAction: false
         )
     }
+
+    static var previewSecretPrompt: PastaKeyboardToolbarModel {
+        PastaKeyboardToolbarModel(
+            secretPrompt: PastaSecretPrompt(intent: .setFromClipboard),
+            statusMessage: nil,
+            isRunningLiveAction: false
+        )
+    }
 }
 
 /// Live canvas for the Pasta keyboard. Renders the action row in KeyboardKit's
@@ -1148,7 +1376,9 @@ private struct PastaKeyboardPreviewHost: View {
                 insertClip: { _ in },
                 publish: {},
                 unlockSecret: { _ in },
-                setSecret: {}
+                setSecret: {},
+                submitSecretPrompt: {},
+                cancelSecretPrompt: {}
             )
         }
         .keyboardState(controller.state)
@@ -1170,7 +1400,24 @@ private struct PastaKeyboardPreviewHost: View {
         insertClip: { _ in },
         publish: {},
         unlockSecret: { _ in },
-        setSecret: {}
+        setSecret: {},
+        submitSecretPrompt: {},
+        cancelSecretPrompt: {}
+    )
+    .frame(width: 393, height: 60)
+    .background(Color.keyboardBackground)
+}
+
+#Preview("Pasta toolbar — secret prompt") {
+    PastaKeyboardToolbar(
+        model: .previewSecretPrompt,
+        autocompleteToolbar: EmptyView(),
+        insertClip: { _ in },
+        publish: {},
+        unlockSecret: { _ in },
+        setSecret: {},
+        submitSecretPrompt: {},
+        cancelSecretPrompt: {}
     )
     .frame(width: 393, height: 60)
     .background(Color.keyboardBackground)
