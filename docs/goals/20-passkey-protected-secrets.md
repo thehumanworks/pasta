@@ -168,10 +168,11 @@ it didn't happen. The full procedure (boot loop, confidence rubric, logging cade
 - *Expected:* Green local verification; remote path updated for secret payload kind.
 - *BDD scenarios covered:* End-to-end secret set/get against deployed relay when possible.
 
-**Confidence:** 80 / 90 · **Depends on:** T3, T4 · **Closes:** DoD-6
+**Confidence:** 85 / 90 · **Depends on:** T3, T4 · **Closes:** DoD-6
 
 **Evidence (required before tick; append-only)**
 - 2026-07-31 - `bunx tsc --noEmit` - exit 0; focused bun/vitest suites green before deploy.
+- 2026-07-31 - `mise exec -- fnox exec -- wrangler deploy` - blocked: Doppler returned `Invalid Auth token` for `CLOUDFLARE_API_KEY` / account secrets, so Wrangler had no usable Cloudflare credentials in this environment. Local Worker tests already cover the secret allowlist path.
 
 ---
 
@@ -191,4 +192,5 @@ it didn't happen. The full procedure (boot loop, confidence rubric, logging cade
 ### 2026-07-31
 - Created goal from user request for CLI + iOS keyboard passkey-protected secrets.
 - Implemented nested PBKDF2 + XChaCha20 secret clips, Worker allowlist, CLI secret set/get, iOS PastaCore/keyboard UX, ADR 0003, and public docs.
-- Local verification green except Swift host toolchain; deploy/smoke remaining for DoD-6.
+- Local verification green except Swift host toolchain.
+- Remote deploy blocked by invalid Doppler auth for Cloudflare secrets; DoD-6 left unticked pending credential fix + deploy/smoke.
