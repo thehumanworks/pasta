@@ -1,3 +1,4 @@
+import KeyboardKit
 import PastaCore
 import SwiftUI
 import UIKit
@@ -7,10 +8,22 @@ struct PastaRootView: View {
     @EnvironmentObject private var model: PastaAppModel
     @State private var isImportingFile = false
     @State private var pendingDelete: PastaHistoryEntry?
+    @AppStorage(
+        PastaKeyboardAutocorrect.isAutocorrectEnabledSettingsKey,
+        store: .keyboardSettings
+    )
+    private var isAutocorrectEnabled = true
 
     var body: some View {
         NavigationStack {
             List {
+                Section("Keyboard") {
+                    Toggle("Autocorrect", isOn: $isAutocorrectEnabled)
+                    Text("When enabled, Pasta corrects misspellings when you type a space or punctuation.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Pairing") {
                     if let configuration = model.configuration {
                         LabeledContent("Device", value: configuration.deviceName)

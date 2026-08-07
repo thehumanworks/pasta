@@ -44,6 +44,8 @@ final class KeyboardViewController: KeyboardInputViewController {
                 keyboardContext: state.keyboardContext,
                 repeatGestureTimer: services.repeatGestureTimer
             )
+            // Replace after behavior/service assignment so didSet wiring stays intact.
+            services.actionHandler = PastaActionHandler(controller: self)
             observeTextInputRouting()
             setupPastaKeyboardView()
         }
@@ -124,7 +126,8 @@ final class KeyboardViewController: KeyboardInputViewController {
             // re-renders even when the suggestion band did not change.
             self.autocompleteService.applySuggestions(
                 for: latest,
-                to: self.state.autocompleteContext
+                to: self.state.autocompleteContext,
+                autocorrectEnabled: self.state.autocompleteContext.settings.isAutocorrectEnabled
             )
         }
     }
@@ -135,6 +138,23 @@ final class KeyboardViewController: KeyboardInputViewController {
         pendingAutocompleteText = nil
         autocompleteService.resetPublishedSuggestions()
         super.resetAutocomplete()
+    }
+
+    /// Synchronously refresh suggestions for the word about to be terminated.
+    ///
+    /// Pasta debounces ordinary autocomplete for typing latency. KeyboardKit
+    /// auto-applies the current `.autocorrect` suggestion on space/punctuation
+    /// release, so a pending debounce must not leave that suggestion stale.
+    func flushAutocompleteSuggestionsForAutocorrectApply() {
+        let text = autocompleteText ?? ""
+        cancelPendingAutocomplete()
+        lastPastaAutocompleteText = text
+        autocompleteService.applySuggestions(
+            for: text,
+            to: state.autocompleteContext,
+            autocorrectEnabled: state.autocompleteContext.settings.isAutocorrectEnabled,
+            force: true
+        )
     }
 
     private func deferKeyboardSurfaceToHost() {
@@ -1262,6 +1282,24 @@ private final class PastaKeyboardBehavior: Keyboard.StandardKeyboardBehavior {
     }
 }
 
+/// Ensures terminator taps apply the correction for the word just typed, even
+/// when Pasta's debounced autocomplete has not published it yet.
+private final class PastaActionHandler: KeyboardAction.StandardActionHandler {
+    override func tryApplyAutocorrectSuggestion(
+        before gesture: Keyboard.Gesture,
+        on action: KeyboardAction
+    ) {
+        guard shouldApplyAutocorrectSuggestion(before: gesture, on: action) else { return }
+        guard autocompleteContext.settings.isAutocorrectEnabled else { return }
+
+        if let controller = keyboardController as? KeyboardViewController {
+            controller.flushAutocompleteSuggestionsForAutocorrectApply()
+        }
+
+        super.tryApplyAutocorrectSuggestion(before: gesture, on: action)
+    }
+}
+
 private extension Keyboard.KeyboardCase {
     var pastaCaseMode: PastaKeyboardCaseMode {
         PastaKeyboardCaseMode(rawValue: rawValue) ?? .auto
@@ -1301,23 +1339,41 @@ private final class PastaAutocompleteService: AutocompleteService {
 
     func autocomplete(_ text: String) async throws -> Autocomplete.ServiceResult {
         let ignoredSnapshot = wordsLock.withLock { ignored }
-        let suggestions = engine
-            .suggestions(for: text, ignoredWords: ignoredSnapshot)
-            .map(\.keyboardKitSuggestion)
+        let autocorrectEnabled = PastaKeyboardAutocorrect.isAutocorrectEnabled(
+            in: UserDefaults(suiteName: PastaCore.appGroupIdentifier) ?? .standard
+        )
+        let suggestions = PastaKeyboardAutocorrect.suggestionsForPublishing(
+            engine.suggestions(for: text, ignoredWords: ignoredSnapshot),
+            autocorrectEnabled: autocorrectEnabled
+        )
+        .map(\.keyboardKitSuggestion)
         return Autocomplete.ServiceResult(inputText: text, suggestions: suggestions)
     }
 
     /// Updates only the suggestion band, and only when content changed.
+    ///
+    /// Pass `force: true` before KeyboardKit applies an autocorrect terminator
+    /// so a pending debounce cannot leave the band on a stale incomplete word.
     @MainActor
-    func applySuggestions(for text: String, to context: AutocompleteContext) {
+    func applySuggestions(
+        for text: String,
+        to context: AutocompleteContext,
+        autocorrectEnabled: Bool,
+        force: Bool = false
+    ) {
         let ignoredSnapshot = wordsLock.withLock { ignored }
-        let pastaSuggestions = engine.suggestions(for: text, ignoredWords: ignoredSnapshot)
+        let pastaSuggestions = PastaKeyboardAutocorrect.suggestionsForPublishing(
+            engine.suggestions(for: text, ignoredWords: ignoredSnapshot),
+            autocorrectEnabled: autocorrectEnabled
+        )
         let fingerprint = PastaKeyboardSuggestionFingerprint(suggestions: pastaSuggestions)
-        guard PastaKeyboardRenderEfficiency.shouldPublishSuggestions(
-            previous: lastPublishedFingerprint,
-            next: fingerprint
-        ) else {
-            return
+        if !force {
+            guard PastaKeyboardRenderEfficiency.shouldPublishSuggestions(
+                previous: lastPublishedFingerprint,
+                next: fingerprint
+            ) else {
+                return
+            }
         }
         lastPublishedFingerprint = fingerprint
         context.suggestionsFromService = pastaSuggestions.map(\.keyboardKitSuggestion)
