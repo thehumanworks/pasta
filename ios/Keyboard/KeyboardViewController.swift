@@ -23,6 +23,7 @@ final class KeyboardViewController: KeyboardInputViewController {
     private var autocompleteTask: Task<Void, Never>?
     private var autocompleteGeneration = 0
     private var lastPastaAutocompleteText = ""
+    private var pendingAutocompleteText: String?
 
     deinit {
         autocompleteTask?.cancel()
@@ -80,6 +81,18 @@ final class KeyboardViewController: KeyboardInputViewController {
             return
         }
 
+        let text = autocompleteText ?? ""
+        guard PastaKeyboardRenderEfficiency.shouldScheduleAutocomplete(
+            previousText: lastPastaAutocompleteText,
+            nextText: text
+        ) else {
+            return
+        }
+        // Coalesce duplicate requests for the same in-flight text so release +
+        // textDidChange do not allocate overlapping debounce tasks.
+        guard text != pendingAutocompleteText else { return }
+
+        pendingAutocompleteText = text
         autocompleteGeneration += 1
         let generation = autocompleteGeneration
         autocompleteTask?.cancel()
@@ -96,12 +109,22 @@ final class KeyboardViewController: KeyboardInputViewController {
             guard generation == self.autocompleteGeneration else { return }
             guard self.isAutocompleteEnabled else { return }
 
-            let text = self.autocompleteText ?? ""
-            guard text != self.lastPastaAutocompleteText else { return }
-            self.lastPastaAutocompleteText = text
-            self.services.autocompleteService.autocomplete(
-                text,
-                updating: self.state.autocompleteContext
+            let latest = self.autocompleteText ?? ""
+            self.pendingAutocompleteText = nil
+            guard PastaKeyboardRenderEfficiency.shouldScheduleAutocomplete(
+                previousText: self.lastPastaAutocompleteText,
+                nextText: latest
+            ) else {
+                return
+            }
+            self.lastPastaAutocompleteText = latest
+            // Apply on the main actor directly. KeyboardKit's default
+            // `autocomplete(_:updating:)` nests another Task and republishes
+            // empty emoji/prediction dictionaries, forcing full key-surface
+            // re-renders even when the suggestion band did not change.
+            self.autocompleteService.applySuggestions(
+                for: latest,
+                to: self.state.autocompleteContext
             )
         }
     }
@@ -109,6 +132,8 @@ final class KeyboardViewController: KeyboardInputViewController {
     override func resetAutocomplete() {
         cancelPendingAutocomplete()
         lastPastaAutocompleteText = ""
+        pendingAutocompleteText = nil
+        autocompleteService.resetPublishedSuggestions()
         super.resetAutocomplete()
     }
 
@@ -127,6 +152,7 @@ final class KeyboardViewController: KeyboardInputViewController {
         autocompleteGeneration += 1
         autocompleteTask?.cancel()
         autocompleteTask = nil
+        pendingAutocompleteText = nil
     }
 
     private func reloadClips() {
@@ -517,7 +543,9 @@ private final class PastaSecretPromptProxy: NSObject, UITextDocumentProxy {
 private struct PastaKeyboardView: View {
     let services: Keyboard.Services
     let state: Keyboard.State
-    @ObservedObject var toolbarModel: PastaKeyboardToolbarModel
+    /// Not `@ObservedObject`: toolbar/status updates must refresh only the
+    /// toolbar band. Observing here would rebuild every KeyboardKit key.
+    let toolbarModel: PastaKeyboardToolbarModel
     let insertClip: (String) -> Void
     let publish: () -> Void
     let unlockSecret: (PastaKeyboardSecret) -> Void
@@ -526,8 +554,8 @@ private struct PastaKeyboardView: View {
     let cancelSecretPrompt: () -> Void
 
     @EnvironmentObject private var keyboardContext: KeyboardContext
-    @StateObject private var layoutCache = PastaKeyboardLayoutCache()
-    @StateObject private var touchFeedbackCoordinator = PastaTouchFeedbackCoordinator()
+    @State private var layoutCache = PastaKeyboardLayoutCache()
+    @State private var touchFeedbackCoordinator = PastaTouchFeedbackCoordinator()
 
     var body: some View {
         // Pasta is additive: KeyboardKit owns the keyboard, autocomplete band,
@@ -539,11 +567,19 @@ private struct PastaKeyboardView: View {
             services: services,
             buttonContent: { $0.view },
             buttonView: { params in
-                PastaImmediateKeyPressFeedback(
-                    item: params.item,
-                    coordinator: touchFeedbackCoordinator
-                ) {
+                // Keep the key surface as KeyboardKit's view. Immediate press
+                // chrome is a single shared UIKit highlight driven by invisible
+                // probes, not per-key SwiftUI overlays/state.
+                if params.item.action.isSpacer {
                     params.view
+                } else {
+                    params.view.background(
+                        PastaTouchFeedbackProbe(
+                            coordinator: touchFeedbackCoordinator,
+                            cornerRadius: params.item.action.standardButtonCornerRadius(for: keyboardContext),
+                            edgeInsets: params.item.edgeInsets
+                        )
+                    )
                 }
             },
             collapsedView: { $0.view },
@@ -597,114 +633,23 @@ private struct PastaKeyboardView: View {
     }
 }
 
-private struct PastaImmediateKeyPressFeedback<Content: View>: View {
-    let item: KeyboardLayout.Item
-    let coordinator: PastaTouchFeedbackCoordinator
-    let content: Content
-
-    @EnvironmentObject private var keyboardContext: KeyboardContext
-    @State private var isTouchDown = false
-    @State private var touchGeneration = 0
-    @State private var touchDownUptimeNanoseconds: UInt64?
-
-    private let policy = PastaKeyboardTouchFeedbackPolicy.standard
-
-    init(
-        item: KeyboardLayout.Item,
-        coordinator: PastaTouchFeedbackCoordinator,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.item = item
-        self.coordinator = coordinator
-        self.content = content()
-    }
-
-    @ViewBuilder
-    var body: some View {
-        if item.action.isSpacer {
-            content
-        } else {
-            content
-                .overlay(feedbackOverlay.allowsHitTesting(false))
-                .background(
-                    PastaTouchFeedbackTarget(
-                        coordinator: coordinator,
-                        onTouchDownChange: handleTouchDownChange
-                    )
-                )
-                .onDisappear(perform: resetFeedback)
-                .transaction { $0.animation = nil }
-        }
-    }
-
-    private var feedbackOverlay: some View {
-        RoundedRectangle(cornerRadius: item.action.standardButtonCornerRadius(for: keyboardContext))
-            .fill(feedbackColor)
-            .padding(item.edgeInsets)
-            .opacity(isTouchDown ? 1 : 0)
-    }
-
-    private var feedbackColor: Color {
-        let opacity = keyboardContext.hasDarkColorScheme
-            ? policy.visualFeedbackOpacityDark
-            : policy.visualFeedbackOpacityLight
-        let base = keyboardContext.hasDarkColorScheme ? Color.white : Color.black
-        return base.opacity(opacity)
-    }
-
-    private func handleTouchDownChange(_ isPressed: Bool) {
-        if isPressed {
-            touchGeneration += 1
-            touchDownUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
-            isTouchDown = true
-        } else {
-            scheduleTouchUp()
-        }
-    }
-
-    private func scheduleTouchUp() {
-        guard isTouchDown else { return }
-        let generation = touchGeneration
-        let now = DispatchTime.now().uptimeNanoseconds
-        let elapsed = touchDownUptimeNanoseconds.map { now >= $0 ? now - $0 : 0 } ?? 0
-        let delay = policy.remainingVisibleNanoseconds(after: elapsed)
-        guard delay > 0 else {
-            resetFeedback(ifGeneration: generation)
-            return
-        }
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: delay)
-            resetFeedback(ifGeneration: generation)
-        }
-    }
-
-    private func resetFeedback(ifGeneration generation: Int) {
-        guard generation == touchGeneration else { return }
-        isTouchDown = false
-        touchDownUptimeNanoseconds = nil
-    }
-
-    private func resetFeedback() {
-        touchGeneration += 1
-        isTouchDown = false
-        touchDownUptimeNanoseconds = nil
-    }
-}
-
-/// Registers each key's bounds with one passive recognizer for the keyboard.
+/// Invisible probe that registers a key's bounds with the shared highlight.
 /// KeyboardKit still owns key gestures, actions, callouts, and text insertion.
-private struct PastaTouchFeedbackTarget: UIViewRepresentable {
+private struct PastaTouchFeedbackProbe: UIViewRepresentable {
     let coordinator: PastaTouchFeedbackCoordinator
-    let onTouchDownChange: (Bool) -> Void
+    let cornerRadius: CGFloat
+    let edgeInsets: EdgeInsets
 
     func makeUIView(context: Context) -> PastaTouchFeedbackTargetView {
         let view = PastaTouchFeedbackTargetView()
-        view.connect(to: coordinator, onTouchDownChange: onTouchDownChange)
+        view.apply(cornerRadius: cornerRadius, edgeInsets: edgeInsets)
+        view.connect(to: coordinator)
         return view
     }
 
     func updateUIView(_ view: PastaTouchFeedbackTargetView, context: Context) {
-        view.connect(to: coordinator, onTouchDownChange: onTouchDownChange)
+        view.apply(cornerRadius: cornerRadius, edgeInsets: edgeInsets)
+        view.connect(to: coordinator)
     }
 
     static func dismantleUIView(_ view: PastaTouchFeedbackTargetView, coordinator: ()) {
@@ -714,8 +659,8 @@ private struct PastaTouchFeedbackTarget: UIViewRepresentable {
 
 private final class PastaTouchFeedbackTargetView: UIView {
     private weak var coordinator: PastaTouchFeedbackCoordinator?
-    private var onTouchDownChange: ((Bool) -> Void)?
-    private var isPressed = false
+    private(set) var cornerRadius: CGFloat = 0
+    private(set) var edgeInsets = EdgeInsets()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -737,41 +682,52 @@ private final class PastaTouchFeedbackTargetView: UIView {
         }
     }
 
-    func connect(
-        to coordinator: PastaTouchFeedbackCoordinator,
-        onTouchDownChange: @escaping (Bool) -> Void
-    ) {
+    func apply(cornerRadius: CGFloat, edgeInsets: EdgeInsets) {
+        self.cornerRadius = cornerRadius
+        self.edgeInsets = edgeInsets
+    }
+
+    func connect(to coordinator: PastaTouchFeedbackCoordinator) {
         if self.coordinator !== coordinator {
             self.coordinator?.unregister(self)
             self.coordinator = coordinator
         }
-        self.onTouchDownChange = onTouchDownChange
         if let window {
             coordinator.register(self, in: window)
         }
     }
 
     func disconnect() {
-        setPressed(false)
         coordinator?.unregister(self)
         coordinator = nil
-        onTouchDownChange = nil
     }
 
-    func setPressed(_ value: Bool) {
-        guard value != isPressed else { return }
-        isPressed = value
-        onTouchDownChange?(value)
+    var highlightFrameInWindow: CGRect? {
+        guard let window else { return nil }
+        let insetBounds = bounds.inset(
+            by: UIEdgeInsets(
+                top: edgeInsets.top,
+                left: edgeInsets.leading,
+                bottom: edgeInsets.bottom,
+                right: edgeInsets.trailing
+            )
+        )
+        return convert(insetBounds, to: window)
     }
 }
 
-/// A single passive window recognizer fans touch-down state out to registered
-/// key bounds. Keeping one recognizer avoids making every key inspect every
-/// keyboard-host touch.
-private final class PastaTouchFeedbackCoordinator: UIGestureRecognizer, ObservableObject, UIGestureRecognizerDelegate {
+/// One passive window recognizer plus one shared highlight view.
+/// Per-key SwiftUI overlays are intentionally avoided on the typing hot path.
+private final class PastaTouchFeedbackCoordinator: UIGestureRecognizer, UIGestureRecognizerDelegate {
+    private let policy = PastaKeyboardTouchFeedbackPolicy.standard
     private var targets: [ObjectIdentifier: PastaTouchFeedbackTargetView] = [:]
     private weak var activeTouch: UITouch?
     private weak var activeTarget: PastaTouchFeedbackTargetView?
+    private weak var highlightWindow: UIWindow?
+    private let highlightView = PastaSharedKeyHighlightView()
+    private var touchGeneration = 0
+    private var touchDownUptimeNanoseconds: UInt64?
+    private var hideTask: Task<Void, Never>?
 
     init() {
         super.init(target: nil, action: nil)
@@ -779,19 +735,18 @@ private final class PastaTouchFeedbackCoordinator: UIGestureRecognizer, Observab
         delaysTouchesBegan = false
         delaysTouchesEnded = false
         delegate = self
+        highlightView.isHidden = true
     }
 
     func register(_ target: PastaTouchFeedbackTargetView, in window: UIWindow) {
         targets[ObjectIdentifier(target)] = target
-        guard view !== window else { return }
-        view?.removeGestureRecognizer(self)
-        window.addGestureRecognizer(self)
+        attach(to: window)
     }
 
     func unregister(_ target: PastaTouchFeedbackTargetView) {
         targets[ObjectIdentifier(target)] = nil
         if activeTarget === target {
-            target.setPressed(false)
+            clearHighlight(immediate: true)
             activeTarget = nil
             activeTouch = nil
             if state == .began || state == .changed {
@@ -800,6 +755,8 @@ private final class PastaTouchFeedbackCoordinator: UIGestureRecognizer, Observab
         }
         if targets.isEmpty {
             view?.removeGestureRecognizer(self)
+            highlightView.removeFromSuperview()
+            highlightWindow = nil
         }
     }
 
@@ -811,13 +768,18 @@ private final class PastaTouchFeedbackCoordinator: UIGestureRecognizer, Observab
         }
         activeTouch = touch
         activeTarget = target
-        target.setPressed(true)
+        showHighlight(for: target)
         state = .began
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
-        guard let activeTouch, let activeTarget, touches.contains(activeTouch) else { return }
-        activeTarget.setPressed(contains(activeTouch, in: activeTarget))
+        guard let activeTouch, touches.contains(activeTouch) else { return }
+        if let target = target(at: activeTouch) {
+            activeTarget = target
+            showHighlight(for: target)
+        } else {
+            scheduleHideHighlight()
+        }
         if state == .began || state == .changed {
             state = .changed
         }
@@ -832,7 +794,7 @@ private final class PastaTouchFeedbackCoordinator: UIGestureRecognizer, Observab
     }
 
     override func reset() {
-        activeTarget?.setPressed(false)
+        clearHighlight(immediate: true)
         activeTouch = nil
         activeTarget = nil
     }
@@ -851,16 +813,82 @@ private final class PastaTouchFeedbackCoordinator: UIGestureRecognizer, Observab
         true
     }
 
+    private func attach(to window: UIWindow) {
+        if view !== window {
+            view?.removeGestureRecognizer(self)
+            window.addGestureRecognizer(self)
+        }
+        if highlightWindow !== window {
+            highlightView.removeFromSuperview()
+            highlightView.isUserInteractionEnabled = false
+            window.addSubview(highlightView)
+            highlightWindow = window
+        }
+    }
+
     private func finishIfNeeded(
         for touches: Set<UITouch>,
         newState: UIGestureRecognizer.State
     ) {
         guard let activeTouch else { return }
         guard touches.contains(activeTouch) else { return }
-        activeTarget?.setPressed(false)
+        scheduleHideHighlight()
         self.activeTouch = nil
         activeTarget = nil
         state = newState
+    }
+
+    private func showHighlight(for target: PastaTouchFeedbackTargetView) {
+        hideTask?.cancel()
+        hideTask = nil
+        touchGeneration += 1
+        touchDownUptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+        guard let frame = target.highlightFrameInWindow else {
+            highlightView.isHidden = true
+            return
+        }
+        highlightView.apply(
+            frame: frame,
+            cornerRadius: target.cornerRadius,
+            opacity: highlightOpacity(in: target.window)
+        )
+        highlightView.isHidden = false
+        highlightWindow?.bringSubviewToFront(highlightView)
+    }
+
+    private func scheduleHideHighlight() {
+        let generation = touchGeneration
+        let now = DispatchTime.now().uptimeNanoseconds
+        let elapsed = touchDownUptimeNanoseconds.map { now >= $0 ? now - $0 : 0 } ?? 0
+        let delay = policy.remainingVisibleNanoseconds(after: elapsed)
+        guard delay > 0 else {
+            clearHighlight(immediate: true)
+            return
+        }
+        hideTask?.cancel()
+        hideTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard let self, generation == self.touchGeneration else { return }
+            self.clearHighlight(immediate: true)
+        }
+    }
+
+    private func clearHighlight(immediate: Bool) {
+        hideTask?.cancel()
+        hideTask = nil
+        if immediate {
+            touchGeneration += 1
+            touchDownUptimeNanoseconds = nil
+            highlightView.isHidden = true
+        }
+    }
+
+    private func highlightOpacity(in window: UIWindow?) -> CGFloat {
+        let style = window?.traitCollection.userInterfaceStyle
+        if style == .dark {
+            return CGFloat(policy.visualFeedbackOpacityDark)
+        }
+        return CGFloat(policy.visualFeedbackOpacityLight)
     }
 
     private func target(at touch: UITouch) -> PastaTouchFeedbackTargetView? {
@@ -873,8 +901,28 @@ private final class PastaTouchFeedbackCoordinator: UIGestureRecognizer, Observab
     }
 }
 
+private final class PastaSharedKeyHighlightView: UIView {
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        isOpaque = false
+        backgroundColor = .black
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func apply(frame: CGRect, cornerRadius: CGFloat, opacity: CGFloat) {
+        self.frame = frame
+        layer.cornerRadius = cornerRadius
+        let isDark = traitCollection.userInterfaceStyle == .dark
+        backgroundColor = (isDark ? UIColor.white : UIColor.black).withAlphaComponent(opacity)
+    }
+}
+
 @MainActor
-private final class PastaKeyboardLayoutCache: ObservableObject {
+private final class PastaKeyboardLayoutCache {
     private static let maximumCachedLayouts = 24
     private var cachedLayouts: [PastaKeyboardLayoutKey: KeyboardLayout] = [:]
     private var cachedKeys: [PastaKeyboardLayoutKey] = []
@@ -1244,6 +1292,7 @@ private final class PastaAutocompleteService: AutocompleteService {
     private let wordsLock = NSLock()
     private var ignored = Set<String>()
     private var learned = Set<String>()
+    private var lastPublishedFingerprint: PastaKeyboardSuggestionFingerprint?
 
     var canIgnoreWords: Bool { true }
     var canLearnWords: Bool { true }
@@ -1256,6 +1305,26 @@ private final class PastaAutocompleteService: AutocompleteService {
             .suggestions(for: text, ignoredWords: ignoredSnapshot)
             .map(\.keyboardKitSuggestion)
         return Autocomplete.ServiceResult(inputText: text, suggestions: suggestions)
+    }
+
+    /// Updates only the suggestion band, and only when content changed.
+    @MainActor
+    func applySuggestions(for text: String, to context: AutocompleteContext) {
+        let ignoredSnapshot = wordsLock.withLock { ignored }
+        let pastaSuggestions = engine.suggestions(for: text, ignoredWords: ignoredSnapshot)
+        let fingerprint = PastaKeyboardSuggestionFingerprint(suggestions: pastaSuggestions)
+        guard PastaKeyboardRenderEfficiency.shouldPublishSuggestions(
+            previous: lastPublishedFingerprint,
+            next: fingerprint
+        ) else {
+            return
+        }
+        lastPublishedFingerprint = fingerprint
+        context.suggestionsFromService = pastaSuggestions.map(\.keyboardKitSuggestion)
+    }
+
+    func resetPublishedSuggestions() {
+        lastPublishedFingerprint = nil
     }
 
     func hasIgnoredWord(_ word: String) -> Bool {

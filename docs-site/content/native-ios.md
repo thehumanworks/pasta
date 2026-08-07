@@ -188,6 +188,7 @@ Keyboard performance proof for this release:
 - Observed root cause: Pasta-owned helper work around KeyboardKit did avoidable work on typing-sensitive paths. The SwiftUI wrapper rebuilt structural layouts on repeated body evaluations, the one-entry layout cache churned when case/type states alternated, and Pasta autocomplete kept old requests eligible while running system spellchecking/completion work on the main actor for ordinary keypresses.
 - Implemented fix: use a bounded multi-entry structural layout cache; debounce and cancel stale autocomplete requests in the keyboard controller; replace the typing-path `UITextChecker` calls with a bounded pure Swift autocomplete engine; cap autocomplete context to the recent typing suffix; keep KeyboardKit's autocomplete toolbar and standard action handling intact. Immediate UIKit touch-down feedback uses one passive recognizer shared by the keyboard instead of one window recognizer per key, and its minimum visibility is measured from touch-down rather than added after release.
 - Benchmark: `swift ios/Benchmarks/KeyboardHotPathBenchmark.swift --iterations 40000 --mode both --min-improvement-percent 60` reports `baseline.total: 6947.720 ms`, `optimized.total: 2246.995 ms`, and `67.659% faster` for the checked-in layout and autocomplete hot-path model.
+- Follow-up render efficiency: KeyboardKit republishes autocomplete context (and therefore re-evaluates every key) on suggestion updates. Pasta now (1) keeps the toolbar model out of the key-surface observation graph, (2) draws immediate press chrome with one shared UIKit highlight instead of per-key SwiftUI overlays/state, (3) exits autocomplete scheduling when document text is unchanged, and (4) applies suggestion-band updates synchronously while skipping identical fingerprints so unchanged suggestions do not force another full key rebuild.
 
 Non-goals:
 
@@ -385,9 +386,12 @@ Suggestion generation works as follows:
 
 Swift 6 / Xcode 27 detail:
 
-- `KeyboardViewController.performAutocomplete()` debounces for `24 ms`, cancels stale tasks, and only asks KeyboardKit to update suggestions for the latest text.
+- `KeyboardViewController.performAutocomplete()` exits early when document text is unchanged, debounces for `16 ms`, cancels stale tasks, and applies only the latest suggestion fingerprint directly to `suggestionsFromService`.
+- Do not call KeyboardKit's default `autocomplete(_:updating:)` on the ordinary typing path: it nests another `Task` and republishes empty emoji/prediction dictionaries, which forces full key-surface re-renders.
 - Keep the autocomplete service free of `UITextChecker` and `MainActor.run` work unless a future build proves the SDK isolation and device latency are acceptable.
 - Keep ignored/learned word sets synchronized, since KeyboardKit may call the autocomplete service from async tasks.
+- Keep `PastaKeyboardView.toolbarModel` as a plain reference, not `@ObservedObject`, so Publish/Paste/status updates refresh only `PastaKeyboardToolbar`.
+- Keep immediate press feedback as one shared UIKit highlight driven by invisible probes; do not put per-key SwiftUI overlays or `@State` press flags on the typing surface.
 
 ### Keyboard layout and case behavior
 
